@@ -13,8 +13,12 @@ function setupAuth(app) {
     });
     app.use(basicAuth({
       users: { [user]: pwd },
+      challenge: true,
     }));
+    return true;
   }
+
+  return false;
 }
 
 module.exports = setupAuth;

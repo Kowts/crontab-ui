@@ -9,7 +9,9 @@
 <script src="js/jquery.min.js"></script>
 <script src="js/bootstrap.bundle.min.js"></script>
 <script src="script.js"></script>
-<script type="text/javascript">
+<script id="crontabs-state" type="application/json"><%- crontabs %></script>
+<script id="routes-state" type="application/json"><%- routes %></script>
+<script type="application/x-disabled">
 	var crontabs = [];
 	var routes = [];
 	document.addEventListener('DOMContentLoaded', function() {
@@ -60,8 +62,8 @@
 
 
 	</table>
-	<a class="btn btn-primary" onclick="restore_backup('<%= db %>')"><i class="bi bi-arrow-counterclockwise"></i> Restore</a>
-	<a class="btn btn-danger" onclick="delete_backup('<%= db %>')"><i class="bi bi-trash"></i> Delete</a>
+	<button type="button" class="btn btn-primary" data-action="restore-backup" data-db="<%= db %>"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
+	<button type="button" class="btn btn-danger" data-action="delete-backup" data-db="<%= db %>"><i class="bi bi-trash"></i> Delete</button>
 </div>
 <%- include('popup.ejs') -%>
 </body>

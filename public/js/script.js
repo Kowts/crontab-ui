@@ -1,5 +1,68 @@
 'use strict';
 
+var crontabs = [];
+var routes = {};
+
+function csrfToken() {
+  var match = document.cookie.match(/(?:^|; )crontab_ui_csrf=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function initPage() {
+  var jobs = document.getElementById('crontabs-state');
+  var routeState = document.getElementById('routes-state');
+  var env = document.getElementById('env-state');
+  if (jobs) crontabs = JSON.parse(jobs.textContent);
+  if (routeState) routes = JSON.parse(routeState.textContent);
+  if (env) $('#env_vars').val(JSON.parse(env.textContent));
+
+  $.ajaxSetup({ headers: { 'X-CSRF-Token': csrfToken() } });
+  [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).forEach(function(el) {
+    return new bootstrap.Tooltip(el);
+  });
+  if (document.getElementById('main_table')) {
+    $('#main_table').DataTable({
+      order: [[1, 'asc']], stateSave: true, stateDuration: 0,
+      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }]
+    });
+  }
+  var importInput = document.getElementById('import_file');
+  if (importInput) importInput.addEventListener('change', function() {
+    if (!this.files.length) return;
+    fetch(document.getElementById('import_form').action, {
+      method: 'POST', body: new FormData(document.getElementById('import_form')),
+      headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
+    }).then(function(response) {
+      if (response.ok) window.location.assign(response.url);
+      else errorMessageBox('Import failed');
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initPage);
+
+document.addEventListener('click', function(event) {
+  var target = event.target.closest('[data-action]');
+  if (!target) return;
+  var id = target.dataset.id;
+  switch (target.dataset.action) {
+    case 'new-job': newJob(); break;
+    case 'backup': doBackup(); break;
+    case 'import-db': import_db(); break;
+    case 'import-crontab': getCrontab(); break;
+    case 'set-crontab': setCrontab(); break;
+    case 'preview': previewCrontab(); break;
+    case 'run': runJob(id); break;
+    case 'edit': editJob(id); break;
+    case 'stop': stopJob(id); break;
+    case 'start': startJob(id); break;
+    case 'duplicate': duplicateJob(id); break;
+    case 'delete-job': deleteJob(id); break;
+    case 'restore-backup': restore_backup(target.dataset.db); break;
+    case 'delete-backup': delete_backup(target.dataset.db); break;
+  }
+});
+
 /*********** MessageBox ****************/
 
 function getModal(id) {
@@ -82,7 +145,7 @@ function runJob(_id) {
 
 function setCrontab() {
   messageBox('<p> Do you want to set the crontab file? </p>', 'Confirm crontab setup', null, null, function() {
-    $.get(routes.crontab, { 'env_vars': $('#env_vars').val() }, function() {
+    $.post(routes.crontab, { env_vars: $('#env_vars').val() }, function() {
       infoMessageBox('Successfully set crontab file!', 'Information');
       location.reload();
     }).fail(function(response) {
@@ -95,7 +158,7 @@ function getCrontab() {
   messageBox(
     '<p> Do you want to get the crontab file? <br /> A backup will be created automatically before importing.</p>',
     'Confirm crontab retrieval', null, null, function() {
-      $.get(routes.import_crontab, { 'env_vars': $('#env_vars').val() }, function() {
+    $.post(routes.import_crontab, {}, function() {
         infoMessageBox('Successfully got the crontab file!', 'Information');
         location.reload();
       });
@@ -201,7 +264,7 @@ function duplicateJob(_id) {
 
 function doBackup() {
   messageBox('<p> Do you want to take backup? </p>', 'Confirm backup', null, null, function() {
-    $.get(routes.backup, {}, function() {
+    $.post(routes.backup, {}, function() {
       location.reload();
     });
   });
@@ -209,7 +272,7 @@ function doBackup() {
 
 function delete_backup(db_name) {
   messageBox('<p> Do you want to delete this backup? </p>', 'Confirm delete', null, null, function() {
-    $.get(routes.delete_backup, {db: db_name}, function() {
+    $.post(routes.delete_backup, { db: db_name }, function() {
       location = routes.root;
     });
   });
@@ -217,7 +280,7 @@ function delete_backup(db_name) {
 
 function restore_backup(db_name) {
   messageBox('<p> Do you want to restore this backup? </p>', 'Confirm restore', null, null, function() {
-    $.get(routes.restore_backup, {db: db_name}, function() {
+    $.post(routes.restore_backup, { db: db_name }, function() {
       location = routes.root;
     });
   });

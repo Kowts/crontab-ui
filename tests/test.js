@@ -14,6 +14,7 @@ process.env.CRON_DB_PATH = testDbPath;
 process.env.CRON_PATH = testDbPath;
 process.env.PORT = '0';
 process.env.HOST = '127.0.0.1';
+process.env.NODE_ENV = 'test';
 
 const app = require('../app');
 
@@ -82,7 +83,7 @@ describe('Crontab UI', () => {
 
   describe('GET /backup', () => {
     it('should create a backup', async () => {
-      const res = await request(app).get('/backup');
+      const res = await request(app).post('/backup');
       expect(res.status).toBe(200);
     });
   });
@@ -264,7 +265,7 @@ describe('Crontab UI', () => {
       await new Promise((r) => setTimeout(r, 1100));
       const backupsBefore = fs.readdirSync(testDbPath)
         .filter((f) => f.startsWith('backup'));
-      await request(app).get('/import_crontab');
+      await request(app).post('/import_crontab');
       const backupsAfter = fs.readdirSync(testDbPath)
         .filter((f) => f.startsWith('backup'));
       expect(backupsAfter.length).toBe(backupsBefore.length + 1);

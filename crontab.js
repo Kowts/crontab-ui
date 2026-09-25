@@ -87,25 +87,25 @@ exports.log_folder = logFolder;
 exports.env_file = envFile;
 exports.crontab_db_file = crontabDbFile;
 
-exports.create_new = (name, command, schedule, logging, mailing) => {
+exports.create_new = (name, command, schedule, logging, mailing, callback = () => {}) => {
   const tab = buildCrontab(name, command, schedule, false, logging, mailing);
   tab.created = Date.now();
   tab.saved = false;
-  db.insert(tab);
+  db.insert(tab, callback);
 };
 
-exports.update = (data) => {
+exports.update = (data, callback = () => {}) => {
   const tab = buildCrontab(data.name, data.command, data.schedule, null, data.logging, data.mailing);
   tab.saved = false;
-  db.update({ _id: data._id }, tab);
+  db.update({ _id: data._id }, tab, callback);
 };
 
-exports.status = (_id, stopped) => {
-  db.update({ _id }, { $set: { stopped, saved: false } });
+exports.status = (_id, stopped, callback = () => {}) => {
+  db.update({ _id }, { $set: { stopped, saved: false } }, callback);
 };
 
-exports.remove = (_id) => {
-  db.remove({ _id }, {});
+exports.remove = (_id, callback = () => {}) => {
+  db.remove({ _id }, {}, callback);
 };
 
 exports.crontabs = (callback) => {
@@ -207,12 +207,24 @@ exports.get_backup_names = () => {
 
 exports.backup = (callback) => {
   const dest = path.join(dbFolder, `backup ${new Date().toString().replace('+', ' ')}.db`);
-  fs.copyFile(crontabDbFile, dest, (err) => {
-    if (err) {
-      console.error(err);
-      return callback(err);
-    }
-    callback();
+  const copyDatabase = () => fs.mkdir(dbFolder, { recursive: true }, (mkdirErr) => {
+    if (mkdirErr) return callback(mkdirErr);
+    return fs.writeFile(
+      dest,
+      db.getAllData().map((document) => JSON.stringify(document)).join('\n'),
+      (err) => {
+        if (err) {
+          console.error(err);
+          return callback(err);
+        }
+        return callback();
+      }
+    );
+  });
+
+  db.compactDatafile((err) => {
+    if (err) return callback(err);
+    return copyDatabase();
   });
 };
 

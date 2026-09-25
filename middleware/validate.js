@@ -8,20 +8,24 @@ function sanitizeFilename(name) {
 }
 
 function validateDbParam(req, res, next) {
-  if (req.query.db) {
-    const sanitized = sanitizeFilename(req.query.db);
-    if (sanitized !== req.query.db) {
+  const db = req.query.db || req.body.db;
+  if (db) {
+    const sanitized = sanitizeFilename(db);
+    if (sanitized !== db) {
       return res.status(400).json({ message: 'Invalid db parameter' });
     }
+    req.dbName = sanitized;
   }
   next();
 }
 
 function validateIdParam(req, res, next) {
-  if (req.query.id) {
-    if (/[^a-zA-Z0-9_-]/.test(req.query.id)) {
+  const id = req.query.id || req.body._id;
+  if (id) {
+    if (/[^a-zA-Z0-9_-]/.test(id)) {
       return res.status(400).json({ message: 'Invalid id parameter' });
     }
+    req.jobId = id;
   }
   next();
 }

@@ -12,8 +12,10 @@
 <script src="js/dataTables.min.js"></script>
 <script src="js/dataTables.bootstrap5.min.js"></script>
 <script src="script.js"></script>
-<script src="mailconfig.js"></script>
-<script type="text/javascript">
+<script id="crontabs-state" type="application/json"><%- crontabs %></script>
+<script id="routes-state" type="application/json"><%- routes %></script>
+<script id="env-state" type="application/json"><%- env %></script>
+<script type="application/x-disabled">
 	var crontabs = [];
 	var routes = [];
 	document.addEventListener('DOMContentLoaded', function() {
@@ -34,16 +36,16 @@
 		<textarea class="form-control" rows="3" id="env_vars" placeholder="# Please set PATH, MAILTO, HOME... here"></textarea>
 	</div>
 	<div class="mb-3">
-		<a class="btn btn-primary" onclick="newJob();"><i class="bi bi-plus-circle"></i> New</a>
-		<a class="btn btn-info" onclick="doBackup();"><i class="bi bi-download"></i> Backup</a>
+		<button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-circle"></i> New</button>
+		<button type="button" class="btn btn-info" data-action="backup"><i class="bi bi-download"></i> Backup</button>
 		<form id="import_form" enctype="multipart/form-data" action="<%= JSON.parse(routes).import %>" method="post" style="display:none">
-			<input type="file" id="import_file" name="import_file" onchange="$('#import_form').submit()"/>
+			<input type="file" id="import_file" name="import_file"/>
 		</form>
-		<a class="btn btn-warning" onclick="import_db()"><i class="bi bi-box-arrow-in-down"></i> Import</a>
+		<button type="button" class="btn btn-warning" data-action="import-db"><i class="bi bi-box-arrow-in-down"></i> Import</button>
 		<a class="btn btn-warning" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up"></i> Export</a>
-		<a class="btn btn-success" onclick="getCrontab();"><i class="bi bi-arrow-down-circle"></i> Get from crontab</a>
-		<a class="btn btn-success" onclick="setCrontab();"><i class="bi bi-save"></i> Save to crontab</a>
-		<a class="btn btn-outline-secondary" onclick="previewCrontab();"><i class="bi bi-code-square"></i> Preview crontab</a>
+		<button type="button" class="btn btn-success" data-action="import-crontab"><i class="bi bi-arrow-down-circle"></i> Get from crontab</button>
+		<button type="button" class="btn btn-success" data-action="set-crontab"><i class="bi bi-save"></i> Save to crontab</button>
+		<button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square"></i> Preview crontab</button>
 	</div>
 
 	<table class="table table-striped" id="main_table">
@@ -102,14 +104,14 @@
 					<a class="btn btn-sm btn-danger" data-bs-toggle="tooltip" data-bs-placement="left" title="stderr" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
 					<a class="btn btn-sm btn-primary" data-bs-toggle="tooltip" data-bs-placement="left" title="stdout" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
 			<% } %>
-					<a class="btn btn-sm btn-info" onclick="runJob('<%= crontab._id %>')"><i class="bi bi-play-fill"></i> Run now</a>
-					<a class="btn btn-sm btn-primary" onclick="editJob('<%= crontab._id %>')"><i class="bi bi-pencil-square"></i> Edit</a>
-					<a class="btn btn-sm btn-secondary" onclick="stopJob('<%= crontab._id %>')"><i class="bi bi-stop-fill"></i> Disable</a>
+					<button type="button" class="btn btn-sm btn-info" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Run now</button>
+					<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil-square"></i> Edit</button>
+					<button type="button" class="btn btn-sm btn-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-stop-fill"></i> Disable</button>
 		<% } else { %>
-					<a class="btn btn-sm btn-info" onclick="startJob('<%= crontab._id %>')"><i class="bi bi-play-fill"></i> Enable</a>
+					<button type="button" class="btn btn-sm btn-info" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Enable</button>
 		<% } %>
-					<a class="btn btn-sm btn-warning" onclick="duplicateJob('<%= crontab._id %>')"><i class="bi bi-copy"></i></a>
-					<a class="btn btn-sm btn-danger" onclick="deleteJob('<%= crontab._id %>')"><i class="bi bi-trash"></i></a>
+					<button type="button" class="btn btn-sm btn-warning" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i></button>
+					<button type="button" class="btn btn-sm btn-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i></button>
 				</td>
 			</tr>
 	<% }); %>
