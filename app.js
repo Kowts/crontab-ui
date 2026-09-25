@@ -110,6 +110,18 @@ app.get(routes.root, (req, res) => {
 });
 
 app.post(routes.save, (req, res) => {
+  const { name, command, schedule, logging, mailing } = req.body;
+  if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
+    || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
+    || typeof schedule !== 'string' || schedule.length > 128 || /[\r\n]/.test(schedule)
+    || typeof mailing !== 'object' || mailing === null) {
+    return res.status(400).json({ message: 'Invalid job payload' });
+  }
+  try {
+    if (schedule !== '@reboot') require('cron-parser').CronExpressionParser.parse(schedule);
+  } catch (_error) {
+    return res.status(400).json({ message: 'Invalid cron schedule' });
+  }
   if (req.body._id == -1) { // eslint-disable-line eqeqeq
     crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
@@ -175,11 +187,13 @@ app.get(routes.restore, validateDbParam, (req, res) => {
 });
 
 app.post(routes.delete_backup, validateDbParam, (req, res) => {
+  if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.delete(req.dbName);
   res.end();
 });
 
 app.post(routes.restore_backup, validateDbParam, (req, res) => {
+  if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   crontab.restore(req.dbName);
   res.end();
 });
