@@ -21,6 +21,7 @@ const setupAuth = require('./middleware/auth');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const { validateDbParam, validateIdParam } = require('./middleware/validate');
+const { getProfile } = require('./config/mail-profiles');
 
 dayjs.extend(relativeTime);
 
@@ -122,8 +123,9 @@ app.post(routes.save, (req, res) => {
   }
   try {
     if (schedule !== '@reboot') require('cron-parser').CronExpressionParser.parse(schedule);
+    if (mailing.profileId) getProfile(mailing.profileId);
   } catch (_error) {
-    return res.status(400).json({ message: 'Invalid cron schedule' });
+    return res.status(400).json({ message: 'Invalid cron schedule or mail profile' });
   }
   if (req.body._id == -1) { // eslint-disable-line eqeqeq
     crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, (err) => {

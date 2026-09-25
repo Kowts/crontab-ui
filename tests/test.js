@@ -15,6 +15,13 @@ process.env.CRON_PATH = testDbPath;
 process.env.PORT = '0';
 process.env.HOST = '127.0.0.1';
 process.env.NODE_ENV = 'test';
+process.env.MAIL_PROFILES_JSON = JSON.stringify({
+  operations: {
+    transporter: 'smtps://mailer:password@smtp.example.test',
+    from: 'crontab@example.test',
+    to: 'operations@example.test',
+  },
+});
 
 const app = require('../app');
 
@@ -52,6 +59,27 @@ describe('Crontab UI', () => {
       expect(res.status).toBe(200);
       expect(res.text).toContain('test-job');
       expect(res.text).toContain('echo hello');
+    });
+  });
+
+  describe('Mail profile validation', () => {
+    it('should reject an unknown server-side mail profile', async () => {
+      const res = await request(app).post('/save').send({
+        _id: -1, name: 'invalid-profile', command: 'echo hello',
+        schedule: '* * * * *', logging: false, mailing: { profileId: 'unknown' },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('should accept a configured mail profile without exposing its credentials', async () => {
+      const res = await request(app).post('/save').send({
+        _id: -1, name: 'valid-profile', command: 'echo hello',
+        schedule: '* * * * *', logging: false, mailing: { profileId: 'operations' },
+      });
+      expect(res.status).toBe(200);
+      const page = await request(app).get('/');
+      expect(page.text).toContain('"profileId":"operations"');
+      expect(page.text).not.toContain('mailer:password');
     });
   });
 
