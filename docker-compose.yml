@@ -4,8 +4,21 @@ services:
     image: alseambusher/crontab-ui
     ports:
       - "8000:8000"
+    environment:
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?Set BASIC_AUTH_USER in the deployment environment}
+      BASIC_AUTH_PWD: ${BASIC_AUTH_PWD:?Set BASIC_AUTH_PWD in the deployment environment}
     volumes:
       - crontab-data:/crontab-ui/crontabs
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s

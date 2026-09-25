@@ -64,6 +64,10 @@ If you need to autosave your changes to crontab directly:
 
 
 ## Docker
+For production, do not publish this service directly to the Internet. Terminate TLS in a reverse proxy, expose only HTTPS, and set `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` through the deployment secret store. The Compose file refuses to start without both values.
+
+Never mount the host's crontab directory into this container: doing so gives the web application control over host scheduling. Use the managed `crontab-data` volume instead.
+
 You can use crontab-ui with docker. You can use the prebuilt images in the [dockerhub](https://hub.docker.com/r/alseambusher/crontab-ui/tags)
 ```bash
 docker run -d -p 8000:8000 alseambusher/crontab-ui
@@ -88,11 +92,7 @@ mkdir -p crontabs/logs
 docker run --mount type=bind,source="$(pwd)"/crontabs/,target=/crontab-ui/crontabs/ -d -p 8000:8000 alseambusher/crontab-ui
 ```
 
-If you are looking to modify the host's crontab, you would have to mount the crontab folder of your host to that of the container. 
-```bash
-# On Ubuntu, it can look something like this and /etc/cron.d/root is used
-docker run -d -p 8000:8000 -v /etc/cron.d:/etc/crontabs alseambusher/crontab-ui
-```
+Host crontab mounts are intentionally unsupported because they defeat container isolation.
 
     
 ## Resources
