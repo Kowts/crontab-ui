@@ -20,7 +20,12 @@ const { base_url: baseUrl, routes, relative: routesRelative } = require('./route
 const setupAuth = require('./middleware/auth');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
-const { validateDbParam, validateIdParam } = require('./middleware/validate');
+const {
+  validateDbParam,
+  validateIdParam,
+  validateEnvironmentPayload,
+  validateImportMetadata,
+} = require('./middleware/validate');
 const { getProfile } = require('./config/mail-profiles');
 
 dayjs.extend(relativeTime);
@@ -140,35 +145,35 @@ app.post(routes.save, (req, res) => {
   }
 });
 
-app.post(routes.stop, (req, res) => {
+app.post(routes.stop, validateIdParam, (req, res) => {
   crontab.status(req.body._id, true, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to stop job' });
     return res.end();
   });
 });
 
-app.post(routes.start, (req, res) => {
+app.post(routes.start, validateIdParam, (req, res) => {
   crontab.status(req.body._id, false, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to start job' });
     return res.end();
   });
 });
 
-app.post(routes.remove, (req, res) => {
+app.post(routes.remove, validateIdParam, (req, res) => {
   crontab.remove(req.body._id, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to remove job' });
     return res.end();
   });
 });
 
-app.post(routes.run, (req, res) => {
+app.post(routes.run, validateIdParam, (req, res) => {
   crontab.runjob(req.body._id, (err, result) => {
     if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
     return res.status(202).json(result);
   });
 });
 
-app.post(routes.crontab, (req, res, next) => {
+app.post(routes.crontab, validateEnvironmentPayload, (req, res, next) => {
   crontab.set_crontab(req.body.env_vars, (err) => {
     if (err) next(err);
     else res.end();
@@ -221,8 +226,12 @@ app.post(routes.import, (req, res, next) => {
   const temporaryFile = path.join(crontab.db_folder, `.import-${crypto.randomUUID()}.db`);
   let uploaded = false;
   req.pipe(req.busboy);
-  req.busboy.on('file', (_fieldname, file) => {
+  req.busboy.on('file', (fieldName, file, filename) => {
     if (uploaded) return file.resume();
+    if (!validateImportMetadata(fieldName, filename)) {
+      file.resume();
+      return res.status(400).json({ message: 'A single .db import file is required' });
+    }
     uploaded = true;
     const output = fs.createWriteStream(temporaryFile, { flags: 'wx' });
     file.pipe(output);
@@ -236,6 +245,7 @@ app.post(routes.import, (req, res, next) => {
   req.busboy.on('finish', () => {
     if (!uploaded && !res.headersSent) res.status(400).json({ message: 'A database file is required' });
   });
+  req.busboy.on('error', next);
 });
 
 app.post(routes.import_crontab, (req, res, next) => {

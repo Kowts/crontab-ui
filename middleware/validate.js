@@ -30,4 +30,24 @@ function validateIdParam(req, res, next) {
   next();
 }
 
-module.exports = { validateDbParam, validateIdParam };
+function validateEnvironmentPayload(req, res, next) {
+  const value = req.body.env_vars;
+  if (typeof value !== 'string' || value.length > 8192 || value.includes('\0')) {
+    return res.status(400).json({ message: 'Invalid environment variables payload' });
+  }
+  return next();
+}
+
+function validateImportMetadata(fieldName, filename) {
+  return fieldName === 'import_file'
+    && typeof filename === 'string'
+    && filename.toLowerCase().endsWith('.db')
+    && filename.length <= 255;
+}
+
+module.exports = {
+  validateDbParam,
+  validateIdParam,
+  validateEnvironmentPayload,
+  validateImportMetadata,
+};

@@ -204,6 +204,16 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/logger?id=abc123_test-id');
       expect(res.status).toBe(200);
     });
+
+    it('should reject an invalid job id in a mutating route', async () => {
+      const res = await request(app).post('/runjob').send({ _id: '../bad' });
+      expect(res.status).toBe(400);
+    });
+
+    it('should reject an environment payload containing a NUL byte', async () => {
+      const res = await request(app).post('/crontab').send({ env_vars: 'PATH=/bin\0BAD=1' });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('POST /remove', () => {
@@ -309,7 +319,7 @@ describe('Crontab UI', () => {
       const dbContent = fs.readFileSync(path.join(testDbPath, 'crontab.db'));
       await request(app)
         .post('/import')
-        .attach('file', dbContent, 'crontab.db');
+        .attach('import_file', dbContent, 'crontab.db');
       const backupsAfter = fs.readdirSync(testDbPath)
         .filter((f) => f.startsWith('backup'));
       expect(backupsAfter.length).toBe(backupsBefore.length + 1);
