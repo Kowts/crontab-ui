@@ -228,7 +228,8 @@ app.post(routes.import, (req, res, next) => {
   req.pipe(req.busboy);
   req.busboy.on('file', (fieldName, file, filename) => {
     if (uploaded) return file.resume();
-    if (!validateImportMetadata(fieldName, filename)) {
+    const uploadedFilename = typeof filename === 'object' ? filename.filename : filename;
+    if (!validateImportMetadata(fieldName, uploadedFilename)) {
       file.resume();
       return res.status(400).json({ message: 'A single .db import file is required' });
     }
