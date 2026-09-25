@@ -41,6 +41,27 @@ function initPage() {
 
 document.addEventListener('DOMContentLoaded', initPage);
 
+document.addEventListener('DOMContentLoaded', function() {
+  var command = document.getElementById('job-command');
+  if (command) command.addEventListener('input', function() {
+    job_command = command.value;
+    job_string();
+  });
+  document.querySelectorAll('[data-schedule]').forEach(function(button) {
+    button.addEventListener('click', function() {
+      schedule = button.dataset.schedule;
+      job_string();
+    });
+  });
+  var setScheduleButton = document.getElementById('set-schedule');
+  if (setScheduleButton) setScheduleButton.addEventListener('click', set_schedule);
+  document.querySelectorAll('.schedule-part').forEach(function(input) {
+    input.addEventListener('focus', function() { input.select(); });
+  });
+  var copyButton = document.getElementById('copy-crontab');
+  if (copyButton) copyButton.addEventListener('click', copyCrontab);
+});
+
 document.addEventListener('click', function(event) {
   var target = event.target.closest('[data-action]');
   if (!target) return;

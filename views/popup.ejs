@@ -10,17 +10,17 @@
 	<label class="form-label">Name (Optional)</label>
 	<input type='text' class='form-control' id='job-name'/><br />
 	<label class="form-label">Command</label>
-	<textarea class='form-control' id='job-command' rows='3' oninput="job_command = $(this).val(); job_string();"></textarea><br />
+	<textarea class='form-control' id='job-command' rows='3'></textarea><br />
 	<label class="form-label">Quick Schedule</label><br />
 	<div class="d-flex flex-wrap gap-2 mb-3">
-		<a class="btn btn-primary btn-sm" onclick="schedule = '* * * * *'; job_string();">Every Minute</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '*/5 * * * *'; job_string();">Every 5 Min</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@hourly'; job_string();">Hourly</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@daily'; job_string();">Daily</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@weekly'; job_string();">Weekly</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@monthly'; job_string();">Monthly</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@yearly'; job_string();">Yearly</a>
-		<a class="btn btn-primary btn-sm" onclick="schedule = '@reboot'; job_string();">Startup</a>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="* * * * *">Every Minute</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="*/5 * * * *">Every 5 Min</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@hourly">Hourly</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@daily">Daily</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@weekly">Weekly</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@monthly">Monthly</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@yearly">Yearly</button>
+		<button type="button" class="btn btn-primary btn-sm" data-schedule="@reboot">Startup</button>
 	</div>
 
 	<div class="row">
@@ -31,12 +31,12 @@
 		<div class="col-md-2">Week</div>
 	</div>
 	<div class="row">
-		<div class="col-md-2"><input type="text" class="form-control" id="job-minute" value="*" onclick="this.select();"/></div>
-		<div class="col-md-2"><input type="text" class="form-control" id="job-hour" value="*" onclick="this.select();"/></div>
-		<div class="col-md-2"><input type="text" class="form-control" id="job-day" value="*" onclick="this.select();"/></div>
-		<div class="col-md-2"><input type="text" class="form-control" id="job-month" value="*" onclick="this.select();"/></div>
-		<div class="col-md-2"><input type="text" class="form-control" id="job-week" value="*" onclick="this.select();"/></div>
-		<div class="col-md-2"><a class="btn btn-primary btn-sm" onclick="set_schedule();">Set</a></div>
+		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-minute" value="*"/></div>
+		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-hour" value="*"/></div>
+		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-day" value="*"/></div>
+		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-month" value="*"/></div>
+		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-week" value="*"/></div>
+		<div class="col-md-2"><button type="button" class="btn btn-primary btn-sm" id="set-schedule">Set</button></div>
 	</div>
 
 	<br />
@@ -103,7 +103,7 @@
         <pre id="preview-crontab-content" class="bg-dark text-light p-3 rounded" style="min-height:200px;white-space:pre-wrap;word-break:break-all;font-size:0.875rem;"></pre>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" onclick="copyCrontab()"><i class="bi bi-clipboard"></i> Copy</button>
+        <button type="button" class="btn btn-outline-secondary" id="copy-crontab"><i class="bi bi-clipboard"></i> Copy</button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
