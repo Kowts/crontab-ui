@@ -333,6 +333,24 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('id=\'job-command\'');
     });
   });
+
+  describe('Backup recovery', () => {
+    it('should restore a persisted job from a backup', async () => {
+      await request(app).post('/save').send({
+        _id: -1, name: 'recovery-job', command: 'echo recover',
+        schedule: '* * * * *', logging: false, mailing: {},
+      });
+      const backupResponse = await request(app).post('/backup');
+      expect(backupResponse.status).toBe(200);
+      const backup = fs.readdirSync(testDbPath)
+        .filter((file) => file.startsWith('backup-')).sort().at(-1);
+      expect(backup).toBeTruthy();
+      const restored = await request(app).post(`/restore_backup?db=${encodeURIComponent(backup)}`);
+      expect(restored.status).toBe(200);
+      const page = await request(app).get('/');
+      expect(page.text).toContain('recovery-job');
+    });
+  });
 });
 
 describe('Routes module', () => {

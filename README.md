@@ -67,6 +67,7 @@ If you need to autosave your changes to crontab directly:
 - COMMAND_MAX_BUFFER
 - LOG_RETENTION_DAYS
 - BACKUP_RETENTION_COUNT
+- BACKUP_RETENTION_DAYS
 
 ## Segurança e operação
 
@@ -80,7 +81,7 @@ O processo deve executar com o menor privilégio possível. Não monte o crontab
 
 ### Retenção e auditoria
 
-Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado e código de saída. Configure `LOG_RETENTION_DAYS` e `BACKUP_RETENTION_COUNT` para controlar a retenção. Confirme periodicamente que a retenção corresponde às obrigações operacionais e legais da organização.
+Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado e código de saída. Configure `LOG_RETENTION_DAYS`, `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS` para controlar a retenção. Falhas de limpeza são registadas na auditoria; monitorize esse ficheiro. Confirme periodicamente que a retenção corresponde às obrigações operacionais e legais da organização.
 
 ### Recuperação
 

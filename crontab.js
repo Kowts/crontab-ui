@@ -23,6 +23,7 @@ const commandTimeoutMs = Number(process.env.COMMAND_TIMEOUT_MS || 300000);
 const commandMaxBuffer = Number(process.env.COMMAND_MAX_BUFFER || 1024 * 1024);
 const logRetentionDays = Number(process.env.LOG_RETENTION_DAYS || 30);
 const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
+const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
 
 let cronPath = '/tmp';
 let databaseOperationActive = false;
@@ -151,12 +152,26 @@ function audit(event) {
 
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
-  for (const file of fs.readdirSync(logFolder)) {
-    const fullPath = path.join(logFolder, file);
-    if (file !== path.basename(auditFile) && fs.statSync(fullPath).mtimeMs < cutoff) fs.unlink(fullPath, () => {});
+  try {
+    for (const file of fs.readdirSync(logFolder)) {
+      const fullPath = path.join(logFolder, file);
+      if (file !== path.basename(auditFile) && fs.statSync(fullPath).mtimeMs < cutoff) fs.unlinkSync(fullPath);
+    }
+  } catch (error) {
+    audit({ type: 'retention', status: 'failed', scope: 'logs', error: error.message });
   }
-  const oldBackups = exports.get_backup_names().slice(backupRetentionCount);
-  for (const backup of oldBackups) fs.unlink(path.join(dbFolder, backup), () => {});
+
+  try {
+    const backupCutoff = Date.now() - (backupRetentionDays * 24 * 60 * 60 * 1000);
+    const backups = exports.get_backup_names();
+    const expired = backups.filter((backup, index) => {
+      const ageExpired = fs.statSync(path.join(dbFolder, backup)).mtimeMs < backupCutoff;
+      return index >= backupRetentionCount || ageExpired;
+    });
+    for (const backup of expired) fs.unlinkSync(path.join(dbFolder, backup));
+  } catch (error) {
+    audit({ type: 'retention', status: 'failed', scope: 'backups', error: error.message });
+  }
 }
 
 exports.runjob = (_id, callback = () => {}) => {
