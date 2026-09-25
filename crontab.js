@@ -206,7 +206,8 @@ exports.get_backup_names = () => {
 };
 
 exports.backup = (callback) => {
-  const dest = path.join(dbFolder, `backup ${new Date().toString().replace('+', ' ')}.db`);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = path.join(dbFolder, `backup-${timestamp}.db`);
   const copyDatabase = () => fs.mkdir(dbFolder, { recursive: true }, (mkdirErr) => {
     if (mkdirErr) return callback(mkdirErr);
     return fs.writeFile(
