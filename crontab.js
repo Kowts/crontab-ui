@@ -289,14 +289,40 @@ function validateDatabaseFile(fileName, callback) {
 }
 
 exports.replace_database = (temporaryFile, callback) => withDatabaseLock((done) => {
-  validateDatabaseFile(temporaryFile, (validationError) => {
-    if (validationError) return done(validationError);
-    return exports.backup((backupError) => {
-      if (backupError) return done(backupError);
-      return fs.rename(temporaryFile, crontabDbFile, (renameError) => {
-        if (renameError) return done(renameError);
-        return db.loadDatabase((loadError) => done(loadError));
+  const fail = (error) => fs.unlink(temporaryFile, () => done(error));
+  const loadReplacement = (rollbackFile) => db.loadDatabase((loadError) => {
+    if (!loadError) {
+      if (rollbackFile) fs.unlink(rollbackFile, () => {});
+      return done();
+    }
+    if (!rollbackFile) return fail(loadError);
+    return fs.rename(rollbackFile, crontabDbFile, () => db.loadDatabase(() => fail(loadError)));
+  });
+
+  const replaceFile = () => {
+    if (process.platform !== 'win32') {
+      return fs.rename(temporaryFile, crontabDbFile, (error) => {
+        if (error) return fail(error);
+        return loadReplacement();
       });
+    }
+
+    const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
+    return fs.rename(crontabDbFile, rollbackFile, (moveError) => {
+      if (moveError && moveError.code !== 'ENOENT') return fail(moveError);
+      return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
+        if (!replaceError) return loadReplacement(moveError ? null : rollbackFile);
+        if (moveError) return fail(replaceError);
+        return fs.rename(rollbackFile, crontabDbFile, () => fail(replaceError));
+      });
+    });
+  };
+
+  validateDatabaseFile(temporaryFile, (validationError) => {
+    if (validationError) return fail(validationError);
+    return exports.backup((backupError) => {
+      if (backupError) return fail(backupError);
+      return replaceFile();
     });
   });
 }, callback);
