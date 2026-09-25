@@ -15,7 +15,7 @@
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
 <script id="env-state" type="application/json"><%- env %></script>
-<script type="application/x-disabled">
+<!-- Legacy bootstrap moved to public/js/script.js.
 	var crontabs = [];
 	var routes = [];
 	document.addEventListener('DOMContentLoaded', function() {
@@ -25,7 +25,7 @@
 		routes = JSON.parse('<%- routes %>');
 		$("#env_vars").val(`<%- env  %>`);
 	});
-</script>
+-->
 </head>
 <body>
 <%- include('navbar.ejs') -%>
