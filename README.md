@@ -17,7 +17,7 @@ Editing the plain text crontab is error prone for managing jobs, e.g., adding jo
 3. Backup your crontabs.
 4. Export crontab and deploy on other machines without much hassle.
 5. Error log support.
-6. Mailing and hooks support.
+6. Optional server-managed email notifications.
 
 Read [this](https://lifepluslinux.blogspot.com/2015/06/crontab-ui-easy-and-safe-way-to-manage.html) to see more details.
 
@@ -61,6 +61,32 @@ If you need to autosave your changes to crontab directly:
 - BASIC_AUTH_USER, BASIC_AUTH_PWD
 - SSL_CERT, SSL_KEY 
 - ENABLE_AUTOSAVE
+- CSRF_SECRET
+- MAIL_PROFILES_JSON
+- COMMAND_TIMEOUT_MS
+- COMMAND_MAX_BUFFER
+- LOG_RETENTION_DAYS
+- BACKUP_RETENTION_COUNT
+
+## Segurança e operação
+
+Copie `.env.example` para `.env` e configure os valores através do cofre de segredos da plataforma. Nunca coloque credenciais SMTP, chaves TLS ou palavras-passe no repositório, na base de tarefas ou no browser.
+
+Quando `HOST` não é loopback, `BASIC_AUTH_USER` e `BASIC_AUTH_PWD` são obrigatórios. Para produção, coloque a aplicação atrás de um reverse proxy com TLS e exponha apenas HTTPS. Defina um `CSRF_SECRET` longo e aleatório para manter os tokens válidos após reinícios controlados.
+
+Os perfis SMTP são definidos exclusivamente em `MAIL_PROFILES_JSON`. Cada perfil tem `transporter`, `from` e `to`; as tarefas guardam apenas uma referência de perfil, nunca a credencial. A configuração de correio é responsabilidade do administrador do serviço.
+
+O processo deve executar com o menor privilégio possível. Não monte o crontab do anfitrião num contentor e não conceda acesso ao serviço a utilizadores que não possam criar comandos agendados. A execução de uma tarefa é equivalente à execução de um comando pelo utilizador do serviço.
+
+### Retenção e auditoria
+
+Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado e código de saída. Configure `LOG_RETENTION_DAYS` e `BACKUP_RETENTION_COUNT` para controlar a retenção. Confirme periodicamente que a retenção corresponde às obrigações operacionais e legais da organização.
+
+### Recuperação
+
+Antes de uma importação ou restauro é criada uma cópia de segurança. Para recuperar, abra um backup na interface e use **Restore**. A aplicação valida o ficheiro candidato antes de substituir a base activa e impede operações concorrentes. Teste regularmente a recuperação numa cópia não produtiva.
+
+Hooks arbitrários não são suportados: foram removidos da interface para evitar execução adicional não auditada. Use uma tarefa explícita e revista para qualquer pós-processamento.
 
 
 ## Docker
