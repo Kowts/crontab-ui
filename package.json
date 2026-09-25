@@ -4,7 +4,7 @@
   "description": "Easy and safe way to manage your crontab file",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
+    "start": "node bootstrap.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint ."

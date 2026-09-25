@@ -270,21 +270,16 @@ app.get(routes.stdout, validateIdParam, (req, res) => {
 // error handler
 app.use(errorHandler);
 
-process.on('SIGINT', () => {
-  console.log('Exiting crontab-ui');
-  process.exit();
-});
+function createApp() {
+  return app;
+}
 
-process.on('SIGTERM', () => {
-  console.log('Exiting crontab-ui');
-  process.exit();
-});
+function startServer(application = createApp()) {
+  const server = startHttpsServer
+    ? https.createServer(credentials, application)
+    : http.createServer(application);
 
-const server = startHttpsServer
-  ? https.createServer(credentials, app)
-  : http.createServer(app);
-
-server.listen(app.get('port'), app.get('host'), () => {
+  server.listen(application.get('port'), application.get('host'), () => {
   console.log('Node version:', process.versions.node);
 
   fs.access(crontab.db_folder, fs.constants.W_OK, (err) => {
@@ -318,8 +313,12 @@ server.listen(app.get('port'), app.get('host'), () => {
     crontab.reload_db();
   }
 
-  const protocol = startHttpsServer ? 'https' : 'http';
-  console.log(`Crontab UI (${packageJson.version}) is running at ${protocol}://${app.get('host')}:${app.get('port')}${baseUrl}`);
-});
+    const protocol = startHttpsServer ? 'https' : 'http';
+    console.log(`Crontab UI (${packageJson.version}) is running at ${protocol}://${application.get('host')}:${application.get('port')}${baseUrl}`);
+  });
+  return server;
+}
 
 module.exports = app;
+module.exports.createApp = createApp;
+module.exports.startServer = startServer;
