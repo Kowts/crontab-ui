@@ -4,6 +4,7 @@ const Datastore = require('@seald-io/nedb');
 const path = require('path');
 const { exec } = require('child_process');
 const fs = require('fs');
+const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 
@@ -19,6 +20,7 @@ const crontabDbFile = path.join(dbFolder, 'crontab.db');
 const db = new Datastore({ filename: crontabDbFile, autocompactionInterval: 60000 });
 
 let cronPath = '/tmp';
+let databaseOperationActive = false;
 if (process.env.CRON_PATH !== undefined) {
   console.log(`Path to crond files set using env variables ${process.env.CRON_PATH}`);
   cronPath = process.env.CRON_PATH;
@@ -229,10 +231,50 @@ exports.backup = (callback) => {
   });
 };
 
-exports.restore = (dbName) => {
-  fs.createReadStream(path.join(dbFolder, dbName))
-    .pipe(fs.createWriteStream(crontabDbFile));
-  db.loadDatabase();
+function withDatabaseLock(operation, callback) {
+  if (databaseOperationActive) {
+    const error = new Error('Another database operation is already in progress');
+    error.statusCode = 409;
+    return callback(error);
+  }
+  databaseOperationActive = true;
+  return operation((...args) => {
+    databaseOperationActive = false;
+    callback(...args);
+  });
+}
+
+function validateDatabaseFile(fileName, callback) {
+  const candidate = new Datastore({ filename: fileName });
+  candidate.loadDatabase((err) => {
+    if (err) return callback(err);
+    return candidate.find({}).exec((findErr) => callback(findErr));
+  });
+}
+
+exports.replace_database = (temporaryFile, callback) => withDatabaseLock((done) => {
+  validateDatabaseFile(temporaryFile, (validationError) => {
+    if (validationError) return done(validationError);
+    return exports.backup((backupError) => {
+      if (backupError) return done(backupError);
+      return fs.rename(temporaryFile, crontabDbFile, (renameError) => {
+        if (renameError) return done(renameError);
+        return db.loadDatabase((loadError) => done(loadError));
+      });
+    });
+  });
+}, callback);
+
+exports.restore = (dbName, callback) => {
+  const source = path.join(dbFolder, dbName);
+  const temporaryFile = path.join(dbFolder, `.restore-${crypto.randomUUID()}.db`);
+  fs.copyFile(source, temporaryFile, (copyError) => {
+    if (copyError) return callback(copyError);
+    return exports.replace_database(temporaryFile, (error) => {
+      if (error) fs.unlink(temporaryFile, () => {});
+      callback(error);
+    });
+  });
 };
 
 exports.reload_db = () => {

@@ -3,6 +3,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const mime = require('mime-types');
@@ -196,8 +197,10 @@ app.post(routes.delete_backup, validateDbParam, (req, res) => {
 
 app.post(routes.restore_backup, validateDbParam, (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
-  crontab.restore(req.dbName);
-  res.end();
+  return crontab.restore(req.dbName, (err) => {
+    if (err) return res.status(err.statusCode || 500).json({ message: 'Unable to restore backup' });
+    return res.end();
+  });
 });
 
 app.get(routes.export, (req, res) => {
@@ -211,17 +214,23 @@ app.get(routes.export, (req, res) => {
 });
 
 app.post(routes.import, (req, res, next) => {
-  crontab.backup((err) => {
-    if (err) return next(err);
-    req.pipe(req.busboy);
-    req.busboy.on('file', (_fieldname, file) => {
-      const fstream = fs.createWriteStream(crontab.crontab_db_file);
-      file.pipe(fstream);
-      fstream.on('close', () => {
-        crontab.reload_db();
-        res.redirect(routes.root);
-      });
-    });
+  const temporaryFile = path.join(crontab.db_folder, `.import-${crypto.randomUUID()}.db`);
+  let uploaded = false;
+  req.pipe(req.busboy);
+  req.busboy.on('file', (_fieldname, file) => {
+    if (uploaded) return file.resume();
+    uploaded = true;
+    const output = fs.createWriteStream(temporaryFile, { flags: 'wx' });
+    file.pipe(output);
+    file.on('limit', () => output.destroy(new Error('Import file exceeds the size limit')));
+    output.on('error', next);
+    output.on('close', () => crontab.replace_database(temporaryFile, (err) => {
+      if (err) return next(err);
+      return res.redirect(routes.root);
+    }));
+  });
+  req.busboy.on('finish', () => {
+    if (!uploaded && !res.headersSent) res.status(400).json({ message: 'A database file is required' });
   });
 });
 
