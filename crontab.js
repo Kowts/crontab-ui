@@ -14,10 +14,15 @@ const dbFolder = process.env.CRON_DB_PATH || path.join(__dirname, 'crontabs');
 console.log(`Cron db path: ${dbFolder}`);
 
 const logFolder = path.join(dbFolder, 'logs');
+const auditFile = path.join(logFolder, 'operations.jsonl');
 const envFile = path.join(dbFolder, 'env.db');
 const crontabDbFile = path.join(dbFolder, 'crontab.db');
 
 const db = new Datastore({ filename: crontabDbFile, autocompactionInterval: 60000 });
+const commandTimeoutMs = Number(process.env.COMMAND_TIMEOUT_MS || 300000);
+const commandMaxBuffer = Number(process.env.COMMAND_MAX_BUFFER || 1024 * 1024);
+const logRetentionDays = Number(process.env.LOG_RETENTION_DAYS || 30);
+const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 
 let cronPath = '/tmp';
 let databaseOperationActive = false;
@@ -86,6 +91,7 @@ function addEnvVars(envVars, command) {
 
 exports.db_folder = dbFolder;
 exports.log_folder = logFolder;
+exports.audit_file = auditFile;
 exports.env_file = envFile;
 exports.crontab_db_file = crontabDbFile;
 
@@ -139,21 +145,35 @@ exports.get_crontab = (_id, callback) => {
   });
 };
 
-exports.runjob = (_id) => {
+function audit(event) {
+  fs.appendFile(auditFile, `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`, () => {});
+}
+
+function applyRetention() {
+  const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
+  for (const file of fs.readdirSync(logFolder)) {
+    const fullPath = path.join(logFolder, file);
+    if (file !== path.basename(auditFile) && fs.statSync(fullPath).mtimeMs < cutoff) fs.unlink(fullPath, () => {});
+  }
+  const oldBackups = exports.get_backup_names().slice(backupRetentionCount);
+  for (const backup of oldBackups) fs.unlink(path.join(dbFolder, backup), () => {});
+}
+
+exports.runjob = (_id, callback = () => {}) => {
   db.find({ _id }).exec((err, docs) => {
-    if (err || !docs.length) return;
+    if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
     const envVars = exports.get_env();
     let cmd = makeCommand(res);
     cmd = addEnvVars(envVars, cmd);
 
-    console.log('Running job');
-    console.log(`ID: ${_id}`);
-    console.log(`Original command: ${res.command}`);
-    console.log(`Executed command: ${cmd}`);
+    const operationId = crypto.randomUUID();
+    audit({ operationId, type: 'runjob', jobId: _id, status: 'started' });
 
-    exec(cmd, (error) => {
-      if (error) console.log(error);
+    exec(cmd, { timeout: commandTimeoutMs, maxBuffer: commandMaxBuffer }, (error, _stdout, _stderr) => {
+      const exitCode = error && typeof error.code === 'number' ? error.code : 0;
+      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode, error: error?.message });
+      callback(error, { operationId, exitCode });
     });
   });
 };
@@ -220,6 +240,7 @@ exports.backup = (callback) => {
           console.error(err);
           return callback(err);
         }
+        applyRetention();
         return callback();
       }
     );

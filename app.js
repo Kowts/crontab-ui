@@ -160,8 +160,10 @@ app.post(routes.remove, (req, res) => {
 });
 
 app.post(routes.run, (req, res) => {
-  crontab.runjob(req.body._id);
-  res.end();
+  crontab.runjob(req.body._id, (err, result) => {
+    if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
+    return res.status(202).json(result);
+  });
 });
 
 app.post(routes.crontab, (req, res, next) => {
