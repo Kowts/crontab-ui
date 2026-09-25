@@ -183,9 +183,6 @@ function editJob(_id) {
       $('#job-month').val(components[3]);
       $('#job-week').val(components[4]);
     }
-    if (job.mailing) {
-      $('#job-mailing').attr('data-json', JSON.stringify(job.mailing));
-    }
     schedule = job.schedule;
     job_command = job.command;
     if (job.logging && job.logging != 'false')
@@ -199,7 +196,7 @@ function editJob(_id) {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var mailing = JSON.parse($('#job-mailing').attr('data-json'));
+    var mailing = job.mailing && job.mailing.profileId ? { profileId: job.mailing.profileId } : {};
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing}, function() {
       location.reload();
@@ -220,7 +217,6 @@ function newJob() {
   getModal('job').show();
   $('#job-name').val('');
   $('#job-command').val('');
-  $('#job-mailing').attr('data-json', '{}');
   $('#job-logging').prop('checked', false);
   job_string();
 
@@ -230,7 +226,7 @@ function newJob() {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var mailing = JSON.parse($('#job-mailing').attr('data-json'));
+    var mailing = {};
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing}, function() {
       location.reload();

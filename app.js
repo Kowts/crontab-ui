@@ -114,7 +114,9 @@ app.post(routes.save, (req, res) => {
   if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
     || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
     || typeof schedule !== 'string' || schedule.length > 128 || /[\r\n]/.test(schedule)
-    || typeof mailing !== 'object' || mailing === null) {
+    || typeof mailing !== 'object' || mailing === null
+    || Object.keys(mailing).some((key) => key !== 'profileId')
+    || (mailing.profileId !== undefined && (typeof mailing.profileId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(mailing.profileId)))) {
     return res.status(400).json({ message: 'Invalid job payload' });
   }
   try {
