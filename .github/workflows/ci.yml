@@ -30,3 +30,26 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Coverage
+        run: npm run test:coverage
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --json > npm-audit.json || true
+
+      - name: Upload dependency audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-node-${{ matrix.node-version }}
+          path: npm-audit.json
+
+      - name: Build container image
+        run: docker build --tag crontab-ui:${{ github.sha }} .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: crontab-ui:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
