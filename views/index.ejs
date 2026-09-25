@@ -121,22 +121,5 @@
 	</table>
 </div>
 <%- include('popup.ejs') -%>
-<script>
-   document.addEventListener('DOMContentLoaded', function() {
-   	$('#main_table').DataTable({
-   		order: [[1, 'asc']],
-   		columns: [
-   			{orderable: false},
-   			null,
-   			null,
-   			null,
-   			{orderable: false},
-   			{orderable: false}
-   		],
-        	stateSave: true,
-        	stateDuration: 0
-  	});
-   });
- </script>
 </body>
 </html>
