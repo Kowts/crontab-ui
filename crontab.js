@@ -126,7 +126,19 @@ exports.get_crontab = (_id, callback) => {
 function audit(event) {
   try {
     rotateLog(auditFile);
-    fs.appendFileSync(auditFile, `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`, { encoding: 'utf8', mode: 0o600 });
+    const entry = `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`;
+    let writeError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        fs.appendFileSync(auditFile, entry, { encoding: 'utf8', mode: 0o600 });
+        return;
+      } catch (error) {
+        writeError = error;
+        if (error.code !== 'EBUSY' || attempt === 2) throw error;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+      }
+    }
+    throw writeError;
   } catch (error) {
     // Audit failures must not make a scheduled job unavailable, but must remain visible.
     console.error('Unable to write audit record:', error.message);
