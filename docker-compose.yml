@@ -20,7 +20,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: ["CMD-SHELL", "curl -f -u \"$$BASIC_AUTH_USER:$$BASIC_AUTH_PWD\" http://localhost:8000/"]
       interval: 30s
       timeout: 5s
       retries: 3
