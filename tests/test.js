@@ -189,7 +189,7 @@ describe('Crontab UI', () => {
     it('should reject path traversal in db param', async () => {
       const res = await request(app).get('/restore?db=../../etc/passwd');
       expect(res.status).toBe(400);
-      expect(res.body.message).toContain('Invalid db parameter');
+      expect(res.body.message).toContain('Invalid backup parameter');
     });
 
     it('should reject invalid characters in id param', async () => {
@@ -198,9 +198,10 @@ describe('Crontab UI', () => {
       expect(res.body.message).toContain('Invalid id parameter');
     });
 
-    it('should allow valid db param', async () => {
+    it('should reject non-backup files in recovery routes', async () => {
       const res = await request(app).get('/restore?db=crontab.db');
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Invalid backup parameter');
     });
 
     it('should allow valid id param', async () => {
@@ -747,6 +748,20 @@ describe('Operational audit trail', () => {
       .filter(Boolean)
       .map((line) => JSON.parse(line));
     expect(records).toEqual(expect.arrayContaining([expect.objectContaining(event)]));
+  });
+});
+
+describe('Transactional backup operations', () => {
+  it('serializes concurrent backup attempts through the database lock', async () => {
+    const backup = () => new Promise((resolve) => crontab.backup((error, name) => resolve({ error, name })));
+    const first = backup();
+    const second = backup();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    const results = [firstResult, secondResult];
+
+    expect(results.filter((result) => !result.error)).toHaveLength(1);
+    expect(results.find((result) => result.error).error.statusCode).toBe(409);
+    expect(results.find((result) => !result.error).name).toMatch(/^backup-.*\.db$/);
   });
 });
 

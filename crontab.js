@@ -271,8 +271,16 @@ exports.set_crontab = (environment, callback) => {
 };
 
 exports.get_backup_names = () => {
+  if (!fs.existsSync(dbFolder)) return [];
   const backups = fs.readdirSync(dbFolder)
-    .filter((file) => file.indexOf('backup') === 0);
+    .filter((file) => /^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.db$/.test(file))
+    .filter((file) => {
+      try {
+        return fs.statSync(path.join(dbFolder, file)).isFile();
+      } catch (_error) {
+        return false;
+      }
+    });
 
   const backupDate = (name) => {
     const t = name.split('backup')[1];
@@ -283,12 +291,34 @@ exports.get_backup_names = () => {
   return backups;
 };
 
-exports.backup = (callback) => {
+function writeAtomicFile(destination, contents, callback) {
+  const temporaryFile = path.join(dbFolder, `.${path.basename(destination)}.${crypto.randomUUID()}.tmp`);
+  fs.open(temporaryFile, 'wx', 0o600, (openError, descriptor) => {
+    if (openError) return callback(openError);
+    return fs.writeFile(descriptor, contents, (writeError) => {
+      if (writeError) {
+        fs.close(descriptor, () => fs.unlink(temporaryFile, () => callback(writeError)));
+        return;
+      }
+      return fs.fsync(descriptor, (syncError) => fs.close(descriptor, (closeError) => {
+        if (syncError || closeError) {
+          return fs.unlink(temporaryFile, () => callback(syncError || closeError));
+        }
+        return fs.rename(temporaryFile, destination, (renameError) => {
+          if (renameError) return fs.unlink(temporaryFile, () => callback(renameError));
+          return callback(null);
+        });
+      }));
+    });
+  });
+}
+
+function backupDatabase(callback) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const dest = path.join(dbFolder, `backup-${timestamp}.db`);
   const copyDatabase = () => fs.mkdir(dbFolder, { recursive: true }, (mkdirErr) => {
     if (mkdirErr) return callback(mkdirErr);
-    return fs.writeFile(
+    return writeAtomicFile(
       dest,
       db.getAllData().map((document) => JSON.stringify(document)).join('\n'),
       (err) => {
@@ -297,7 +327,7 @@ exports.backup = (callback) => {
           return callback(err);
         }
         applyRetention();
-        return callback();
+        return callback(null, path.basename(dest));
       }
     );
   });
@@ -306,7 +336,7 @@ exports.backup = (callback) => {
     if (err) return callback(err);
     return copyDatabase();
   });
-};
+}
 
 function withDatabaseLock(operation, callback) {
   if (databaseOperationActive) {
@@ -320,6 +350,8 @@ function withDatabaseLock(operation, callback) {
     callback(...args);
   });
 }
+
+exports.backup = (callback = () => {}) => withDatabaseLock(backupDatabase, callback);
 
 function validateDatabaseFile(fileName, callback) {
   const candidate = new Datastore({ filename: fileName });
@@ -424,7 +456,7 @@ exports.normalise_database = (temporaryFile, callback) => {
   });
 };
 
-exports.replace_database = (temporaryFile, callback) => withDatabaseLock((done) => {
+function replaceDatabase(temporaryFile, done) {
   const fail = (error) => fs.unlink(temporaryFile, () => done(error));
   const loadReplacement = (rollbackFile) => db.loadDatabase((loadError) => {
     if (!loadError) {
@@ -456,24 +488,43 @@ exports.replace_database = (temporaryFile, callback) => withDatabaseLock((done) 
 
   validateDatabaseFile(temporaryFile, (validationError) => {
     if (validationError) return fail(validationError);
-    return exports.backup((backupError) => {
+    return backupDatabase((backupError) => {
       if (backupError) return fail(backupError);
       return replaceFile();
     });
   });
-}, callback);
+}
 
-exports.restore = (dbName, callback) => {
+exports.replace_database = (temporaryFile, callback) => withDatabaseLock(
+  (done) => replaceDatabase(temporaryFile, done),
+  callback
+);
+
+exports.restore = (dbName, callback = () => {}) => withDatabaseLock((done) => {
+  if (!exports.get_backup_names().includes(dbName)) {
+    const error = new Error('Backup not found');
+    error.statusCode = 404;
+    return done(error);
+  }
   const source = path.join(dbFolder, dbName);
   const temporaryFile = path.join(dbFolder, `.restore-${crypto.randomUUID()}.db`);
   fs.copyFile(source, temporaryFile, (copyError) => {
-    if (copyError) return callback(copyError);
-    return exports.replace_database(temporaryFile, (error) => {
+    if (copyError) return done(copyError);
+    return replaceDatabase(temporaryFile, (error) => {
       if (error) fs.unlink(temporaryFile, () => {});
-      callback(error);
+      done(error);
     });
   });
-};
+}, callback);
+
+exports.delete_backup = (dbName, callback = () => {}) => withDatabaseLock((done) => {
+  if (!exports.get_backup_names().includes(dbName)) {
+    const error = new Error('Backup not found');
+    error.statusCode = 404;
+    return done(error);
+  }
+  return fs.unlink(path.join(dbFolder, dbName), done);
+}, callback);
 
 exports.reload_db = () => {
   db.loadDatabase();

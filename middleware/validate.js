@@ -31,6 +31,15 @@ function validateIdParam(req, res, next) {
   next();
 }
 
+function validateBackupParam(req, res, next) {
+  const db = req.query.db || req.body.db;
+  if (typeof db !== 'string' || !/^backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.db$/.test(db)) {
+    return res.status(400).json({ message: 'Invalid backup parameter' });
+  }
+  req.dbName = db;
+  return next();
+}
+
 function validateEnvironmentPayload(req, res, next) {
   try {
     req.jobEnvironment = parseEnvironment(req.body.env_vars);
@@ -49,6 +58,7 @@ function validateImportMetadata(fieldName, filename) {
 
 module.exports = {
   validateDbParam,
+  validateBackupParam,
   validateIdParam,
   validateEnvironmentPayload,
   validateImportMetadata,

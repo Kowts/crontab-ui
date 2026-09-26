@@ -23,7 +23,7 @@ const { configuredRoles, requireRole, validateRoleAssignments } = require('./mid
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const {
-  validateDbParam,
+  validateBackupParam,
   validateIdParam,
   validateEnvironmentPayload,
   validateImportMetadata,
@@ -280,7 +280,8 @@ app.post(routes.backup, requireRole('admin'), auditOperation('create_backup'), (
   });
 });
 
-app.get(routes.restore, requireRole('viewer'), validateDbParam, (req, res) => {
+app.get(routes.restore, requireRole('viewer'), validateBackupParam, (req, res) => {
+  if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.crontabs(req.dbName, (docs) => {
     res.render('restore', {
       routes: serializeForHtml(routesRelative),
@@ -291,14 +292,14 @@ app.get(routes.restore, requireRole('viewer'), validateDbParam, (req, res) => {
   });
 });
 
-app.post(routes.delete_backup, requireRole('admin'), validateDbParam, auditOperation('delete_backup', (req) => ({ backup: req.dbName })), (req, res) => {
-  if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
-  restore.delete(req.dbName);
-  res.end();
+app.post(routes.delete_backup, requireRole('admin'), validateBackupParam, auditOperation('delete_backup', (req) => ({ backup: req.dbName })), (req, res, next) => {
+  crontab.delete_backup(req.dbName, (err) => {
+    if (err) return next(err);
+    return res.end();
+  });
 });
 
-app.post(routes.restore_backup, requireRole('admin'), validateDbParam, auditOperation('restore_backup', (req) => ({ backup: req.dbName })), (req, res) => {
-  if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
+app.post(routes.restore_backup, requireRole('admin'), validateBackupParam, auditOperation('restore_backup', (req) => ({ backup: req.dbName })), (req, res) => {
   return crontab.restore(req.dbName, (err) => {
     if (err) return res.status(err.statusCode || 500).json({ message: 'Unable to restore backup' });
     return res.end();
