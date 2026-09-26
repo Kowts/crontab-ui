@@ -68,6 +68,30 @@ app.use((req, res, next) => {
   }
   return next();
 });
+app.use((req, res, next) => {
+  req.requestId = crypto.randomUUID();
+  res.setHeader('X-Request-ID', req.requestId);
+  const startedAt = Date.now();
+  res.once('finish', () => {
+    // Authentication and authorization failures occur before route middleware.
+    if ([401, 403].includes(res.statusCode)) {
+      crontab.audit({
+        type: 'http_request',
+        operationId: req.requestId,
+        requestId: req.requestId,
+        operation: 'access_denied',
+        actor: req.auth?.user || null,
+        sourceIp: req.ip,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        outcome: 'denied',
+        durationMs: Date.now() - startedAt,
+      });
+    }
+  });
+  next();
+});
 const authEnabled = setupAuth(app);
 app.locals.authEnabled = authEnabled;
 if (authEnabled) validateRoleAssignments(authenticatedUsers(), configuredRoles());
@@ -128,6 +152,37 @@ app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
 
 // --- Routes ---
 
+function commandFingerprint(command) {
+  return typeof command === 'string'
+    ? crypto.createHash('sha256').update(command).digest('hex')
+    : undefined;
+}
+
+function auditOperation(operation, resource = () => ({})) {
+  return (req, res, next) => {
+    const startedAt = Date.now();
+    res.once('finish', () => {
+      const details = resource(req);
+      crontab.audit({
+        type: 'http_operation',
+        operationId: req.requestId,
+        requestId: req.requestId,
+        operation,
+        actor: req.auth?.user || (app.locals.authEnabled ? null : 'local'),
+        role: req.auth?.user ? configuredRoles()[req.auth.user] || null : null,
+        sourceIp: req.ip,
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        outcome: res.statusCode < 400 ? 'completed' : 'failed',
+        durationMs: Date.now() - startedAt,
+        ...details,
+      });
+    });
+    next();
+  };
+}
+
 app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     docs = docs.filter((job) => canAccessJob(req, job, 'read'));
@@ -141,7 +196,10 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
   });
 });
 
-app.post(routes.save, requireRole('operator'), requireSaveAccess, (req, res) => {
+app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation('save_job', (req) => ({
+  jobId: typeof req.body._id === 'string' ? req.body._id : null,
+  commandSha256: commandFingerprint(req.body.command),
+})), (req, res) => {
   const { name, command, schedule, mailing } = req.body;
   const isCreate = req.body._id === -1;
   const isUpdate = typeof req.body._id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.body._id);
@@ -176,42 +234,46 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, (req, res) => 
   }
 });
 
-app.post(routes.stop, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
+app.post(routes.stop, requireRole('operator'), validateIdParam, requireJobAccess('write'), auditOperation('stop_job', (req) => ({ jobId: req.body._id })), (req, res) => {
   crontab.status(req.body._id, true, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to stop job' });
     return res.end();
   });
 });
 
-app.post(routes.start, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
+app.post(routes.start, requireRole('operator'), validateIdParam, requireJobAccess('write'), auditOperation('start_job', (req) => ({ jobId: req.body._id })), (req, res) => {
   crontab.status(req.body._id, false, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to start job' });
     return res.end();
   });
 });
 
-app.post(routes.remove, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
+app.post(routes.remove, requireRole('operator'), validateIdParam, requireJobAccess('write'), auditOperation('remove_job', (req) => ({ jobId: req.body._id })), (req, res) => {
   crontab.remove(req.body._id, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to remove job' });
     return res.end();
   });
 });
 
-app.post(routes.run, requireRole('executor'), validateIdParam, requireJobAccess('execute'), (req, res) => {
-  crontab.runjob(req.body._id, (err, result) => {
+app.post(routes.run, requireRole('executor'), validateIdParam, requireJobAccess('execute'), auditOperation('request_run_job', (req) => ({ jobId: req.body._id })), (req, res) => {
+  crontab.runjob(req.body._id, {
+    requestId: req.requestId,
+    actor: req.auth?.user || (app.locals.authEnabled ? null : 'local'),
+    sourceIp: req.ip,
+  }, (err, result) => {
     if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
     return res.status(202).json(result);
   });
 });
 
-app.post(routes.crontab, requireRole('admin'), validateEnvironmentPayload, (req, res, next) => {
+app.post(routes.crontab, requireRole('admin'), validateEnvironmentPayload, auditOperation('apply_crontab'), (req, res, next) => {
   crontab.set_crontab(req.jobEnvironment, (err) => {
     if (err) next(err);
     else res.end();
   });
 });
 
-app.post(routes.backup, requireRole('admin'), (req, res, next) => {
+app.post(routes.backup, requireRole('admin'), auditOperation('create_backup'), (req, res, next) => {
   crontab.backup((err) => {
     if (err) next(err);
     else res.end();
@@ -229,13 +291,13 @@ app.get(routes.restore, requireRole('viewer'), validateDbParam, (req, res) => {
   });
 });
 
-app.post(routes.delete_backup, requireRole('admin'), validateDbParam, (req, res) => {
+app.post(routes.delete_backup, requireRole('admin'), validateDbParam, auditOperation('delete_backup', (req) => ({ backup: req.dbName })), (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.delete(req.dbName);
   res.end();
 });
 
-app.post(routes.restore_backup, requireRole('admin'), validateDbParam, (req, res) => {
+app.post(routes.restore_backup, requireRole('admin'), validateDbParam, auditOperation('restore_backup', (req) => ({ backup: req.dbName })), (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   return crontab.restore(req.dbName, (err) => {
     if (err) return res.status(err.statusCode || 500).json({ message: 'Unable to restore backup' });
@@ -253,7 +315,7 @@ app.get(routes.export, requireRole('viewer'), (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-app.post(routes.import, requireRole('admin'), (req, res, next) => {
+app.post(routes.import, requireRole('admin'), auditOperation('import_database'), (req, res, next) => {
   const temporaryFile = path.join(crontab.db_folder, `.import-${crypto.randomUUID()}.db`);
   let uploaded = false;
   req.pipe(req.busboy);
@@ -283,7 +345,7 @@ app.post(routes.import, requireRole('admin'), (req, res, next) => {
   req.busboy.on('error', next);
 });
 
-app.post(routes.import_crontab, requireRole('admin'), (req, res, next) => {
+app.post(routes.import_crontab, requireRole('admin'), auditOperation('import_system_crontab'), (req, res, next) => {
   crontab.backup((err) => {
     if (err) return next(err);
     crontab.import_crontab();

@@ -707,6 +707,49 @@ describe('Job ownership authorization', () => {
   });
 });
 
+describe('Operational audit trail', () => {
+  it('records correlated administrative operations without storing the command', async () => {
+    const command = 'echo audit-secret-command';
+    const response = await request(app).post('/save').send({
+      _id: -1,
+      name: 'audit-job',
+      command,
+      schedule: '* * * * *',
+      logging: false,
+      mailing: {},
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+
+    const events = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const event = events.find((entry) => entry.requestId === response.headers['x-request-id']);
+    expect(event).toMatchObject({
+      type: 'http_operation',
+      operation: 'save_job',
+      outcome: 'completed',
+      status: 200,
+    });
+    expect(event.commandSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(event)).not.toContain(command);
+  });
+
+  it('records lifecycle fields for executions', async () => {
+    const event = { operationId: 'operation-audit-test', type: 'runjob', status: 'completed', exitCode: 0 };
+    crontab.audit(event);
+    const records = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    expect(records).toEqual(expect.arrayContaining([expect.objectContaining(event)]));
+  });
+});
+
 afterAll(() => {
   fs.rmSync(testDbPath, { recursive: true, force: true });
 });

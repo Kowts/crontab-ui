@@ -124,16 +124,31 @@ exports.get_crontab = (_id, callback) => {
 };
 
 function audit(event) {
-  fs.appendFile(auditFile, `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`, () => {});
+  try {
+    rotateLog(auditFile);
+    fs.appendFileSync(auditFile, `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`, { encoding: 'utf8', mode: 0o600 });
+  } catch (error) {
+    // Audit failures must not make a scheduled job unavailable, but must remain visible.
+    console.error('Unable to write audit record:', error.message);
+  }
 }
+
+exports.audit = audit;
 
 function rotateLog(file) {
   if (!fs.existsSync(file) || fs.statSync(file).size < maxLogBytes) return;
+  if (logRotationCount < 1) return;
+  const oldest = `${file}.${logRotationCount}`;
+  if (fs.existsSync(oldest)) fs.unlinkSync(oldest);
   for (let index = logRotationCount - 1; index >= 1; index -= 1) {
     const source = `${file}.${index}`;
     const destination = `${file}.${index + 1}`;
-    if (fs.existsSync(source)) fs.renameSync(source, destination);
+    if (fs.existsSync(source)) {
+      if (fs.existsSync(destination)) fs.unlinkSync(destination);
+      fs.renameSync(source, destination);
+    }
   }
+  if (fs.existsSync(`${file}.1`)) fs.unlinkSync(`${file}.1`);
   fs.renameSync(file, `${file}.1`);
 }
 
@@ -169,7 +184,8 @@ function applyRetention() {
   try {
     for (const file of fs.readdirSync(logFolder)) {
       const fullPath = path.join(logFolder, file);
-      if (file !== path.basename(auditFile) && fs.statSync(fullPath).mtimeMs < cutoff) fs.unlinkSync(fullPath);
+      const stat = fs.lstatSync(fullPath);
+      if (file !== path.basename(auditFile) && stat.isFile() && stat.mtimeMs < cutoff) fs.unlinkSync(fullPath);
     }
   } catch (error) {
     audit({ type: 'retention', status: 'failed', scope: 'logs', error: error.message });
@@ -188,7 +204,11 @@ function applyRetention() {
   }
 }
 
-exports.runjob = (_id, callback = () => {}) => {
+exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
+  if (typeof auditContext === 'function') {
+    callback = auditContext;
+    auditContext = {};
+  }
   db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
@@ -201,13 +221,13 @@ exports.runjob = (_id, callback = () => {}) => {
     const cmd = res.command;
 
     const operationId = crypto.randomUUID();
-    audit({ operationId, type: 'runjob', jobId: _id, status: 'started' });
+    audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: { ...process.env, ...jobEnvironment } }, (error, result) => {
       const files = recordOutput(res, result);
       sendMail(res, files);
       applyRetention();
-      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message });
+      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });

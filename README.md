@@ -105,7 +105,7 @@ O processo deve executar com o menor privilégio possível. Não monte o crontab
 
 Cada execução, manual ou agendada, usa o mesmo executor, com `COMMAND_TIMEOUT_MS`, limite conjunto de output `COMMAND_MAX_BUFFER` e encerramento SIGTERM/SIGKILL configurável por `COMMAND_KILL_GRACE_MS`. Em Linux o executor cria um grupo de processos e termina esse grupo; em Windows a terminação da árvore depende do sistema operativo. Para isolamento forte de CPU, memória e PIDs, execute a aplicação num contentor com limites ou através de cgroups/systemd no anfitrião.
 
-Os logs de tarefas são limitados por `LOG_MAX_BYTES`, rodam até `LOG_ROTATION_COUNT` ficheiros e continuam sujeitos a `LOG_RETENTION_DAYS`. Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado, código/sinal de saída e duração. Configure também `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS`. Falhas de limpeza são registadas na auditoria; monitorize esse ficheiro.
+Os logs de tarefas são limitados por `LOG_MAX_BYTES`, rodam até `LOG_ROTATION_COUNT` ficheiros e continuam sujeitos a `LOG_RETENTION_DAYS`. O mesmo limite, rotação e retenção aplicam-se ao diário de auditoria `crontabs/logs/operations.jsonl`. Cada operação administrativa, recusa de autenticação/autorização e execução é registada em JSON Lines com ID de correlação, actor/papel quando aplicável, IP de origem, resultado e duração; comandos são representados apenas pelo seu hash SHA-256. Configure também `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS`. Falhas de limpeza são registadas na auditoria; monitorize e exporte esse ficheiro para armazenamento centralizado com acesso restrito.
 
 ### Recuperação
 
