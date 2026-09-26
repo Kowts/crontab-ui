@@ -2,12 +2,13 @@
 
 const Datastore = require('@seald-io/nedb');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
+const { execute } = require('./execution');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -22,6 +23,9 @@ const crontabDbFile = path.join(dbFolder, 'crontab.db');
 const db = new Datastore({ filename: crontabDbFile, autocompactionInterval: 60000 });
 const commandTimeoutMs = Number(process.env.COMMAND_TIMEOUT_MS || 300000);
 const commandMaxBuffer = Number(process.env.COMMAND_MAX_BUFFER || 1024 * 1024);
+const commandKillGraceMs = Number(process.env.COMMAND_KILL_GRACE_MS || 5000);
+const maxLogBytes = Number(process.env.LOG_MAX_BYTES || 10 * 1024 * 1024);
+const logRotationCount = Number(process.env.LOG_ROTATION_COUNT || 5);
 const logRetentionDays = Number(process.env.LOG_RETENTION_DAYS || 30);
 const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
@@ -54,30 +58,7 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing) {
 }
 
 function makeCommand(tab) {
-  const stderr = path.join(cronPath, `${tab._id}.stderr`);
-  const stdout = path.join(cronPath, `${tab._id}.stdout`);
-  const logFile = path.join(logFolder, `${tab._id}.log`);
-  const logFileStdout = path.join(logFolder, `${tab._id}.stdout.log`);
-
-  let cmd = tab.command;
-  if (cmd[cmd.length - 1] !== ';') {
-    cmd += ';';
-  }
-
-  let result = `({ ${cmd} } | tee ${stdout})`;
-  result = `(${result} 3>&1 1>&2 2>&3 | tee ${stderr}) 3>&1 1>&2 2>&3`;
-  result = `(${result})`;
-
-  if (tab.logging && tab.logging === 'true') {
-    result += `; if test -f ${stderr}; then date >> "${logFile}"; cat ${stderr} >> "${logFile}"; fi`;
-    result += `; if test -f ${stdout}; then date >> "${logFileStdout}"; cat ${stdout} >> "${logFileStdout}"; fi`;
-  }
-
-  if (tab.mailing && JSON.stringify(tab.mailing) !== '{}') {
-    result += `; /usr/local/bin/node ${__dirname}/bin/crontab-ui-mailer.js ${tab._id} ${stdout} ${stderr}`;
-  }
-
-  return result;
+  return `"${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
 }
 
 function addEnvVars(envVars, command) {
@@ -150,6 +131,43 @@ function audit(event) {
   fs.appendFile(auditFile, `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`, () => {});
 }
 
+function rotateLog(file) {
+  if (!fs.existsSync(file) || fs.statSync(file).size < maxLogBytes) return;
+  for (let index = logRotationCount - 1; index >= 1; index -= 1) {
+    const source = `${file}.${index}`;
+    const destination = `${file}.${index + 1}`;
+    if (fs.existsSync(source)) fs.renameSync(source, destination);
+  }
+  fs.renameSync(file, `${file}.1`);
+}
+
+function writeOutput(file, content) {
+  rotateLog(file);
+  const remaining = Math.max(0, maxLogBytes - (fs.existsSync(file) ? fs.statSync(file).size : 0));
+  if (remaining) fs.appendFileSync(file, content.subarray(0, remaining));
+}
+
+function recordOutput(tab, result) {
+  const stdout = path.join(cronPath, `${tab._id}.stdout`);
+  const stderr = path.join(cronPath, `${tab._id}.stderr`);
+  fs.writeFileSync(stdout, result.stdout);
+  fs.writeFileSync(stderr, result.stderr);
+  if (tab.logging === true || tab.logging === 'true') {
+    writeOutput(path.join(logFolder, `${tab._id}.stdout.log`), result.stdout);
+    writeOutput(path.join(logFolder, `${tab._id}.log`), result.stderr);
+  }
+  return { stdout, stderr };
+}
+
+function sendMail(tab, files) {
+  if (!tab.mailing?.profileId) return;
+  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, files.stdout, files.stderr], {
+    detached: false,
+    stdio: 'ignore',
+  });
+  child.unref();
+}
+
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
   try {
@@ -179,16 +197,17 @@ exports.runjob = (_id, callback = () => {}) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
     const envVars = exports.get_env();
-    let cmd = makeCommand(res);
-    cmd = addEnvVars(envVars, cmd);
+    const cmd = addEnvVars(envVars, res.command);
 
     const operationId = crypto.randomUUID();
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started' });
 
-    exec(cmd, { timeout: commandTimeoutMs, maxBuffer: commandMaxBuffer }, (error, _stdout, _stderr) => {
-      const exitCode = error && typeof error.code === 'number' ? error.code : 0;
-      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode, error: error?.message });
-      callback(error, { operationId, exitCode });
+    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs }, (error, result) => {
+      const files = recordOutput(res, result);
+      sendMail(res, files);
+      applyRetention();
+      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message });
+      callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });
 };

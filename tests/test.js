@@ -28,6 +28,7 @@ const app = require('../app');
 const crontab = require('../crontab');
 const { requireRole } = require('../middleware/authorization');
 const { configuredUsers } = require('../middleware/auth');
+const { execute } = require('../execution');
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -156,13 +157,12 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/preview_crontab');
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain('text/plain');
-      expect(res.text).toContain('echo hello');
+      expect(res.text).toContain('crontab-ui-runner.js');
     });
 
-    it('should include the make_command wrapper (tee pipeline)', async () => {
+    it('should delegate scheduled execution to the bounded runner', async () => {
       const res = await request(app).get('/preview_crontab');
-      expect(res.text).toContain('tee');
-      expect(res.text).toContain('stderr');
+      expect(res.text).toContain('crontab-ui-runner.js');
     });
 
     it('should only include active (non-stopped) jobs', async () => {
@@ -426,6 +426,38 @@ describe('Crontab UI', () => {
       const page = await request(app).get('/');
       expect(page.text).toContain('recovery-job');
     });
+  });
+});
+
+describe('Bounded command execution', () => {
+  function executeCommand(command, options) {
+    return new Promise((resolve) => execute(command, options, (error, result) => resolve({ error, result })));
+  }
+
+  it('captures a normal command exit code', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "process.stdout.write('ok')"`, {
+      timeoutMs: 5_000, maxOutputBytes: 1024,
+    });
+    expect(error).toBeNull();
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.toString()).toBe('ok');
+  });
+
+  it('terminates a command that exceeds its timeout', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "setTimeout(() => {}, 5000)"`, {
+      timeoutMs: 50, maxOutputBytes: 1024, killGraceMs: 10,
+    });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('timeout');
+  });
+
+  it('terminates a command that exceeds the output limit', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "process.stdout.write('x'.repeat(4096))"`, {
+      timeoutMs: 5_000, maxOutputBytes: 128,
+    });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('output_limit');
+    expect(result.stdout.length).toBeLessThanOrEqual(128);
   });
 });
 

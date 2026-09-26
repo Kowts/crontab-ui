@@ -67,6 +67,9 @@ If you need to autosave your changes to crontab directly:
 - MAIL_PROFILES_JSON
 - COMMAND_TIMEOUT_MS
 - COMMAND_MAX_BUFFER
+- COMMAND_KILL_GRACE_MS
+- LOG_MAX_BYTES
+- LOG_ROTATION_COUNT
 - LOG_RETENTION_DAYS
 - BACKUP_RETENTION_COUNT
 - BACKUP_RETENTION_DAYS
@@ -93,7 +96,9 @@ O processo deve executar com o menor privilégio possível. Não monte o crontab
 
 ### Retenção e auditoria
 
-Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado e código de saída. Configure `LOG_RETENTION_DAYS`, `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS` para controlar a retenção. Falhas de limpeza são registadas na auditoria; monitorize esse ficheiro. Confirme periodicamente que a retenção corresponde às obrigações operacionais e legais da organização.
+Cada execução, manual ou agendada, usa o mesmo executor, com `COMMAND_TIMEOUT_MS`, limite conjunto de output `COMMAND_MAX_BUFFER` e encerramento SIGTERM/SIGKILL configurável por `COMMAND_KILL_GRACE_MS`. Em Linux o executor cria um grupo de processos e termina esse grupo; em Windows a terminação da árvore depende do sistema operativo. Para isolamento forte de CPU, memória e PIDs, execute a aplicação num contentor com limites ou através de cgroups/systemd no anfitrião.
+
+Os logs de tarefas são limitados por `LOG_MAX_BYTES`, rodam até `LOG_ROTATION_COUNT` ficheiros e continuam sujeitos a `LOG_RETENTION_DAYS`. Cada execução é registada em `crontabs/logs/operations.jsonl` com ID, estado, código/sinal de saída e duração. Configure também `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS`. Falhas de limpeza são registadas na auditoria; monitorize esse ficheiro.
 
 ### Recuperação
 
