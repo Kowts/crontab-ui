@@ -59,6 +59,8 @@ If you need to autosave your changes to crontab directly:
 - CRON_DB_PATH
 - CRON_PATH
 - BASIC_AUTH_USER, BASIC_AUTH_PWD
+- BASIC_AUTH_USERS_JSON
+- AUTHZ_ROLE_MAP_JSON
 - SSL_CERT, SSL_KEY 
 - ENABLE_AUTOSAVE
 - CSRF_SECRET
@@ -74,6 +76,16 @@ If you need to autosave your changes to crontab directly:
 Copie `.env.example` para `.env` e configure os valores através do cofre de segredos da plataforma. Nunca coloque credenciais SMTP, chaves TLS ou palavras-passe no repositório, na base de tarefas ou no browser.
 
 Quando `HOST` não é loopback, `BASIC_AUTH_USER` e `BASIC_AUTH_PWD` são obrigatórios. Para produção, coloque a aplicação atrás de um reverse proxy com TLS e exponha apenas HTTPS. Defina um `CSRF_SECRET` longo e aleatório para manter os tokens válidos após reinícios controlados.
+
+### Autorização por função (RBAC)
+
+Para instalações com mais de um operador, configure `BASIC_AUTH_USERS_JSON` com o mapa de utilizadores e palavras-passe, e `AUTHZ_ROLE_MAP_JSON` com um papel explícito para cada utilizador. Ambos são segredos/configuração exclusiva do servidor. Quando a autenticação está activa, um utilizador sem papel é recusado por defeito.
+
+- `viewer`: consulta tarefas, pré-visualização, exportação e registos;
+- `operator`: inclui o papel de consulta e pode criar, alterar, iniciar, parar, apagar e executar tarefas;
+- `admin`: inclui os papéis anteriores e pode alterar ambiente, importar/restaurar/apagar cópias de segurança e importar o crontab do sistema.
+
+Exemplo: `BASIC_AUTH_USERS_JSON={"ana":"segredo-ana","bruno":"segredo-bruno"}` e `AUTHZ_ROLE_MAP_JSON={"ana":"admin","bruno":"operator"}`. Armazene estes valores no cofre de segredos; nunca no repositório. O acesso sem autenticação permanece possível apenas em loopback para desenvolvimento.
 
 Os perfis SMTP são definidos exclusivamente em `MAIL_PROFILES_JSON`. Cada perfil tem `transporter`, `from` e `to`; as tarefas guardam apenas uma referência de perfil, nunca a credencial. A configuração de correio é responsabilidade do administrador do serviço.
 

@@ -18,6 +18,7 @@ const restore = require('./restore');
 const packageJson = require('./package.json');
 const { base_url: baseUrl, routes, relative: routesRelative } = require('./routes');
 const setupAuth = require('./middleware/auth');
+const { configuredRoles, requireRole } = require('./middleware/authorization');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const {
@@ -37,6 +38,8 @@ app.set('port', process.env.PORT || 8000);
 
 const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(app.get('host'));
 const authEnabled = setupAuth(app);
+app.locals.authEnabled = authEnabled;
+if (authEnabled) configuredRoles();
 if (!authEnabled && !isLoopback && process.env.ALLOW_INSECURE_NO_AUTH !== 'true') {
   throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PWD are required when HOST is not loopback');
 }
@@ -104,7 +107,7 @@ app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
 
 // --- Routes ---
 
-app.get(routes.root, (req, res) => {
+app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     res.render('index', {
       routes: serializeForHtml(routesRelative),
@@ -116,7 +119,7 @@ app.get(routes.root, (req, res) => {
   });
 });
 
-app.post(routes.save, (req, res) => {
+app.post(routes.save, requireRole('operator'), (req, res) => {
   const { name, command, schedule, logging, mailing } = req.body;
   if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
     || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
@@ -145,49 +148,49 @@ app.post(routes.save, (req, res) => {
   }
 });
 
-app.post(routes.stop, validateIdParam, (req, res) => {
+app.post(routes.stop, requireRole('operator'), validateIdParam, (req, res) => {
   crontab.status(req.body._id, true, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to stop job' });
     return res.end();
   });
 });
 
-app.post(routes.start, validateIdParam, (req, res) => {
+app.post(routes.start, requireRole('operator'), validateIdParam, (req, res) => {
   crontab.status(req.body._id, false, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to start job' });
     return res.end();
   });
 });
 
-app.post(routes.remove, validateIdParam, (req, res) => {
+app.post(routes.remove, requireRole('operator'), validateIdParam, (req, res) => {
   crontab.remove(req.body._id, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to remove job' });
     return res.end();
   });
 });
 
-app.post(routes.run, validateIdParam, (req, res) => {
+app.post(routes.run, requireRole('operator'), validateIdParam, (req, res) => {
   crontab.runjob(req.body._id, (err, result) => {
     if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
     return res.status(202).json(result);
   });
 });
 
-app.post(routes.crontab, validateEnvironmentPayload, (req, res, next) => {
+app.post(routes.crontab, requireRole('admin'), validateEnvironmentPayload, (req, res, next) => {
   crontab.set_crontab(req.body.env_vars, (err) => {
     if (err) next(err);
     else res.end();
   });
 });
 
-app.post(routes.backup, (req, res, next) => {
+app.post(routes.backup, requireRole('admin'), (req, res, next) => {
   crontab.backup((err) => {
     if (err) next(err);
     else res.end();
   });
 });
 
-app.get(routes.restore, validateDbParam, (req, res) => {
+app.get(routes.restore, requireRole('viewer'), validateDbParam, (req, res) => {
   restore.crontabs(req.dbName, (docs) => {
     res.render('restore', {
       routes: serializeForHtml(routesRelative),
@@ -198,13 +201,13 @@ app.get(routes.restore, validateDbParam, (req, res) => {
   });
 });
 
-app.post(routes.delete_backup, validateDbParam, (req, res) => {
+app.post(routes.delete_backup, requireRole('admin'), validateDbParam, (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.delete(req.dbName);
   res.end();
 });
 
-app.post(routes.restore_backup, validateDbParam, (req, res) => {
+app.post(routes.restore_backup, requireRole('admin'), validateDbParam, (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   return crontab.restore(req.dbName, (err) => {
     if (err) return res.status(err.statusCode || 500).json({ message: 'Unable to restore backup' });
@@ -212,7 +215,7 @@ app.post(routes.restore_backup, validateDbParam, (req, res) => {
   });
 });
 
-app.get(routes.export, (req, res) => {
+app.get(routes.export, requireRole('viewer'), (req, res) => {
   const file = crontab.crontab_db_file;
   const filename = path.basename(file);
   const mimetype = mime.lookup(file);
@@ -222,7 +225,7 @@ app.get(routes.export, (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-app.post(routes.import, (req, res, next) => {
+app.post(routes.import, requireRole('admin'), (req, res, next) => {
   const temporaryFile = path.join(crontab.db_folder, `.import-${crypto.randomUUID()}.db`);
   let uploaded = false;
   req.pipe(req.busboy);
@@ -249,7 +252,7 @@ app.post(routes.import, (req, res, next) => {
   req.busboy.on('error', next);
 });
 
-app.post(routes.import_crontab, (req, res, next) => {
+app.post(routes.import_crontab, requireRole('admin'), (req, res, next) => {
   crontab.backup((err) => {
     if (err) return next(err);
     crontab.import_crontab();
@@ -257,7 +260,7 @@ app.post(routes.import_crontab, (req, res, next) => {
   });
 });
 
-app.get(routes.preview_crontab, (req, res) => {
+app.get(routes.preview_crontab, requireRole('viewer'), (req, res) => {
   const envVars = crontab.get_env();
   crontab.preview_crontab(envVars, (result) => {
     res.type('text/plain').send(result);
@@ -274,11 +277,11 @@ function sendLog(filePath, req, res) {
   }
 }
 
-app.get(routes.logger, validateIdParam, (req, res) => {
+app.get(routes.logger, requireRole('viewer'), validateIdParam, (req, res) => {
   sendLog(path.join(crontab.log_folder, `${req.query.id}.log`), req, res);
 });
 
-app.get(routes.stdout, validateIdParam, (req, res) => {
+app.get(routes.stdout, requireRole('viewer'), validateIdParam, (req, res) => {
   sendLog(path.join(crontab.log_folder, `${req.query.id}.stdout.log`), req, res);
 });
 

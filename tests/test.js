@@ -24,6 +24,8 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
 });
 
 const app = require('../app');
+const { requireRole } = require('../middleware/authorization');
+const { configuredUsers } = require('../middleware/auth');
 
 describe('Crontab UI', () => {
   afterAll(() => {
@@ -365,5 +367,77 @@ describe('Routes module', () => {
     const { relative } = require('../routes');
     expect(relative.save).toBe('save');
     expect(relative.backup).toBe('backup');
+  });
+});
+
+describe('RBAC middleware', () => {
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+
+  afterAll(() => {
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  function authorize(requiredRole, user) {
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin', operator: 'operator', viewer: 'viewer' });
+    const response = { statusCode: 200, body: null };
+    const res = {
+      status(code) { response.statusCode = code; return this; },
+      json(body) { response.body = body; return this; },
+    };
+    let called = false;
+    requireRole(requiredRole)(
+      { app: { locals: { authEnabled: true } }, auth: { user } },
+      res,
+      () => { called = true; },
+    );
+    return { called, response };
+  }
+
+  it('denies a viewer manual command execution', () => {
+    const result = authorize('operator', 'viewer');
+    expect(result.called).toBe(false);
+    expect(result.response.statusCode).toBe(403);
+  });
+
+  it('permits an operator to execute commands but not administrative recovery', () => {
+    expect(authorize('operator', 'operator').called).toBe(true);
+    expect(authorize('admin', 'operator').response.statusCode).toBe(403);
+  });
+
+  it('requires an explicit role when authentication is enabled', () => {
+    const result = authorize('viewer', 'unmapped');
+    expect(result.called).toBe(false);
+    expect(result.response.statusCode).toBe(403);
+  });
+
+  it('does not apply roles when authentication is disabled for loopback development', () => {
+    process.env.AUTHZ_ROLE_MAP_JSON = '{}';
+    let called = false;
+    requireRole('admin')(
+      { app: { locals: { authEnabled: false } }, auth: null },
+      {},
+      () => { called = true; },
+    );
+    expect(called).toBe(true);
+  });
+});
+
+describe('Basic authentication users configuration', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+  });
+
+  it('accepts a server-side map of multiple authenticated users', () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: 'secret-a', bob: 'secret-b' });
+    expect(configuredUsers()).toEqual({ alice: 'secret-a', bob: 'secret-b' });
+  });
+
+  it('rejects an empty user map', () => {
+    process.env.BASIC_AUTH_USERS_JSON = '{}';
+    expect(() => configuredUsers()).toThrow('must contain non-empty');
   });
 });
