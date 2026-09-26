@@ -28,6 +28,7 @@ const app = require('../app');
 const crontab = require('../crontab');
 const { requireRole, validateRoleAssignments } = require('../middleware/authorization');
 const { configuredUsers } = require('../middleware/auth');
+const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { validateProductionTransport } = require('../config/transport');
@@ -653,6 +654,31 @@ describe('Basic authentication users configuration', () => {
   it('rejects an empty user map', () => {
     process.env.BASIC_AUTH_USERS_JSON = '{}';
     expect(() => configuredUsers()).toThrow('must contain non-empty');
+  });
+});
+
+describe('Mail profile hardening', () => {
+  const originalProfiles = process.env.MAIL_PROFILES_JSON;
+
+  afterAll(() => {
+    if (originalProfiles === undefined) delete process.env.MAIL_PROFILES_JSON;
+    else process.env.MAIL_PROFILES_JSON = originalProfiles;
+  });
+
+  it('normalises a configured recipient list without exposing configuration to jobs', () => {
+    process.env.MAIL_PROFILES_JSON = JSON.stringify({
+      alerts: { transporter: 'smtps://mailer:secret@smtp.example.test', from: 'cron@example.test', to: ['one@example.test', 'two@example.test'] },
+    });
+    expect(getProfile('alerts')).toMatchObject({ from: 'cron@example.test', to: ['one@example.test', 'two@example.test'] });
+  });
+
+  it('rejects a non-SMTP transporter and recipient header injection', () => {
+    process.env.MAIL_PROFILES_JSON = JSON.stringify({
+      unsafe: { transporter: 'file:///tmp/mail', from: 'cron@example.test', to: 'ops@example.test' },
+      injected: { transporter: 'smtps://smtp.example.test', from: 'cron@example.test', to: 'ops@example.test\nBcc: attacker@example.test' },
+    });
+    expect(() => getProfile('unsafe')).toThrow('smtp or smtps');
+    expect(() => getProfile('injected')).toThrow('invalid recipient address');
   });
 });
 

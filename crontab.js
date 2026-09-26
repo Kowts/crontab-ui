@@ -182,11 +182,15 @@ function recordOutput(tab, result) {
   return { stdout, stderr };
 }
 
-function sendMail(tab, files) {
+function sendMail(tab, operationId) {
   if (!tab.mailing?.profileId) return;
-  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, files.stdout, files.stderr], {
+  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, operationId], {
     detached: false,
     stdio: 'ignore',
+  });
+  child.once('error', (error) => audit({ operationId, type: 'mail', jobId: tab._id, status: 'failed', error: error.message }));
+  child.once('exit', (code, signal) => {
+    if (code !== 0) audit({ operationId, type: 'mail', jobId: tab._id, status: 'failed', exitCode: code, signal });
   });
   child.unref();
 }
@@ -236,8 +240,8 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: { ...process.env, ...jobEnvironment } }, (error, result) => {
-      const files = recordOutput(res, result);
-      sendMail(res, files);
+      recordOutput(res, result);
+      sendMail(res, operationId);
       applyRetention();
       audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });

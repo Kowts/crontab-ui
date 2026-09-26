@@ -95,7 +95,7 @@ Cada nova tarefa recebe `owner` e `createdBy` no servidor. Um `operator` só pod
 
 Exemplo: `BASIC_AUTH_USERS_JSON={"ana":"segredo-ana","bruno":"segredo-bruno"}` e `AUTHZ_ROLE_MAP_JSON={"ana":"admin","bruno":"operator"}`. Armazene estes valores no cofre de segredos; nunca no repositório. O acesso sem autenticação permanece possível apenas em loopback para desenvolvimento.
 
-Os perfis SMTP são definidos exclusivamente em `MAIL_PROFILES_JSON`. Cada perfil tem `transporter`, `from` e `to`; as tarefas guardam apenas uma referência de perfil, nunca a credencial. A configuração de correio é responsabilidade do administrador do serviço.
+Os perfis SMTP são definidos exclusivamente em `MAIL_PROFILES_JSON`. Cada perfil tem exclusivamente `transporter` (`smtp://` ou `smtps://`), `from` e `to` (um ou até 20 endereços); as tarefas guardam apenas uma referência de perfil, nunca a credencial. A configuração de correio é responsabilidade do administrador do serviço. As notificações só anexam `stdout` e `stderr` da tarefa, lidos do directório de execução, e cada anexo é limitado por `MAIL_MAX_ATTACHMENT_BYTES` (predefinição: 512 KiB). O transporte bloqueia acessos a ficheiros e URLs do Nodemailer e usa limites de ligação, saudação e socket.
 
 As variáveis configuradas na interface aceitam apenas linhas `NOME=valor`, com nomes maiúsculos que respeitem `^[A-Z_][A-Z0-9_]*$`. São passadas ao processo como ambiente Node, nunca concatenadas a uma shell. Sintaxe shell como `export`, `$()`, backticks, pipes, redireccionamentos e `;` é recusada.
 
