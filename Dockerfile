@@ -28,11 +28,12 @@ RUN mkdir -p /crontab-ui/crontabs/logs && chown -R node:node /crontab-ui/crontab
 ENV   HOST=0.0.0.0
 ENV   PORT=8000
 ENV   CRON_IN_DOCKER=true
+ENV   NODE_ENV=production
 
 EXPOSE $PORT
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f -u "${BASIC_AUTH_USER}:${BASIC_AUTH_PWD}" http://localhost:${PORT}/ || exit 1
+  CMD curl -fsS http://localhost:${PORT}/healthz || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["supervisord", "-c", "/crontab-ui/supervisord.conf"]

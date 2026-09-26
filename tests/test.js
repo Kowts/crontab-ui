@@ -26,7 +26,7 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
 
 const app = require('../app');
 const crontab = require('../crontab');
-const { requireRole } = require('../middleware/authorization');
+const { requireRole, validateRoleAssignments } = require('../middleware/authorization');
 const { configuredUsers } = require('../middleware/auth');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
@@ -637,6 +637,22 @@ describe('Basic authentication users configuration', () => {
   it('rejects an empty user map', () => {
     process.env.BASIC_AUTH_USERS_JSON = '{}';
     expect(() => configuredUsers()).toThrow('must contain non-empty');
+  });
+});
+
+describe('Production authentication configuration', () => {
+  it('requires every authenticated user to have a valid role', () => {
+    expect(() => validateRoleAssignments({ admin: 'secret', operator: 'secret' }, { admin: 'admin' }))
+      .toThrow('operator has no assigned role');
+  });
+
+  it('rejects role mappings for users that cannot authenticate', () => {
+    expect(() => validateRoleAssignments({ admin: 'secret' }, { admin: 'admin', stale: 'viewer' }))
+      .toThrow('unknown user stale');
+  });
+
+  it('accepts a complete authentication and role configuration', () => {
+    expect(() => validateRoleAssignments({ admin: 'secret' }, { admin: 'admin' })).not.toThrow();
   });
 });
 

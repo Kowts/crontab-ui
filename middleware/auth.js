@@ -21,9 +21,7 @@ function configuredUsers() {
 }
 
 function setupAuth(app) {
-  const user = process.env.BASIC_AUTH_USER;
-  const pwd = process.env.BASIC_AUTH_PWD;
-  const users = configuredUsers() || (user && pwd ? { [user]: pwd } : null);
+  const users = authenticatedUsers();
 
   if (users) {
     app.use((req, res, next) => {
@@ -40,5 +38,12 @@ function setupAuth(app) {
   return false;
 }
 
+function authenticatedUsers() {
+  const user = process.env.BASIC_AUTH_USER;
+  const pwd = process.env.BASIC_AUTH_PWD;
+  return configuredUsers() || (user && pwd ? { [user]: pwd } : null);
+}
+
 module.exports = setupAuth;
 module.exports.configuredUsers = configuredUsers;
+module.exports.authenticatedUsers = authenticatedUsers;

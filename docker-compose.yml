@@ -5,8 +5,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      BASIC_AUTH_USER: ${BASIC_AUTH_USER:?Set BASIC_AUTH_USER in the deployment environment}
-      BASIC_AUTH_PWD: ${BASIC_AUTH_PWD:?Set BASIC_AUTH_PWD in the deployment environment}
+      BASIC_AUTH_USERS_JSON: ${BASIC_AUTH_USERS_JSON:?Configure authenticated users}
+      AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:?Configure user roles}
+      CSRF_SECRET: ${CSRF_SECRET:?Configure CSRF secret}
     volumes:
       - crontab-data:/crontab-ui/crontabs
     security_opt:
@@ -20,7 +21,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
-      test: ["CMD-SHELL", "curl -f -u \"$$BASIC_AUTH_USER:$$BASIC_AUTH_PWD\" http://localhost:8000/"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

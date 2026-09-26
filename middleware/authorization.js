@@ -47,4 +47,13 @@ function requireRole(requiredRole) {
   };
 }
 
-module.exports = { configuredRoles, requireRole };
+function validateRoleAssignments(users, roles) {
+  for (const user of Object.keys(users || {})) {
+    if (!roles[user]) throw new Error(`Authenticated user ${user} has no assigned role`);
+  }
+  for (const user of Object.keys(roles)) {
+    if (!Object.hasOwn(users || {}, user)) throw new Error(`Role assignment references unknown user ${user}`);
+  }
+}
+
+module.exports = { configuredRoles, requireRole, validateRoleAssignments };

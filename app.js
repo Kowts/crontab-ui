@@ -18,7 +18,8 @@ const restore = require('./restore');
 const packageJson = require('./package.json');
 const { base_url: baseUrl, routes, relative: routesRelative } = require('./routes');
 const setupAuth = require('./middleware/auth');
-const { configuredRoles, requireRole } = require('./middleware/authorization');
+const { authenticatedUsers } = require('./middleware/auth');
+const { configuredRoles, requireRole, validateRoleAssignments } = require('./middleware/authorization');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const {
@@ -37,9 +38,17 @@ app.set('host', process.env.HOST || '127.0.0.1');
 app.set('port', process.env.PORT || 8000);
 
 const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(app.get('host'));
+app.get(`${baseUrl}/healthz`, (req, res) => {
+  const address = req.socket.remoteAddress;
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return res.sendStatus(404);
+  return res.json({ status: 'ok' });
+});
 const authEnabled = setupAuth(app);
 app.locals.authEnabled = authEnabled;
-if (authEnabled) configuredRoles();
+if (authEnabled) validateRoleAssignments(authenticatedUsers(), configuredRoles());
+if (process.env.NODE_ENV === 'production' && !process.env.CSRF_SECRET) {
+  throw new Error('CSRF_SECRET is required in production');
+}
 if (!authEnabled && !isLoopback && process.env.ALLOW_INSECURE_NO_AUTH !== 'true') {
   throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PWD are required when HOST is not loopback');
 }

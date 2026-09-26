@@ -4,6 +4,7 @@ const baseUrl = (process.env.BASE_URL || '').replace(/\/+$/, '').trim();
 
 const routes = {
   root: '/',
+  health: '/healthz',
   save: '/save',
   run: '/runjob',
   crontab: '/crontab',
