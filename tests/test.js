@@ -2,6 +2,7 @@
 
 /* global describe, it, expect, beforeAll, afterAll */
 const request = require('supertest');
+const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,12 +28,14 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
 const app = require('../app');
 const crontab = require('../crontab');
 const { requireRole, validateRoleAssignments } = require('../middleware/authorization');
-const { configuredUsers } = require('../middleware/auth');
+const setupAuth = require('../middleware/auth');
+const { configuredUsers } = setupAuth;
 const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob } = require('../middleware/job-authorization');
+const csrfProtection = require('../middleware/csrf');
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -187,6 +190,26 @@ describe('Crontab UI', () => {
   });
 
   describe('Input validation', () => {
+    it('should reject an invalid cron schedule on job creation', async () => {
+      const res = await request(app).post('/save').send({
+        _id: -1, name: 'invalid-cron-save', command: 'echo hello',
+        schedule: 'not-a-cron', logging: false, mailing: {},
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('should render persisted HTML as text instead of executable markup', async () => {
+      const payload = '<img src=x onerror=alert(1)>';
+      const saved = await request(app).post('/save').send({
+        _id: -1, name: payload, command: payload,
+        schedule: '* * * * *', logging: false, mailing: {},
+      });
+      expect(saved.status).toBe(200);
+      const page = await request(app).get('/');
+      expect(page.text).not.toContain(payload);
+      expect(page.text).toContain('\\u003cimg src=x onerror=alert(1)\\u003e');
+    });
+
     it('should reject path traversal in db param', async () => {
       const res = await request(app).get('/restore?db=../../etc/passwd');
       expect(res.status).toBe(400);
@@ -801,6 +824,78 @@ describe('Transactional backup operations', () => {
     expect(results.filter((result) => !result.error)).toHaveLength(1);
     expect(results.find((result) => result.error).error.statusCode).toBe(409);
     expect(results.find((result) => !result.error).name).toMatch(/^backup-.*\.db$/);
+  });
+
+  it('rejects a concurrent database replacement instead of interleaving it', async () => {
+    const first = path.join(testDbPath, '.replace-first.db');
+    const second = path.join(testDbPath, '.replace-second.db');
+    fs.copyFileSync(path.join(testDbPath, 'crontab.db'), first);
+    fs.copyFileSync(path.join(testDbPath, 'crontab.db'), second);
+    const replace = (file) => new Promise((resolve) => crontab.replace_database(file, (error) => resolve(error)));
+    const [firstError, secondError] = await Promise.all([replace(first), replace(second)]);
+    const errors = [firstError, secondError];
+
+    expect(errors.filter(Boolean)).toHaveLength(1);
+    expect(errors.find(Boolean).statusCode).toBe(409);
+  });
+});
+
+describe('CSRF middleware', () => {
+  const originalEnvironment = process.env.NODE_ENV;
+
+  afterAll(() => {
+    process.env.NODE_ENV = originalEnvironment;
+  });
+
+  it('issues a token on a safe request and rejects a state change without it', () => {
+    process.env.NODE_ENV = 'development';
+    let cookie;
+    let proceeded = false;
+    csrfProtection(
+      { method: 'GET', headers: {}, get: () => undefined },
+      { append: (_name, value) => { cookie = value; } },
+      () => { proceeded = true; },
+    );
+    expect(proceeded).toBe(true);
+    const token = decodeURIComponent(cookie.match(/^[^=]+=([^;]+)/)[1]);
+
+    const denied = { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; } };
+    csrfProtection({ method: 'POST', headers: { cookie: `crontab_ui_csrf=${encodeURIComponent(token)}` }, get: () => undefined }, denied, () => {});
+    expect(denied.statusCode).toBe(403);
+    expect(denied.body.message).toBe('Invalid CSRF token');
+
+    let accepted = false;
+    csrfProtection({ method: 'POST', headers: { cookie: `crontab_ui_csrf=${encodeURIComponent(token)}` }, get: () => token }, {}, () => { accepted = true; });
+    expect(accepted).toBe(true);
+  });
+});
+
+describe('External basic authentication middleware', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalUser = process.env.BASIC_AUTH_USER;
+  const originalPassword = process.env.BASIC_AUTH_PWD;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalUser === undefined) delete process.env.BASIC_AUTH_USER;
+    else process.env.BASIC_AUTH_USER = originalUser;
+    if (originalPassword === undefined) delete process.env.BASIC_AUTH_PWD;
+    else process.env.BASIC_AUTH_PWD = originalPassword;
+  });
+
+  it('rejects unauthenticated access and accepts configured credentials', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    delete process.env.BASIC_AUTH_USER;
+    delete process.env.BASIC_AUTH_PWD;
+    const protectedApp = express();
+    expect(setupAuth(protectedApp)).toBe(true);
+    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+
+    expect((await request(protectedApp).get('/protected')).status).toBe(401);
+    const allowed = await request(protectedApp).get('/protected').auth('reviewer', 'strong-secret');
+    expect(allowed.status).toBe(200);
+    expect(allowed.body.user).toBe('reviewer');
   });
 });
 
