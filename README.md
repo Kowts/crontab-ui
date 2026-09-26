@@ -87,8 +87,11 @@ Em produção, a aplicação exige `SSL_CERT`/`SSL_KEY` ou `TRUSTED_PROXY` com e
 Para instalações com mais de um operador, configure `BASIC_AUTH_USERS_JSON` com o mapa de utilizadores e palavras-passe, e `AUTHZ_ROLE_MAP_JSON` com um papel explícito para cada utilizador. Ambos são segredos/configuração exclusiva do servidor. Quando a autenticação está activa, um utilizador sem papel é recusado por defeito.
 
 - `viewer`: consulta tarefas, pré-visualização, exportação e registos;
+- `executor`: inclui consulta e pode executar tarefas próprias, sem as alterar;
 - `operator`: inclui o papel de consulta e pode criar, alterar, iniciar, parar, apagar e executar tarefas;
 - `admin`: inclui os papéis anteriores e pode alterar ambiente, importar/restaurar/apagar cópias de segurança e importar o crontab do sistema.
+
+Cada nova tarefa recebe `owner` e `createdBy` no servidor. Um `operator` só pode gerir tarefas próprias; um `viewer` só pode consultar tarefas próprias; `admin` tem acesso global. Tarefas antigas ou importadas sem owner são consideradas legadas e ficam reservadas a administração até serem recriadas ou atribuídas por procedimento administrativo.
 
 Exemplo: `BASIC_AUTH_USERS_JSON={"ana":"segredo-ana","bruno":"segredo-bruno"}` e `AUTHZ_ROLE_MAP_JSON={"ana":"admin","bruno":"operator"}`. Armazene estes valores no cofre de segredos; nunca no repositório. O acesso sem autenticação permanece possível apenas em loopback para desenvolvimento.
 

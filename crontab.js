@@ -46,7 +46,7 @@ if (!fs.existsSync(logFolder)) {
   fs.mkdirSync(logFolder);
 }
 
-function buildCrontab(name, command, schedule, stopped, logging, mailing) {
+function buildCrontab(name, command, schedule, stopped, logging, mailing, ownership = {}) {
   return {
     name,
     command,
@@ -55,6 +55,8 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing) {
     timestamp: new Date().toString(),
     logging,
     mailing: mailing || {},
+    ...(ownership.owner && { owner: ownership.owner }),
+    ...(ownership.createdBy && { createdBy: ownership.createdBy }),
   };
 }
 
@@ -68,8 +70,8 @@ exports.audit_file = auditFile;
 exports.env_file = envFile;
 exports.crontab_db_file = crontabDbFile;
 
-exports.create_new = (name, command, schedule, logging, mailing, callback = () => {}) => {
-  const tab = buildCrontab(name, command, schedule, false, logging, mailing);
+exports.create_new = (name, command, schedule, logging, mailing, ownership = {}, callback = () => {}) => {
+  const tab = buildCrontab(name, command, schedule, false, logging, mailing, ownership);
   tab.created = Date.now();
   tab.saved = false;
   db.insert(tab, callback);
@@ -81,7 +83,7 @@ exports.update = (_id, data, callback = () => {}) => {
   }
   const tab = buildCrontab(data.name, data.command, data.schedule, null, data.logging, data.mailing);
   tab.saved = false;
-  db.update({ _id }, tab, callback);
+  db.update({ _id }, { $set: tab }, callback);
 };
 
 exports.status = (_id, stopped, callback = () => {}) => {
@@ -320,7 +322,7 @@ function validateImportedJob(document) {
     }
   }
 
-  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook']);
+  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook', 'owner', 'createdBy']);
   for (const key of Object.keys(document)) {
     if (!accepted.has(key)) throw new Error(`Unsupported imported field: ${key}`);
   }

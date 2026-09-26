@@ -30,6 +30,7 @@ const {
 } = require('./middleware/validate');
 const { getProfile } = require('./config/mail-profiles');
 const { validateProductionTransport } = require('./config/transport');
+const { canAccessJob, requireJobAccess, requireSaveAccess } = require('./middleware/job-authorization');
 
 dayjs.extend(relativeTime);
 
@@ -129,6 +130,7 @@ app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
 
 app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
+    docs = docs.filter((job) => canAccessJob(req, job, 'read'));
     res.render('index', {
       routes: serializeForHtml(routesRelative),
       crontabs: serializeForHtml(docs),
@@ -139,7 +141,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
   });
 });
 
-app.post(routes.save, requireRole('operator'), (req, res) => {
+app.post(routes.save, requireRole('operator'), requireSaveAccess, (req, res) => {
   const { name, command, schedule, mailing } = req.body;
   const isCreate = req.body._id === -1;
   const isUpdate = typeof req.body._id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.body._id);
@@ -161,7 +163,8 @@ app.post(routes.save, requireRole('operator'), (req, res) => {
     return res.status(400).json({ message: 'Invalid cron schedule or mail profile' });
   }
   if (isCreate) {
-    crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, (err) => {
+    const owner = req.auth?.user || 'local';
+    crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, { owner, createdBy: owner }, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });
@@ -173,28 +176,28 @@ app.post(routes.save, requireRole('operator'), (req, res) => {
   }
 });
 
-app.post(routes.stop, requireRole('operator'), validateIdParam, (req, res) => {
+app.post(routes.stop, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
   crontab.status(req.body._id, true, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to stop job' });
     return res.end();
   });
 });
 
-app.post(routes.start, requireRole('operator'), validateIdParam, (req, res) => {
+app.post(routes.start, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
   crontab.status(req.body._id, false, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to start job' });
     return res.end();
   });
 });
 
-app.post(routes.remove, requireRole('operator'), validateIdParam, (req, res) => {
+app.post(routes.remove, requireRole('operator'), validateIdParam, requireJobAccess('write'), (req, res) => {
   crontab.remove(req.body._id, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to remove job' });
     return res.end();
   });
 });
 
-app.post(routes.run, requireRole('operator'), validateIdParam, (req, res) => {
+app.post(routes.run, requireRole('executor'), validateIdParam, requireJobAccess('execute'), (req, res) => {
   crontab.runjob(req.body._id, (err, result) => {
     if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
     return res.status(202).json(result);
@@ -305,11 +308,11 @@ function sendLog(filePath, req, res) {
   }
 }
 
-app.get(routes.logger, requireRole('viewer'), validateIdParam, (req, res) => {
+app.get(routes.logger, requireRole('viewer'), validateIdParam, requireJobAccess('read'), (req, res) => {
   sendLog(path.join(crontab.log_folder, `${req.query.id}.log`), req, res);
 });
 
-app.get(routes.stdout, requireRole('viewer'), validateIdParam, (req, res) => {
+app.get(routes.stdout, requireRole('viewer'), validateIdParam, requireJobAccess('read'), (req, res) => {
   sendLog(path.join(crontab.log_folder, `${req.query.id}.stdout.log`), req, res);
 });
 

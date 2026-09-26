@@ -2,8 +2,9 @@
 
 const ROLE_LEVEL = Object.freeze({
   viewer: 0,
-  operator: 1,
-  admin: 2,
+  executor: 1,
+  operator: 2,
+  admin: 3,
 });
 
 function configuredRoles() {

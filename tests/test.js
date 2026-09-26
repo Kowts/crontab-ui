@@ -31,6 +31,7 @@ const { configuredUsers } = require('../middleware/auth');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { validateProductionTransport } = require('../config/transport');
+const { canAccessJob } = require('../middleware/job-authorization');
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -670,6 +671,39 @@ describe('Production transport configuration', () => {
   it('accepts native TLS or a known proxy range', () => {
     expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: true })).not.toThrow();
     expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false, trustedProxy: '172.20.0.0/16' })).not.toThrow();
+  });
+});
+
+describe('Job ownership authorization', () => {
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const requestFor = (user) => ({ app: { locals: { authEnabled: true } }, auth: { user } });
+
+  beforeAll(() => {
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ alice: 'operator', bob: 'operator', viewer: 'viewer', executor: 'executor', admin: 'admin' });
+  });
+  afterAll(() => {
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  it('allows an operator to manage only owned jobs', () => {
+    expect(canAccessJob(requestFor('alice'), { owner: 'alice' }, 'write')).toBe(true);
+    expect(canAccessJob(requestFor('bob'), { owner: 'alice' }, 'write')).toBe(false);
+  });
+
+  it('allows viewers to read their own jobs but not modify them', () => {
+    expect(canAccessJob(requestFor('viewer'), { owner: 'viewer' }, 'read')).toBe(true);
+    expect(canAccessJob(requestFor('viewer'), { owner: 'viewer' }, 'write')).toBe(false);
+  });
+
+  it('allows an executor to run but not edit an owned job', () => {
+    expect(canAccessJob(requestFor('executor'), { owner: 'executor' }, 'execute')).toBe(true);
+    expect(canAccessJob(requestFor('executor'), { owner: 'executor' }, 'write')).toBe(false);
+  });
+
+  it('restricts legacy unowned jobs to administrators', () => {
+    expect(canAccessJob(requestFor('alice'), {}, 'read')).toBe(false);
+    expect(canAccessJob(requestFor('admin'), {}, 'write')).toBe(true);
   });
 });
 
