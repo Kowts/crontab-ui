@@ -319,31 +319,78 @@ app.get(routes.export, requireRole('viewer'), (req, res) => {
 app.post(routes.import, requireRole('admin'), auditOperation('import_database'), (req, res, next) => {
   const temporaryFile = path.join(crontab.db_folder, `.import-${crypto.randomUUID()}.db`);
   let uploaded = false;
+  let uploadWritten = false;
+  let parsingFinished = false;
+  let processing = false;
+  let settled = false;
+
+  const cleanupTemporary = (callback = () => {}) => fs.rm(temporaryFile, { force: true }, callback);
+  const fail = (error, statusCode) => {
+    if (settled) return;
+    settled = true;
+    cleanupTemporary(() => {
+      if (statusCode) res.status(statusCode).json({ message: error.message });
+      else next(error);
+    });
+  };
+  const succeed = () => {
+    if (settled) return;
+    settled = true;
+    res.redirect(routes.root);
+  };
+  const processUpload = () => {
+    if (settled || processing || !uploaded || !uploadWritten || !parsingFinished) return;
+    processing = true;
+    crontab.normalise_database(temporaryFile, (normaliseError) => {
+      if (normaliseError) return fail(normaliseError);
+      return crontab.replace_database(temporaryFile, (replaceError) => {
+        if (replaceError) return fail(replaceError);
+        return succeed();
+      });
+    });
+  };
+
+  req.once('aborted', () => {
+    if (!settled) {
+      settled = true;
+      cleanupTemporary();
+    }
+  });
   req.pipe(req.busboy);
   req.busboy.on('file', (fieldName, file, filename) => {
-    if (uploaded) return file.resume();
+    if (settled) {
+      file.resume();
+      return;
+    }
+    if (uploaded) {
+      file.resume();
+      return fail(new Error('A single .db import file is required'), 400);
+    }
     const uploadedFilename = typeof filename === 'object' ? filename.filename : filename;
     if (!validateImportMetadata(fieldName, uploadedFilename)) {
       file.resume();
-      return res.status(400).json({ message: 'A single .db import file is required' });
+      return fail(new Error('A single .db import file is required'), 400);
     }
     uploaded = true;
     const output = fs.createWriteStream(temporaryFile, { flags: 'wx' });
     file.pipe(output);
-    file.on('limit', () => output.destroy(new Error('Import file exceeds the size limit')));
-    output.on('error', next);
-    output.on('close', () => crontab.normalise_database(temporaryFile, (normaliseError) => {
-      if (normaliseError) return next(normaliseError);
-      return crontab.replace_database(temporaryFile, (err) => {
-        if (err) return next(err);
-        return res.redirect(routes.root);
-      });
-    }));
+    file.once('limit', () => {
+      output.destroy();
+      fail(new Error('Import file exceeds the size limit'), 413);
+    });
+    output.once('error', (error) => fail(error));
+    output.once('finish', () => {
+      uploadWritten = true;
+      processUpload();
+    });
   });
   req.busboy.on('finish', () => {
-    if (!uploaded && !res.headersSent) res.status(400).json({ message: 'A database file is required' });
+    parsingFinished = true;
+    if (!uploaded) return fail(new Error('A database file is required'), 400);
+    return processUpload();
   });
-  req.busboy.on('error', next);
+  req.busboy.once('filesLimit', () => fail(new Error('A single .db import file is required'), 400));
+  req.busboy.once('error', (error) => fail(error));
 });
 
 app.post(routes.import_crontab, requireRole('admin'), auditOperation('import_system_crontab'), (req, res, next) => {

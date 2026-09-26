@@ -333,6 +333,19 @@ describe('Crontab UI', () => {
         .filter((f) => f.startsWith('backup'));
       expect(backupsAfter.length).toBe(backupsBefore.length + 1);
     });
+
+    it('rejects multiple uploaded files and preserves the active database', async () => {
+      const before = fs.readFileSync(path.join(testDbPath, 'crontab.db'), 'utf8');
+      const response = await request(app)
+        .post('/import')
+        .attach('import_file', Buffer.from(''), 'first.db')
+        .attach('import_file', Buffer.from(''), 'second.db');
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('A single .db import file is required');
+      expect(fs.readFileSync(path.join(testDbPath, 'crontab.db'), 'utf8')).toBe(before);
+      expect(fs.readdirSync(testDbPath).some((file) => file.startsWith('.import-'))).toBe(false);
+    });
   });
 
   describe('Command textarea', () => {
