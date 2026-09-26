@@ -34,6 +34,7 @@ const { canAccessJob, requireJobAccess, requireSaveAccess } = require('./middlew
 
 dayjs.extend(relativeTime);
 
+function createApp() {
 const app = express();
 app.locals.baseURL = baseUrl;
 app.set('host', process.env.HOST || '127.0.0.1');
@@ -47,6 +48,7 @@ if ((credentials.key && !credentials.cert) || (credentials.cert && !credentials.
   throw new Error('Please provide both SSL_KEY and SSL_CERT');
 }
 const startHttpsServer = credentials.key && credentials.cert;
+app.locals.tlsCredentials = startHttpsServer ? credentials : null;
 const trustedProxy = process.env.TRUSTED_PROXY;
 validateProductionTransport({
   nodeEnv: process.env.NODE_ENV,
@@ -430,14 +432,13 @@ app.get(routes.stdout, requireRole('viewer'), validateIdParam, requireJobAccess(
 
 // error handler
 app.use(errorHandler);
-
-function createApp() {
   return app;
 }
 
 function startServer(application = createApp()) {
-  const server = startHttpsServer
-    ? https.createServer(credentials, application)
+  const tlsCredentials = application.locals.tlsCredentials;
+  const server = tlsCredentials
+    ? https.createServer(tlsCredentials, application)
     : http.createServer(application);
 
   server.listen(application.get('port'), application.get('host'), () => {
@@ -474,12 +475,16 @@ function startServer(application = createApp()) {
     crontab.reload_db();
   }
 
-    const protocol = startHttpsServer ? 'https' : 'http';
-    console.log(`Crontab UI (${packageJson.version}) is running at ${protocol}://${application.get('host')}:${application.get('port')}${baseUrl}`);
+    const protocol = tlsCredentials ? 'https' : 'http';
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : application.get('port');
+    console.log(`Crontab UI (${packageJson.version}) is running at ${protocol}://${application.get('host')}:${port}${baseUrl}`);
   });
   return server;
 }
 
-module.exports = app;
+const defaultApp = createApp();
+
+module.exports = defaultApp;
 module.exports.createApp = createApp;
 module.exports.startServer = startServer;

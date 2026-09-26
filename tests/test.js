@@ -899,6 +899,18 @@ describe('External basic authentication middleware', () => {
   });
 });
 
+describe('Application bootstrap', () => {
+  it('creates isolated applications and exposes a closable HTTP server', async () => {
+    const anotherApp = app.createApp();
+    expect(anotherApp).not.toBe(app);
+    anotherApp.set('port', 0);
+    const server = app.startServer(anotherApp);
+    await new Promise((resolve) => server.once('listening', resolve));
+    expect(server.listening).toBe(true);
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  });
+});
+
 afterAll(() => {
   fs.rmSync(testDbPath, { recursive: true, force: true });
 });
