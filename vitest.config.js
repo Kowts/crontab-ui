@@ -17,8 +17,10 @@ module.exports = defineConfig({
         'config/mailconfig.js',
       ],
       thresholds: {
-        lines: 65,
-        functions: 50,
+        lines: 70,
+        statements: 70,
+        functions: 70,
+        branches: 65,
       },
     },
   },
