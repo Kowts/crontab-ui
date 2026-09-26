@@ -1,111 +1,93 @@
-<!-- Job -->
-<div class="modal fade" id="job" tabindex="-1">
-  <div class="modal-dialog">
+<div class="modal fade" id="job" tabindex="-1" aria-labelledby="job-title" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="job-title">Job</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="job-body">
-	<label class="form-label">Name (Optional)</label>
-	<input type='text' class='form-control' id='job-name'/><br />
-	<label class="form-label">Command</label>
-	<textarea class='form-control' id='job-command' rows='3'></textarea><br />
-	<label class="form-label">Quick Schedule</label><br />
-	<div class="d-flex flex-wrap gap-2 mb-3">
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="* * * * *">Every Minute</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="*/5 * * * *">Every 5 Min</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@hourly">Hourly</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@daily">Daily</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@weekly">Weekly</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@monthly">Monthly</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@yearly">Yearly</button>
-		<button type="button" class="btn btn-primary btn-sm" data-schedule="@reboot">Startup</button>
-	</div>
-
-	<div class="row">
-		<div class="col-md-2">Minute</div>
-		<div class="col-md-2">Hour</div>
-		<div class="col-md-2">Day</div>
-		<div class="col-md-2">Month</div>
-		<div class="col-md-2">Week</div>
-	</div>
-	<div class="row">
-		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-minute" value="*"/></div>
-		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-hour" value="*"/></div>
-		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-day" value="*"/></div>
-		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-month" value="*"/></div>
-		<div class="col-md-2"><input type="text" class="form-control schedule-part" id="job-week" value="*"/></div>
-		<div class="col-md-2"><button type="button" class="btn btn-primary btn-sm" id="set-schedule">Set</button></div>
-	</div>
-
-	<br />
-	<br />
-	<label class="form-label">Job</label>
-	<input type='text' class='form-control' id='job-string' disabled='disabled'/><br />
-	<div class="form-check">
-		<input type="checkbox" class="form-check-input" id="job-logging"/>
-		<label class="form-check-label" for="job-logging">Enable error logging.</label>
-	</div>
-	<br/>
-	<span class="text-muted">Mail profiles are configured by the server administrator.</span>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="job-save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="popup" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="modal-title">Message</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="modal-body">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="modal-close-button">Close</button>
-        <button type="button" class="btn btn-primary" id="modal-button">Ok</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="info-popup" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="info-title">Message</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body" id="info-body">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="info-button">Ok</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="preview-crontab-modal" tabindex="-1">
-  <div class="modal-dialog modal-xl">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-code-square"></i> Crontab Preview</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div>
+          <h2 class="modal-title" id="job-title">Nova tarefa</h2>
+          <p class="modal-subtitle">Defina o comando e o horário de execução.</p>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle"></i> This is a preview of what will be deployed. It may differ from the currently active crontab if you have unsaved changes.</div>
-        <pre id="preview-crontab-content" class="bg-dark text-light p-3 rounded" style="min-height:200px;white-space:pre-wrap;word-break:break-all;font-size:0.875rem;"></pre>
+        <div class="row g-3">
+          <div class="col-md-7">
+            <label class="form-label" for="job-name">Nome da tarefa <span class="text-muted fw-normal">(opcional)</span></label>
+            <input type="text" class="form-control" id="job-name" placeholder="Ex.: Limpeza de ficheiros temporários" maxlength="128"/>
+          </div>
+          <div class="col-md-5">
+            <label class="form-label">Estado</label>
+            <div class="job-status">Ativa</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="job-command">Comando <span aria-hidden="true">*</span></label>
+            <textarea class="form-control" id="job-command" rows="3" placeholder="/opt/scripts/limpeza.sh"></textarea>
+          </div>
+        </div>
+
+        <section class="schedule-section" aria-labelledby="schedule-heading">
+          <h3 id="schedule-heading">Quando executar</h3>
+          <div class="schedule-presets">
+            <button type="button" class="btn btn-outline-secondary" data-schedule="* * * * *">A cada minuto</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="*/5 * * * *">A cada 5 min</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="@hourly">À hora</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="@daily">Diariamente</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="@weekly">Semanalmente</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="@monthly">Mensalmente</button>
+            <button type="button" class="btn btn-outline-secondary" data-schedule="@reboot">Ao iniciar</button>
+          </div>
+          <div class="schedule-preview"><span>Expressão cron</span><code id="job-string">* * * * *</code></div>
+          <div class="row g-2 mt-2" aria-label="Personalizar expressão cron">
+            <div class="col"><label class="visually-hidden" for="job-minute">Minuto</label><input type="text" class="form-control schedule-part" id="job-minute" value="*" placeholder="Min"/></div>
+            <div class="col"><label class="visually-hidden" for="job-hour">Hora</label><input type="text" class="form-control schedule-part" id="job-hour" value="*" placeholder="Hora"/></div>
+            <div class="col"><label class="visually-hidden" for="job-day">Dia</label><input type="text" class="form-control schedule-part" id="job-day" value="*" placeholder="Dia"/></div>
+            <div class="col"><label class="visually-hidden" for="job-month">Mês</label><input type="text" class="form-control schedule-part" id="job-month" value="*" placeholder="Mês"/></div>
+            <div class="col"><label class="visually-hidden" for="job-week">Semana</label><input type="text" class="form-control schedule-part" id="job-week" value="*" placeholder="Semana"/></div>
+            <div class="col-auto"><button type="button" class="btn btn-outline-secondary" id="set-schedule">Aplicar</button></div>
+          </div>
+        </section>
+
+        <div class="job-options">
+          <div class="form-check">
+            <input type="checkbox" class="form-check-input" id="job-logging"/>
+            <label class="form-check-label" for="job-logging">Registar erros desta tarefa</label>
+          </div>
+          <div class="form-text">Os perfis de e-mail são geridos pelo administrador.</div>
+        </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" id="copy-crontab"><i class="bi bi-clipboard"></i> Copy</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="job-save">Guardar tarefa</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="popup" tabindex="-1" aria-labelledby="modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title" id="modal-title">Mensagem</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="modal-close-button">Cancelar</button><button type="button" class="btn btn-primary" id="modal-button">Confirmar</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="info-popup" tabindex="-1" aria-labelledby="info-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title" id="info-title">Mensagem</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body" id="info-body"></div>
+      <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="info-button">Entendi</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="preview-crontab-modal" tabindex="-1" aria-labelledby="preview-crontab-title" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><div><h2 class="modal-title" id="preview-crontab-title">Pré-visualização do crontab</h2><p class="modal-subtitle">Reveja o resultado antes de publicar.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
+      <div class="modal-body"><pre id="preview-crontab-content" class="bg-dark text-light p-3 rounded mb-0" style="min-height:200px;white-space:pre-wrap;word-break:break-all;font-size:0.875rem;"></pre></div>
+      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" id="copy-crontab"><i class="bi bi-clipboard me-1"></i>Copiar</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button></div>
     </div>
   </div>
 </div>

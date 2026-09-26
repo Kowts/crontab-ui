@@ -6,6 +6,7 @@
 <title>Crontab UI</title>
 <link href="css/bootstrap.min.css" rel="stylesheet">
 <link href="css/bootstrap-icons.min.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
 <script src="js/jquery.min.js"></script>
 <script src="js/bootstrap.bundle.min.js"></script>
 <script src="script.js"></script>
@@ -22,11 +23,13 @@
 	});
 -->
 </head>
-<body>
+<body class="app-body">
 <%- include('navbar.ejs') -%>
-<div class="container">
-	<h2><%= db %></h2>
-	<table class="table">
+<main class="app-shell">
+  <div class="breadcrumb-lite">Administração <span>/</span> Backups <span>/</span> Detalhe</div>
+  <header class="page-heading"><div><h1>Backup</h1><p><%= db %></p></div></header>
+  <section class="app-card">
+	<table class="table align-middle mb-0">
 	<tr>
 		<th>Id</th>
 		<th></th>
@@ -62,9 +65,9 @@
 
 
 	</table>
-	<button type="button" class="btn btn-primary" data-action="restore-backup" data-db="<%= db %>"><i class="bi bi-arrow-counterclockwise"></i> Restore</button>
-	<button type="button" class="btn btn-danger" data-action="delete-backup" data-db="<%= db %>"><i class="bi bi-trash"></i> Delete</button>
-</div>
+	<div class="card-body-app d-flex gap-2"><button type="button" class="btn btn-primary" data-action="restore-backup" data-db="<%= db %>"><i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar backup</button><button type="button" class="btn btn-outline-danger" data-action="delete-backup" data-db="<%= db %>"><i class="bi bi-trash me-1"></i> Apagar backup</button></div>
+  </section>
+</main>
 <%- include('popup.ejs') -%>
 </body>
 </html>

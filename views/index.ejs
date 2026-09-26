@@ -1,12 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-PT">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crontab UI</title>
+<title>Crontab UI — Tarefas agendadas</title>
 <link href="css/bootstrap.min.css" rel="stylesheet">
 <link href="css/bootstrap-icons.min.css" rel="stylesheet">
 <link href="css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
 <script src="js/jquery.min.js"></script>
 <script src="js/bootstrap.bundle.min.js"></script>
 <script src="js/dataTables.min.js"></script>
@@ -15,127 +16,123 @@
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
 <script id="env-state" type="application/json"><%- env %></script>
-<!-- Legacy bootstrap moved to public/js/script.js.
-	var crontabs = [];
-	var routes = [];
-	document.addEventListener('DOMContentLoaded', function() {
-		var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-		tooltipTriggerList.map(function (el) { return new bootstrap.Tooltip(el); });
-		crontabs = JSON.parse('<%- crontabs.replace(/\\\\/g, "\\\\\\\\").replace(/\\\"/g,"\\\\\"").replace(/\'/g,"\\\'").replace(/\\t/g, " ") %>');
-		routes = JSON.parse('<%- routes %>');
-		$("#env_vars").val(`<%- env  %>`);
-	});
--->
 </head>
-<body>
+<body class="app-body">
 <% const canManageJobs = ['operator', 'admin'].includes(currentRole); %>
 <% const canRunJobs = ['executor', 'operator', 'admin'].includes(currentRole); %>
 <% const isAdmin = currentRole === 'admin'; %>
+<% const jobs = JSON.parse(crontabs); %>
+<% const hasJobs = jobs.length > 0; %>
+<% const hasUnsavedChanges = jobs.some(function(job) { return !job.saved; }); %>
 <%- include('navbar.ejs') -%>
-<div class="container-fluid">
-	<h2>Cronjobs</h2>
-	<p class="text-muted small">Sessão com papel: <%= currentRole %></p>
-	<% if (isAdmin) { %>
-	<div class="mb-3">
-		<label for="env_vars" class="form-label">Environment Variables:</label>
-		<textarea class="form-control" rows="3" id="env_vars" placeholder="# Please set PATH, MAILTO, HOME... here"></textarea>
-	</div>
-	<% } %>
-	<div class="mb-3">
-		<% if (canManageJobs) { %>
-		<button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-circle"></i> New</button>
-		<% } %>
-		<% if (isAdmin) { %>
-		<button type="button" class="btn btn-info" data-action="backup"><i class="bi bi-download"></i> Backup</button>
-		<form id="import_form" enctype="multipart/form-data" action="<%= JSON.parse(routes).import %>" method="post" style="display:none">
-			<input type="file" id="import_file" name="import_file"/>
-		</form>
-		<button type="button" class="btn btn-warning" data-action="import-db"><i class="bi bi-box-arrow-in-down"></i> Import</button>
-		<a class="btn btn-warning" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up"></i> Export</a>
-		<button type="button" class="btn btn-success" data-action="import-crontab"><i class="bi bi-arrow-down-circle"></i> Get from crontab</button>
-		<button type="button" class="btn btn-success" data-action="set-crontab"><i class="bi bi-save"></i> Save to crontab</button>
-		<% } %>
-		<button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square"></i> Preview crontab</button>
-	</div>
 
-	<table class="table table-striped" id="main_table">
-		<thead>
-	<tr>
-		<th>#</th>
-		<th>Name</th>
-		<th>Job</th>
-		<th>Time</th>
-		<th>Last Modified</th>
-		<th></th>
-	</tr>
-</thead>
-<tbody>
-	<% var index = 1 %>
-	<% JSON.parse(crontabs).forEach(function(crontab){ %>
-		<% if (!crontab.stopped) { %>
-			<tr>
-		<% } else { %>
-			<tr class="table-primary">
-		<% } %>
-				<td>
-					<%= index %>.
-					<% index += 1 %>
-				</td>
+<main class="app-shell">
+  <div class="breadcrumb-lite">Administração <span>/</span> Tarefas agendadas</div>
+  <header class="page-heading">
+    <div>
+      <h1>Tarefas agendadas</h1>
+      <p>Gere os comandos, horários e a publicação no crontab.</p>
+    </div>
+    <div class="page-actions">
+      <button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square me-1"></i> Pré-visualizar crontab</button>
+      <% if (canManageJobs) { %>
+        <button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i> Nova tarefa</button>
+      <% } %>
+    </div>
+  </header>
 
-				<td>
-					<% if (crontab.name) { %>
-						<%= crontab.name %>
-						<a class="btn btn-sm" data-bs-toggle="tooltip" data-bs-placement="right" title="<%= crontab._id %>"><i class="bi bi-info-circle"></i></a>
-						<% if (crontab.saved) { %>
-							<i class="bi bi-check-circle text-success"></i>
-						<% } else { %>
-							<a data-bs-toggle="tooltip" data-bs-placement="right" title="'Save to crontab' to deploy">
-								<i class="bi bi-exclamation-circle text-warning"></i>
-							</a>
-						<% } %>
-					<% } else { %>
-						<%= crontab._id %>
-					<% } %>
-				</td>
-				<td><%= crontab.command %></td>
-				<td>
-					<span style="cursor:pointer" data-bs-toggle="tooltip" data-bs-placement="bottom" title="<%= crontab.next %>">
-							<%= crontab.schedule %>
-					</span>
-					<a class="btn btn-sm" data-bs-toggle="tooltip" data-bs-placement="right" title="<%= crontab.human %>">
-						<i class="bi bi-info-circle"></i>
-					</a>
-				</td>
-				<td style="width:20%" title="<%= crontab.timestamp %>"><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
-				<td>
+  <% if (isAdmin) { %>
+    <section class="app-card" aria-labelledby="environment-heading">
+      <div class="card-heading">
+        <h2 id="environment-heading">Variáveis de ambiente</h2>
+        <button type="button" class="link-action" data-action="toggle-environment">Editar</button>
+      </div>
+      <div class="card-body-app" id="environment-editor">
+        <textarea class="environment-editor" rows="3" id="env_vars" placeholder="# Defina PATH, MAILTO e outras variáveis necessárias…"></textarea>
+      </div>
+    </section>
+  <% } %>
 
-		<% if (!crontab.stopped) { %>
-			<% if (crontab.logging && crontab.logging != "false") {%>
-					<a class="btn btn-sm btn-danger" data-bs-toggle="tooltip" data-bs-placement="left" title="stderr" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
-					<a class="btn btn-sm btn-primary" data-bs-toggle="tooltip" data-bs-placement="left" title="stdout" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
-			<% } %>
-					<% if (canRunJobs) { %><button type="button" class="btn btn-sm btn-info" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Run now</button><% } %>
-					<% if (canManageJobs) { %>
-					<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil-square"></i> Edit</button>
-					<button type="button" class="btn btn-sm btn-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-stop-fill"></i> Disable</button>
-					<% } %>
-		<% } else { %>
-					<% if (canManageJobs) { %>
-					<button type="button" class="btn btn-sm btn-info" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Enable</button>
-					<% } %>
-		<% } %>
-					<% if (canManageJobs) { %>
-					<button type="button" class="btn btn-sm btn-warning" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i></button>
-					<button type="button" class="btn btn-sm btn-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i></button>
-					<% } %>
-				</td>
-			</tr>
-	<% }); %>
+  <section class="app-card" aria-labelledby="jobs-heading">
+    <div class="card-heading">
+      <div>
+        <h2 id="jobs-heading">Tarefas <span class="jobs-count"><%= jobs.length %> <%= jobs.length === 1 ? 'tarefa' : 'tarefas' %></span></h2>
+      </div>
+      <div class="jobs-toolbar">
+        <% if (isAdmin) { %>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Importar / Exportar</button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><button type="button" class="dropdown-item" data-action="import-db"><i class="bi bi-box-arrow-in-down me-2"></i>Importar configuração</button></li>
+              <li><a class="dropdown-item" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up me-2"></i>Exportar configuração</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><button type="button" class="dropdown-item" data-action="import-crontab"><i class="bi bi-arrow-down-circle me-2"></i>Obter do crontab</button></li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Acções</button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><button type="button" class="dropdown-item" data-action="backup"><i class="bi bi-shield-plus me-2"></i>Criar backup</button></li>
+              <li><button type="button" class="dropdown-item" data-action="set-crontab"><i class="bi bi-cloud-arrow-up me-2"></i>Publicar no crontab</button></li>
+            </ul>
+          </div>
+          <form id="import_form" enctype="multipart/form-data" action="<%= JSON.parse(routes).import %>" method="post" class="d-none">
+            <input type="file" id="import_file" name="import_file" accept=".db"/>
+          </form>
+        <% } %>
+      </div>
+    </div>
 
-
-</tbody>
-	</table>
-</div>
+    <% if (hasJobs) { %>
+      <table class="table align-middle mb-0" id="main_table">
+        <thead>
+          <tr><th>#</th><th>Nome</th><th>Comando</th><th>Horário</th><th>Última alteração</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% jobs.forEach(function(crontab, index){ %>
+            <tr class="<%= crontab.stopped ? 'table-light' : '' %>">
+              <td><%= index + 1 %></td>
+              <td>
+                <strong><%= crontab.name || crontab._id %></strong>
+                <% if (crontab.saved) { %><i class="bi bi-check-circle-fill text-success ms-1" title="Publicado"></i><% } else { %><i class="bi bi-exclamation-circle-fill text-warning ms-1" title="Alterações por publicar"></i><% } %>
+              </td>
+              <td><code><%= crontab.command %></code></td>
+              <td><span title="<%= crontab.next %>"><%= crontab.schedule %></span><small class="d-block text-muted"><%= crontab.human %></small></td>
+              <td><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
+              <td class="text-end text-nowrap">
+                <% if (!crontab.stopped && crontab.logging && crontab.logging !== 'false') { %>
+                  <a class="btn btn-sm btn-outline-secondary" title="stderr" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
+                  <a class="btn btn-sm btn-outline-secondary" title="stdout" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-terminal"></i></a>
+                <% } %>
+                <% if (!crontab.stopped && canRunJobs) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden">Executar</span></button><% } %>
+                <% if (canManageJobs) { %>
+                  <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-pause-fill"></i><span class="visually-hidden">Pausar</span></button><% } else { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden">Ativar</span></button><% } %>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil"></i><span class="visually-hidden">Editar</span></button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i><span class="visually-hidden">Duplicar</span></button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i><span class="visually-hidden">Apagar</span></button>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } else { %>
+      <div class="empty-state">
+        <div class="empty-state-icon"><i class="bi bi-calendar-plus"></i></div>
+        <h3>Ainda não existem tarefas</h3>
+        <p>Crie a primeira tarefa ou importe uma configuração existente. Poderá rever as alterações antes de publicar no crontab.</p>
+        <div class="empty-state-actions">
+          <% if (canManageJobs) { %><button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i>Criar primeira tarefa</button><% } %>
+          <% if (isAdmin) { %><button type="button" class="btn btn-outline-secondary" data-action="import-db">Importar configuração</button><% } %>
+        </div>
+      </div>
+    <% } %>
+    <footer class="jobs-footer">
+      <span><i class="bi bi-record-fill me-1"></i> Alterações locais: <%= hasUnsavedChanges ? 'por publicar' : 'nenhuma' %></span>
+      <% if (isAdmin) { %><span><a href="#" data-action="import-crontab">Obter do crontab</a><a href="#" data-action="set-crontab">Publicar</a></span><% } %>
+    </footer>
+  </section>
+</main>
 <%- include('popup.ejs') -%>
 </body>
 </html>

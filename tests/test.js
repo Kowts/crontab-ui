@@ -43,7 +43,8 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/');
       expect(res.status).toBe(200);
       expect(res.text).toContain('Crontab UI');
-      expect(res.text).toContain('Cronjobs');
+      expect(res.text).toContain('Tarefas agendadas');
+      expect(res.text).toContain('Criar primeira tarefa');
     });
   });
 
@@ -376,7 +377,7 @@ describe('Crontab UI', () => {
     it('should render a textarea for the command field', async () => {
       const res = await request(app).get('/');
       expect(res.text).toContain('<textarea');
-      expect(res.text).toContain('id=\'job-command\'');
+      expect(res.text).toContain('id="job-command"');
     });
   });
 

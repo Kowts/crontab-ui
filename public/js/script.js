@@ -23,7 +23,12 @@ function initPage() {
   if (document.getElementById('main_table')) {
     $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
-      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }]
+      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }],
+      language: {
+        search: '', searchPlaceholder: 'Pesquisar tarefas',
+        lengthMenu: '_MENU_ por página', info: 'A mostrar _START_–_END_ de _TOTAL_ tarefas',
+        infoEmpty: 'Sem tarefas', zeroRecords: 'Não foram encontradas tarefas', paginate: { first: '«', last: '»', next: '›', previous: '‹' }
+      }
     });
   }
   var importInput = document.getElementById('import_file');
@@ -73,6 +78,7 @@ document.addEventListener('click', function(event) {
     case 'import-crontab': getCrontab(); break;
     case 'set-crontab': setCrontab(); break;
     case 'preview': previewCrontab(); break;
+    case 'toggle-environment': toggleEnvironment(); break;
     case 'run': runJob(id); break;
     case 'edit': editJob(id); break;
     case 'stop': stopJob(id); break;
@@ -91,8 +97,8 @@ function getModal(id) {
 }
 
 function infoMessageBox(message, title) {
-  document.getElementById('info-body').innerHTML = message;
-  document.getElementById('info-title').innerHTML = title;
+  document.getElementById('info-body').textContent = message;
+  document.getElementById('info-title').textContent = title;
   getModal('info-popup').show();
 }
 
@@ -111,9 +117,9 @@ function messageBox(body, title, ok_text, close_text, callback) {
     modalBody.innerHTML = '';
     modalBody.appendChild(body);
   }
-  document.getElementById('modal-title').innerHTML = title;
-  if (ok_text) document.getElementById('modal-button').innerHTML = ok_text;
-  if (close_text) document.getElementById('modal-close-button').innerHTML = close_text;
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-button').textContent = ok_text || 'Confirmar';
+  document.getElementById('modal-close-button').textContent = close_text || 'Cancelar';
 
   var btn = document.getElementById('modal-button');
   var newBtn = btn.cloneNode(true);
@@ -133,7 +139,7 @@ var schedule = '';
 var job_command = '';
 
 function deleteJob(_id) {
-  messageBox('<p> Do you want to delete this Job? </p>', 'Confirm delete', null, null, function() {
+  messageBox('<p>Esta tarefa será removida da aplicação.</p>', 'Apagar tarefa', 'Apagar', 'Cancelar', function() {
     $.post(routes.remove, {_id: _id}, function() {
       location.reload();
     });
@@ -141,7 +147,7 @@ function deleteJob(_id) {
 }
 
 function stopJob(_id) {
-  messageBox('<p> Do you want to stop this Job? </p>', 'Confirm stop job', null, null, function() {
+  messageBox('<p>A tarefa deixará de ser incluída quando publicar o crontab.</p>', 'Pausar tarefa', 'Pausar', 'Cancelar', function() {
     $.post(routes.stop, {_id: _id}, function() {
       location.reload();
     });
@@ -149,7 +155,7 @@ function stopJob(_id) {
 }
 
 function startJob(_id) {
-  messageBox('<p> Do you want to start this Job? </p>', 'Confirm start job', null, null, function() {
+  messageBox('<p>A tarefa voltará a ficar disponível para publicação.</p>', 'Ativar tarefa', 'Ativar', 'Cancelar', function() {
     $.post(routes.start, {_id: _id}, function() {
       location.reload();
     });
@@ -157,7 +163,7 @@ function startJob(_id) {
 }
 
 function runJob(_id) {
-  messageBox('<p> Do you want to run this Job? </p>', 'Confirm run job', null, null, function() {
+  messageBox('<p>O comando será executado agora com os limites de segurança configurados.</p>', 'Executar tarefa', 'Executar', 'Cancelar', function() {
     $.post(routes.run, {_id: _id}, function() {
       location.reload();
     });
@@ -165,9 +171,9 @@ function runJob(_id) {
 }
 
 function setCrontab() {
-  messageBox('<p> Do you want to set the crontab file? </p>', 'Confirm crontab setup', null, null, function() {
+  messageBox('<p>As alterações locais serão publicadas no crontab do serviço.</p>', 'Publicar no crontab', 'Publicar', 'Cancelar', function() {
     $.post(routes.crontab, { env_vars: $('#env_vars').val() }, function() {
-      infoMessageBox('Successfully set crontab file!', 'Information');
+      infoMessageBox('Crontab publicado com sucesso.', 'Publicação concluída');
       location.reload();
     }).fail(function(response) {
       errorMessageBox(response.statusText);
@@ -177,10 +183,10 @@ function setCrontab() {
 
 function getCrontab() {
   messageBox(
-    '<p> Do you want to get the crontab file? <br /> A backup will be created automatically before importing.</p>',
-    'Confirm crontab retrieval', null, null, function() {
+    '<p>Será criado um backup antes de importar as tarefas do crontab do serviço.</p>',
+    'Obter do crontab', 'Importar', 'Cancelar', function() {
     $.post(routes.import_crontab, {}, function() {
-        infoMessageBox('Successfully got the crontab file!', 'Information');
+        infoMessageBox('Tarefas importadas do crontab.', 'Importação concluída');
         location.reload();
       });
     });
@@ -193,6 +199,7 @@ function editJob(_id) {
   });
 
   if (job) {
+    document.getElementById('job-title').textContent = 'Editar tarefa';
     getModal('job').show();
     $('#job-name').val(job.name);
     $('#job-command').val(job.command);
@@ -235,6 +242,7 @@ function newJob() {
   $('#job-month').val('*');
   $('#job-week').val('*');
 
+  document.getElementById('job-title').textContent = 'Nova tarefa';
   getModal('job').show();
   $('#job-name').val('');
   $('#job-command').val('');
@@ -280,7 +288,9 @@ function duplicateJob(_id) {
 }
 
 function doBackup() {
-  messageBox('<p> Do you want to take backup? </p>', 'Confirm backup', null, null, function() {
+  messageBox(
+    '<div class="backup-notice"><strong>Antes de continuar</strong>O backup inclui as tarefas e as variáveis de ambiente actualmente guardadas nesta aplicação.</div><ul class="backup-list"><li>Não altera o crontab do servidor.</li><li>Poderá restaurar esta cópia através de Backups.</li></ul>',
+    'Criar backup', 'Criar backup', 'Cancelar', function() {
     $.post(routes.backup, {}, function() {
       location.reload();
     });
@@ -288,7 +298,7 @@ function doBackup() {
 }
 
 function delete_backup(db_name) {
-  messageBox('<p> Do you want to delete this backup? </p>', 'Confirm delete', null, null, function() {
+  messageBox('<p>Esta cópia de segurança será removida de forma permanente.</p>', 'Apagar backup', 'Apagar', 'Cancelar', function() {
     $.post(routes.delete_backup, { db: db_name }, function() {
       location = routes.root;
     });
@@ -296,7 +306,7 @@ function delete_backup(db_name) {
 }
 
 function restore_backup(db_name) {
-  messageBox('<p> Do you want to restore this backup? </p>', 'Confirm restore', null, null, function() {
+  messageBox('<p>A configuração actual será salvaguardada antes de restaurar este backup.</p>', 'Restaurar backup', 'Restaurar', 'Cancelar', function() {
     $.post(routes.restore_backup, { db: db_name }, function() {
       location = routes.root;
     });
@@ -305,8 +315,8 @@ function restore_backup(db_name) {
 
 function import_db() {
   messageBox(
-    '<p> Do you want to import crontab?<br /> A backup will be created automatically before importing.</p>',
-    'Confirm import from crontab', null, null, function() {
+    '<p>Será criado um backup automático antes de importar a configuração seleccionada.</p>',
+    'Importar configuração', 'Selecionar ficheiro', 'Cancelar', function() {
       $('#import_file').click();
     });
 }
@@ -318,8 +328,14 @@ function collapsedCommand() {
 
 function job_string() {
   var cmd = collapsedCommand();
-  $('#job-string').val(schedule + ' ' + cmd);
+  var preview = document.getElementById('job-string');
+  if (preview) preview.textContent = (schedule + ' ' + cmd).trim() || '* * * * *';
   return schedule + ' ' + cmd;
+}
+
+function toggleEnvironment() {
+  var editor = document.getElementById('environment-editor');
+  if (editor) editor.classList.toggle('d-none');
 }
 
 function set_schedule() {
@@ -338,9 +354,9 @@ function copyCrontab() {
   var text = document.getElementById('preview-crontab-content').textContent;
   navigator.clipboard.writeText(text).then(function() {
     var btn = document.querySelector('#preview-crontab-modal .btn-outline-secondary');
-    btn.innerHTML = '<i class="bi bi-check2"></i> Copied!';
+    btn.innerHTML = '<i class="bi bi-check2"></i> Copiado';
     setTimeout(function() {
-      btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy';
+      btn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar';
     }, 2000);
   });
 }
