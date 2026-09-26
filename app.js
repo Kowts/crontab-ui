@@ -182,7 +182,7 @@ app.post(routes.run, requireRole('operator'), validateIdParam, (req, res) => {
 });
 
 app.post(routes.crontab, requireRole('admin'), validateEnvironmentPayload, (req, res, next) => {
-  crontab.set_crontab(req.body.env_vars, (err) => {
+  crontab.set_crontab(req.jobEnvironment, (err) => {
     if (err) next(err);
     else res.end();
   });

@@ -29,6 +29,7 @@ const crontab = require('../crontab');
 const { requireRole } = require('../middleware/authorization');
 const { configuredUsers } = require('../middleware/auth');
 const { execute } = require('../execution');
+const { parseEnvironment } = require('../config/environment');
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -212,6 +213,11 @@ describe('Crontab UI', () => {
 
     it('should reject an environment payload containing a NUL byte', async () => {
       const res = await request(app).post('/crontab').send({ env_vars: 'PATH=/bin\0BAD=1' });
+      expect(res.status).toBe(400);
+    });
+
+    it.each(['export PATH=/bin', 'PATH=$(whoami)', 'PATH=`whoami`', 'PATH=/bin;id', 'PATH=/bin&&id', 'PATH=/bin|id', 'lowercase=/bin'])('rejects shell syntax or invalid environment names', async (env_vars) => {
+      const res = await request(app).post('/crontab').send({ env_vars });
       expect(res.status).toBe(400);
     });
   });
@@ -426,6 +432,18 @@ describe('Crontab UI', () => {
       const page = await request(app).get('/');
       expect(page.text).toContain('recovery-job');
     });
+  });
+});
+
+describe('Environment definitions', () => {
+  it('parses multiple environment variables without shell evaluation', () => {
+    expect(parseEnvironment('NAME=value\nOTHER=with spaces=and equals\nEMPTY=')).toEqual({
+      NAME: 'value', OTHER: 'with spaces=and equals', EMPTY: '',
+    });
+  });
+
+  it('preserves supported Unicode values', () => {
+    expect(parseEnvironment('MESSAGE=olá Cabo Verde')).toEqual({ MESSAGE: 'olá Cabo Verde' });
   });
 });
 

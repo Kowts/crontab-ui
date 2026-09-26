@@ -9,6 +9,7 @@ const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
 const { execute } = require('./execution');
+const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -59,13 +60,6 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing) {
 
 function makeCommand(tab) {
   return `"${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
-}
-
-function addEnvVars(envVars, command) {
-  if (envVars) {
-    return `(${envVars.replace(/\s*\n\s*/g, ' ').trim()}; (${command}))`;
-  }
-  return command;
 }
 
 exports.db_folder = dbFolder;
@@ -196,13 +190,18 @@ exports.runjob = (_id, callback = () => {}) => {
   db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
-    const envVars = exports.get_env();
-    const cmd = addEnvVars(envVars, res.command);
+    let jobEnvironment;
+    try {
+      jobEnvironment = parseEnvironment(exports.get_env());
+    } catch (environmentError) {
+      return callback(environmentError);
+    }
+    const cmd = res.command;
 
     const operationId = crypto.randomUUID();
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started' });
 
-    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs }, (error, result) => {
+    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: { ...process.env, ...jobEnvironment } }, (error, result) => {
       const files = recordOutput(res, result);
       sendMail(res, files);
       applyRetention();
@@ -212,7 +211,8 @@ exports.runjob = (_id, callback = () => {}) => {
   });
 };
 
-exports.set_crontab = (envVars, callback) => {
+exports.set_crontab = (environment, callback) => {
+  const envVars = serialiseEnvironment(environment);
   exports.crontabs((tabs) => {
     let crontabString = '';
     if (envVars) {
@@ -498,6 +498,11 @@ exports.import_crontab = () => {
 };
 
 exports.preview_crontab = (envVars, callback) => {
+  try {
+    envVars = serialiseEnvironment(parseEnvironment(envVars));
+  } catch (_error) {
+    return callback('# Invalid environment configuration');
+  }
   exports.crontabs((tabs) => {
     let crontabString = '';
     if (envVars) {
@@ -513,6 +518,9 @@ exports.preview_crontab = (envVars, callback) => {
 };
 
 exports.autosave_crontab = (callback) => {
-  const envVars = exports.get_env();
-  exports.set_crontab(envVars, callback);
+  try {
+    exports.set_crontab(parseEnvironment(exports.get_env()), callback);
+  } catch (error) {
+    callback(error);
+  }
 };

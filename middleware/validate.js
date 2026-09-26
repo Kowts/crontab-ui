@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { parseEnvironment } = require('../config/environment');
 
 function sanitizeFilename(name) {
   if (!name) return name;
@@ -31,8 +32,9 @@ function validateIdParam(req, res, next) {
 }
 
 function validateEnvironmentPayload(req, res, next) {
-  const value = req.body.env_vars;
-  if (typeof value !== 'string' || value.length > 8192 || value.includes('\0')) {
+  try {
+    req.jobEnvironment = parseEnvironment(req.body.env_vars);
+  } catch (_error) {
     return res.status(400).json({ message: 'Invalid environment variables payload' });
   }
   return next();

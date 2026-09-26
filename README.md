@@ -92,6 +92,8 @@ Exemplo: `BASIC_AUTH_USERS_JSON={"ana":"segredo-ana","bruno":"segredo-bruno"}` e
 
 Os perfis SMTP são definidos exclusivamente em `MAIL_PROFILES_JSON`. Cada perfil tem `transporter`, `from` e `to`; as tarefas guardam apenas uma referência de perfil, nunca a credencial. A configuração de correio é responsabilidade do administrador do serviço.
 
+As variáveis configuradas na interface aceitam apenas linhas `NOME=valor`, com nomes maiúsculos que respeitem `^[A-Z_][A-Z0-9_]*$`. São passadas ao processo como ambiente Node, nunca concatenadas a uma shell. Sintaxe shell como `export`, `$()`, backticks, pipes, redireccionamentos e `;` é recusada.
+
 O processo deve executar com o menor privilégio possível. Não monte o crontab do anfitrião num contentor e não conceda acesso ao serviço a utilizadores que não possam criar comandos agendados. A execução de uma tarefa é equivalente à execução de um comando pelo utilizador do serviço.
 
 ### Retenção e auditoria
