@@ -246,9 +246,12 @@ app.post(routes.import, requireRole('admin'), (req, res, next) => {
     file.pipe(output);
     file.on('limit', () => output.destroy(new Error('Import file exceeds the size limit')));
     output.on('error', next);
-    output.on('close', () => crontab.replace_database(temporaryFile, (err) => {
-      if (err) return next(err);
-      return res.redirect(routes.root);
+    output.on('close', () => crontab.normalise_database(temporaryFile, (normaliseError) => {
+      if (normaliseError) return next(normaliseError);
+      return crontab.replace_database(temporaryFile, (err) => {
+        if (err) return next(err);
+        return res.redirect(routes.root);
+      });
     }));
   });
   req.busboy.on('finish', () => {

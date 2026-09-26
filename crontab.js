@@ -7,6 +7,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
+const { getProfile } = require('./config/mail-profiles');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -70,10 +71,6 @@ function makeCommand(tab) {
   if (tab.logging && tab.logging === 'true') {
     result += `; if test -f ${stderr}; then date >> "${logFile}"; cat ${stderr} >> "${logFile}"; fi`;
     result += `; if test -f ${stdout}; then date >> "${logFileStdout}"; cat ${stdout} >> "${logFileStdout}"; fi`;
-  }
-
-  if (tab.hook) {
-    result += `; if test -f ${stdout}; then ${tab.hook} < ${stdout}; fi`;
   }
 
   if (tab.mailing && JSON.stringify(tab.mailing) !== '{}') {
@@ -290,6 +287,101 @@ function validateDatabaseFile(fileName, callback) {
     return candidate.find({}).exec((findErr) => callback(findErr));
   });
 }
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function validateImportedJob(document) {
+  if (!isPlainObject(document)) throw new Error('Imported record must be an object');
+  for (const key of Object.keys(document)) {
+    if (['__proto__', 'constructor', 'prototype'].includes(key)) {
+      throw new Error('Imported record contains a dangerous property');
+    }
+  }
+
+  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook']);
+  for (const key of Object.keys(document)) {
+    if (!accepted.has(key)) throw new Error(`Unsupported imported field: ${key}`);
+  }
+
+  if (typeof document.name !== 'string' || document.name.length > 128 || /[\r\n]/.test(document.name)) {
+    throw new Error('Imported job has an invalid name');
+  }
+  if (typeof document.command !== 'string' || !document.command.trim() || document.command.length > 2000 || /[\r\n]/.test(document.command)) {
+    throw new Error('Imported job has an invalid command');
+  }
+  if (typeof document.schedule !== 'string' || document.schedule.length > 128 || /[\r\n]/.test(document.schedule)) {
+    throw new Error('Imported job has an invalid schedule');
+  }
+  if (document.schedule !== '@reboot') CronExpressionParser.parse(document.schedule);
+  if (document.stopped !== undefined && document.stopped !== null && typeof document.stopped !== 'boolean') {
+    throw new Error('Imported job has an invalid stopped state');
+  }
+  if (document.logging !== undefined && typeof document.logging !== 'boolean' && document.logging !== 'true' && document.logging !== 'false') {
+    throw new Error('Imported job has an invalid logging setting');
+  }
+  if (document.mailing !== undefined) {
+    if (!isPlainObject(document.mailing) || Object.keys(document.mailing).some((key) => key !== 'profileId')) {
+      throw new Error('Imported job has invalid mail settings');
+    }
+    if (document.mailing.profileId !== undefined) {
+      if (typeof document.mailing.profileId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(document.mailing.profileId)) {
+        throw new Error('Imported job has an invalid mail profile');
+      }
+      getProfile(document.mailing.profileId);
+    }
+  }
+
+  return {
+    name: document.name,
+    command: document.command,
+    schedule: document.schedule,
+    stopped: document.stopped === true,
+    logging: document.logging === true || document.logging === 'true',
+    mailing: document.mailing?.profileId ? { profileId: document.mailing.profileId } : {},
+    created: Date.now(),
+    saved: false,
+    timestamp: new Date().toString(),
+  };
+}
+
+function replaceTemporaryFile(source, destination, callback) {
+  fs.unlink(destination, (unlinkError) => {
+    if (unlinkError && unlinkError.code !== 'ENOENT') return callback(unlinkError);
+    return fs.rename(source, destination, callback);
+  });
+}
+
+exports.normalise_database = (temporaryFile, callback) => {
+  const candidate = new Datastore({ filename: temporaryFile });
+  candidate.loadDatabase((loadError) => {
+    if (loadError) return callback(loadError);
+    return candidate.find({}).exec((findError, documents) => {
+      if (findError) return callback(findError);
+      let jobs;
+      try {
+        jobs = documents.map(validateImportedJob);
+      } catch (validationError) {
+        return callback(validationError);
+      }
+
+      const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
+      const normalised = new Datastore({ filename: normalisedFile });
+      return normalised.loadDatabase((normalisedLoadError) => {
+        if (normalisedLoadError) return callback(normalisedLoadError);
+        return normalised.insert(jobs, (insertError) => {
+          if (insertError) return callback(insertError);
+          return normalised.compactDatafile((compactError) => {
+            if (compactError) return callback(compactError);
+            return replaceTemporaryFile(normalisedFile, temporaryFile, callback);
+          });
+        });
+      });
+    });
+  });
+};
 
 exports.replace_database = (temporaryFile, callback) => withDatabaseLock((done) => {
   const fail = (error) => fs.unlink(temporaryFile, () => done(error));

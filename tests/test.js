@@ -5,6 +5,7 @@ const request = require('supertest');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const Datastore = require('@seald-io/nedb');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
 fs.mkdirSync(testDbPath, { recursive: true });
@@ -330,6 +331,82 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/');
       expect(res.text).toContain('<textarea');
       expect(res.text).toContain('id=\'job-command\'');
+    });
+  });
+
+  describe('NeDB import normalisation', () => {
+    function normalise(file) {
+      return new Promise((resolve, reject) => crontab.normalise_database(file, (error) => {
+        if (error) reject(error);
+        else resolve();
+      }));
+    }
+
+    function records(file) {
+      const datastore = new Datastore({ filename: file });
+      return new Promise((resolve, reject) => datastore.loadDatabase((loadError) => {
+        if (loadError) return reject(loadError);
+        return datastore.find({}).exec((findError, docs) => (findError ? reject(findError) : resolve(docs)));
+      }));
+    }
+
+    function writeCandidate(name, documents) {
+      const file = path.join(testDbPath, name);
+      fs.writeFileSync(file, documents.map((document) => JSON.stringify(document)).join('\n'));
+      return file;
+    }
+
+    it('normalises a valid record, removes hooks and regenerates imported ids', async () => {
+      const file = writeCandidate('normalise-valid.db', [{
+        _id: 'externally-controlled-id', name: 'imported', command: 'echo imported',
+        schedule: '* * * * *', stopped: false, logging: 'true', mailing: {},
+        hook: 'touch /tmp/should-not-run', timestamp: 'old', created: 1, saved: true,
+      }]);
+      await normalise(file);
+      const [job] = await records(file);
+      expect(job._id).not.toBe('externally-controlled-id');
+      expect(job.hook).toBeUndefined();
+      expect(job.command).toBe('echo imported');
+      expect(job.logging).toBe(true);
+    });
+
+    it('accepts an empty datastore', async () => {
+      const file = writeCandidate('normalise-empty.db', []);
+      await normalise(file);
+      expect(await records(file)).toEqual([]);
+    });
+
+    it.each([
+      ['truncated NeDB', '{"name":'],
+      ['invalid cron', JSON.stringify({ _id: 'invalid-cron', name: 'bad', command: 'echo bad', schedule: 'not-a-cron' })],
+      ['command object', JSON.stringify({ _id: 'invalid-command', name: 'bad', command: { run: 'echo bad' }, schedule: '* * * * *' })],
+      ['environment object', JSON.stringify({ _id: 'invalid-env', name: 'bad', command: 'echo bad', schedule: '* * * * *', env_vars: {} })],
+      ['unexpected property', JSON.stringify({ _id: 'invalid-extra', name: 'bad', command: 'echo bad', schedule: '* * * * *', unknown: true })],
+    ])('rejects %s without replacing the active database', async (_label, content) => {
+      const candidate = path.join(testDbPath, `normalise-invalid-${Date.now()}.db`);
+      fs.writeFileSync(candidate, content);
+      await expect(normalise(candidate)).rejects.toThrow();
+    });
+
+    it('rejects a multi-record candidate when any record is invalid', async () => {
+      const file = writeCandidate('normalise-partial.db', [
+        { _id: 'valid-record', name: 'valid', command: 'echo valid', schedule: '* * * * *' },
+        { _id: 'invalid-record', name: 'invalid', command: {}, schedule: '* * * * *' },
+      ]);
+      await expect(normalise(file)).rejects.toThrow('invalid command');
+    });
+
+    it('keeps the active database when an uploaded candidate is invalid', async () => {
+      await request(app).post('/save').send({
+        _id: -1, name: 'import-rollback-sentinel', command: 'echo preserved',
+        schedule: '* * * * *', logging: false, mailing: {},
+      });
+      const invalid = Buffer.from(JSON.stringify({ _id: 'invalid-upload', name: 'bad', command: {}, schedule: '* * * * *' }));
+      const response = await request(app).post('/import').attach('import_file', invalid, 'invalid.db');
+      expect(response.status).toBe(500);
+      const page = await request(app).get('/');
+      expect(page.text).toContain('import-rollback-sentinel');
+      expect(page.text).toContain('echo preserved');
     });
   });
 

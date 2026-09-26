@@ -382,10 +382,6 @@ function setMailConfig(a) {
   });
 }
 
-function setHookConfig(a) {
-  messageBox('<p>Coming Soon</p>', 'Hooks', null, null, null);
-}
-
 function collapsedCommand() {
   return job_command.split(/\r?\n/).map(function(l) { return l.trim(); }).filter(Boolean).join('; ');
 }
