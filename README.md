@@ -80,6 +80,8 @@ Copie `.env.example` para `.env` e configure os valores através do cofre de seg
 
 Quando `HOST` não é loopback, `BASIC_AUTH_USER` e `BASIC_AUTH_PWD` são obrigatórios. Para produção, coloque a aplicação atrás de um reverse proxy com TLS e exponha apenas HTTPS. Defina um `CSRF_SECRET` longo e aleatório para manter os tokens válidos após reinícios controlados.
 
+Em produção, a aplicação exige `SSL_CERT`/`SSL_KEY` ou `TRUSTED_PROXY` com endereços/CIDRs de proxy conhecidos; ligações não seguras recebem `426`. `ALLOW_INSECURE_NO_AUTH` é recusado. O `docker-compose.yml` usa apenas rede interna; para desenvolvimento local use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`.
+
 ### Autorização por função (RBAC)
 
 Para instalações com mais de um operador, configure `BASIC_AUTH_USERS_JSON` com o mapa de utilizadores e palavras-passe, e `AUTHZ_ROLE_MAP_JSON` com um papel explícito para cada utilizador. Ambos são segredos/configuração exclusiva do servidor. Quando a autenticação está activa, um utilizador sem papel é recusado por defeito.

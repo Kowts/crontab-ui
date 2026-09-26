@@ -1,0 +1,6 @@
+services:
+  crontab-ui:
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      NODE_ENV: development

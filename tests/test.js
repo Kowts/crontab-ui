@@ -30,6 +30,7 @@ const { requireRole, validateRoleAssignments } = require('../middleware/authoriz
 const { configuredUsers } = require('../middleware/auth');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
+const { validateProductionTransport } = require('../config/transport');
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -653,6 +654,22 @@ describe('Production authentication configuration', () => {
 
   it('accepts a complete authentication and role configuration', () => {
     expect(() => validateRoleAssignments({ admin: 'secret' }, { admin: 'admin' })).not.toThrow();
+  });
+});
+
+describe('Production transport configuration', () => {
+  it('requires TLS or an explicitly trusted proxy in production', () => {
+    expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false })).toThrow('requires SSL_CERT');
+  });
+
+  it('rejects insecure bypasses and unsafe proxy configuration', () => {
+    expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: true, insecureBypass: true })).toThrow('not allowed');
+    expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false, trustedProxy: 'anything' })).toThrow('TRUSTED_PROXY');
+  });
+
+  it('accepts native TLS or a known proxy range', () => {
+    expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: true })).not.toThrow();
+    expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false, trustedProxy: '172.20.0.0/16' })).not.toThrow();
   });
 });
 

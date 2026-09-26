@@ -2,12 +2,13 @@ services:
   crontab-ui:
     build: .
     image: alseambusher/crontab-ui
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       BASIC_AUTH_USERS_JSON: ${BASIC_AUTH_USERS_JSON:?Configure authenticated users}
       AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:?Configure user roles}
       CSRF_SECRET: ${CSRF_SECRET:?Configure CSRF secret}
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-}
     volumes:
       - crontab-data:/crontab-ui/crontabs
     security_opt:

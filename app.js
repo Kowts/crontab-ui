@@ -29,6 +29,7 @@ const {
   validateImportMetadata,
 } = require('./middleware/validate');
 const { getProfile } = require('./config/mail-profiles');
+const { validateProductionTransport } = require('./config/transport');
 
 dayjs.extend(relativeTime);
 
@@ -37,11 +38,34 @@ app.locals.baseURL = baseUrl;
 app.set('host', process.env.HOST || '127.0.0.1');
 app.set('port', process.env.PORT || 8000);
 
+const credentials = {
+  key: process.env.SSL_KEY ? fs.readFileSync(process.env.SSL_KEY) : '',
+  cert: process.env.SSL_CERT ? fs.readFileSync(process.env.SSL_CERT) : '',
+};
+if ((credentials.key && !credentials.cert) || (credentials.cert && !credentials.key)) {
+  throw new Error('Please provide both SSL_KEY and SSL_CERT');
+}
+const startHttpsServer = credentials.key && credentials.cert;
+const trustedProxy = process.env.TRUSTED_PROXY;
+validateProductionTransport({
+  nodeEnv: process.env.NODE_ENV,
+  nativeTls: startHttpsServer,
+  trustedProxy,
+  insecureBypass: process.env.ALLOW_INSECURE_NO_AUTH === 'true',
+});
+if (trustedProxy) app.set('trust proxy', trustedProxy);
+
 const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(app.get('host'));
 app.get(`${baseUrl}/healthz`, (req, res) => {
   const address = req.socket.remoteAddress;
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return res.sendStatus(404);
   return res.json({ status: 'ok' });
+});
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && !req.secure) {
+    return res.status(426).json({ message: 'HTTPS is required' });
+  }
+  return next();
 });
 const authEnabled = setupAuth(app);
 app.locals.authEnabled = authEnabled;
@@ -79,19 +103,6 @@ app.use(rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }));
-
-// ssl credentials
-const credentials = {
-  key: process.env.SSL_KEY ? fs.readFileSync(process.env.SSL_KEY) : '',
-  cert: process.env.SSL_CERT ? fs.readFileSync(process.env.SSL_CERT) : '',
-};
-
-if ((credentials.key && !credentials.cert) || (credentials.cert && !credentials.key)) {
-  console.error('Please provide both SSL_KEY and SSL_CERT');
-  process.exit(1);
-}
-
-const startHttpsServer = credentials.key && credentials.cert;
 
 function serializeForHtml(value) {
   return JSON.stringify(value)
