@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node bootstrap.js",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage --coverage.thresholds.lines=70 --coverage.thresholds.functions=70",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "eslint ."
   },

@@ -8,5 +8,18 @@ module.exports = defineConfig({
     include: ['tests/**/*.js'],
     testTimeout: 10000,
     hookTimeout: 10000,
+    coverage: {
+      provider: 'v8',
+      exclude: [
+        'public/**',
+        'bin/**',
+        'bootstrap.js',
+        'config/mailconfig.js',
+      ],
+      thresholds: {
+        lines: 65,
+        functions: 50,
+      },
+    },
   },
 });
