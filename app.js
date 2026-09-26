@@ -186,11 +186,13 @@ function auditOperation(operation, resource = () => ({})) {
 app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     docs = docs.filter((job) => canAccessJob(req, job, 'read'));
+    const currentRole = app.locals.authEnabled ? configuredRoles()[req.auth?.user] : 'admin';
     res.render('index', {
       routes: serializeForHtml(routesRelative),
       crontabs: serializeForHtml(docs),
       backups: crontab.get_backup_names(),
       env: serializeForHtml(crontab.get_env()),
+      currentRole,
       dayjs,
     });
   });

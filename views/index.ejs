@@ -28,15 +28,24 @@
 -->
 </head>
 <body>
+<% const canManageJobs = ['operator', 'admin'].includes(currentRole); %>
+<% const canRunJobs = ['executor', 'operator', 'admin'].includes(currentRole); %>
+<% const isAdmin = currentRole === 'admin'; %>
 <%- include('navbar.ejs') -%>
 <div class="container-fluid">
 	<h2>Cronjobs</h2>
+	<p class="text-muted small">Sessão com papel: <%= currentRole %></p>
+	<% if (isAdmin) { %>
 	<div class="mb-3">
 		<label for="env_vars" class="form-label">Environment Variables:</label>
 		<textarea class="form-control" rows="3" id="env_vars" placeholder="# Please set PATH, MAILTO, HOME... here"></textarea>
 	</div>
+	<% } %>
 	<div class="mb-3">
+		<% if (canManageJobs) { %>
 		<button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-circle"></i> New</button>
+		<% } %>
+		<% if (isAdmin) { %>
 		<button type="button" class="btn btn-info" data-action="backup"><i class="bi bi-download"></i> Backup</button>
 		<form id="import_form" enctype="multipart/form-data" action="<%= JSON.parse(routes).import %>" method="post" style="display:none">
 			<input type="file" id="import_file" name="import_file"/>
@@ -45,6 +54,7 @@
 		<a class="btn btn-warning" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up"></i> Export</a>
 		<button type="button" class="btn btn-success" data-action="import-crontab"><i class="bi bi-arrow-down-circle"></i> Get from crontab</button>
 		<button type="button" class="btn btn-success" data-action="set-crontab"><i class="bi bi-save"></i> Save to crontab</button>
+		<% } %>
 		<button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square"></i> Preview crontab</button>
 	</div>
 
@@ -104,14 +114,20 @@
 					<a class="btn btn-sm btn-danger" data-bs-toggle="tooltip" data-bs-placement="left" title="stderr" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
 					<a class="btn btn-sm btn-primary" data-bs-toggle="tooltip" data-bs-placement="left" title="stdout" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
 			<% } %>
-					<button type="button" class="btn btn-sm btn-info" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Run now</button>
+					<% if (canRunJobs) { %><button type="button" class="btn btn-sm btn-info" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Run now</button><% } %>
+					<% if (canManageJobs) { %>
 					<button type="button" class="btn btn-sm btn-primary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil-square"></i> Edit</button>
 					<button type="button" class="btn btn-sm btn-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-stop-fill"></i> Disable</button>
+					<% } %>
 		<% } else { %>
+					<% if (canManageJobs) { %>
 					<button type="button" class="btn btn-sm btn-info" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i> Enable</button>
+					<% } %>
 		<% } %>
+					<% if (canManageJobs) { %>
 					<button type="button" class="btn btn-sm btn-warning" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i></button>
 					<button type="button" class="btn btn-sm btn-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i></button>
+					<% } %>
 				</td>
 			</tr>
 	<% }); %>

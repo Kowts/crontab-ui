@@ -189,7 +189,7 @@ function getCrontab() {
 function editJob(_id) {
   var job = null;
   crontabs.forEach(function(crontab) {
-    if (crontab._id == _id) job = crontab;
+    if (crontab._id === _id) job = crontab;
   });
 
   if (job) {
@@ -206,7 +206,7 @@ function editJob(_id) {
     }
     schedule = job.schedule;
     job_command = job.command;
-    if (job.logging && job.logging != 'false')
+    if (job.logging && job.logging !== 'false')
       $('#job-logging').prop('checked', true);
     job_string();
   }
@@ -259,12 +259,12 @@ function newJob() {
 function duplicateJob(_id) {
   var job = null;
   crontabs.forEach(function(crontab) {
-    if (crontab._id == _id) job = crontab;
+    if (crontab._id === _id) job = crontab;
   });
   if (!job) return;
 
   var name = job.name ? job.name + ' (copy)' : '';
-  var logging = (job.logging && job.logging != 'false') ? job.logging : 'false';
+  var logging = (job.logging && job.logging !== 'false') ? job.logging : 'false';
   var mailing = job.mailing || {};
 
   $.post(routes.save, {
