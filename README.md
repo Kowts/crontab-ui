@@ -65,6 +65,8 @@ If you need to autosave your changes to crontab directly:
 - ENABLE_AUTOSAVE
 - CSRF_SECRET
 - MAIL_PROFILES_JSON
+- MAIL_MAX_ATTACHMENT_BYTES
+- TRUSTED_PROXY
 - COMMAND_TIMEOUT_MS
 - COMMAND_MAX_BUFFER
 - COMMAND_KILL_GRACE_MS
@@ -76,7 +78,7 @@ If you need to autosave your changes to crontab directly:
 
 ## Segurança e operação
 
-Copie `.env.example` para `.env` e configure os valores através do cofre de segredos da plataforma. Nunca coloque credenciais SMTP, chaves TLS ou palavras-passe no repositório, na base de tarefas ou no browser.
+`.env.example` é apenas um modelo: a aplicação não carrega ficheiros `.env` automaticamente. Configure as variáveis no gestor de segredos e ambiente do processo/deployment. Nunca coloque credenciais SMTP, chaves TLS ou palavras-passe no repositório, na base de tarefas ou no browser.
 
 Quando `HOST` não é loopback, `BASIC_AUTH_USER` e `BASIC_AUTH_PWD` são obrigatórios. Para produção, coloque a aplicação atrás de um reverse proxy com TLS e exponha apenas HTTPS. Defina um `CSRF_SECRET` longo e aleatório para manter os tokens válidos após reinícios controlados.
 
@@ -113,34 +115,28 @@ Antes de uma importação ou restauro é criada uma cópia de segurança. Para r
 
 Hooks arbitrários não são suportados: foram removidos da interface para evitar execução adicional não auditada. Use uma tarefa explícita e revista para qualquer pós-processamento.
 
+### Procedimento de lançamento e incidente
+
+1. Defina `NODE_ENV=production`, autenticação, RBAC, `CSRF_SECRET` e TLS nativo ou `TRUSTED_PROXY` antes de iniciar; o arranque falha se a configuração de transporte ou papéis estiver incompleta.
+2. Execute `npm ci`, `npm run lint`, `npm test`, `npm run test:coverage` e `npm audit --omit=dev --audit-level=high` na versão candidata.
+3. Conserve o volume `crontab-data`, exporte `operations.jsonl` para retenção central e valide periodicamente um restauro numa instância isolada.
+4. Em incidente, suspenda a exposição no proxy, preserve a auditoria e os backups, identifique o `operationId`, e restaure apenas um backup reconhecido através da interface administrativa. Não substitua manualmente `crontab.db` em produção.
+
 
 ## Docker
-For production, do not publish this service directly to the Internet. Terminate TLS in a reverse proxy, expose only HTTPS, and set `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` through the deployment secret store. The Compose file refuses to start without both values.
+For production, do not publish this service directly to the Internet. Terminate TLS in a reverse proxy, expose only HTTPS, and set `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON` and `CSRF_SECRET` through the deployment secret store. The Compose file refuses to start without them.
 
 Never mount the host's crontab directory into this container: doing so gives the web application control over host scheduling. Use the managed `crontab-data` volume instead.
 
 You can use crontab-ui with docker. You can use the prebuilt images in the [dockerhub](https://hub.docker.com/r/alseambusher/crontab-ui/tags)
-```bash
-docker run -d -p 8000:8000 alseambusher/crontab-ui
-```
+Use the Compose deployment behind a TLS reverse proxy. For local development only, publish loopback with `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`.
 
 You can also build it yourself if you want to customize, like this:
 ```bash
 git clone https://github.com/alseambusher/crontab-ui.git
 cd crontab-ui
 docker build -t alseambusher/crontab-ui .
-docker run -d -p 8000:8000 alseambusher/crontab-ui
-```
-
-If you want to use it with authentication, You can pass `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` as env variables
-```bash
-docker run -e BASIC_AUTH_USER=user -e BASIC_AUTH_PWD=SecretPassword -d -p 8000:8000 alseambusher/crontab-ui 
-```
-
-You can also mount a folder to store the db and logs.
-```bash
-mkdir -p crontabs/logs
-docker run --mount type=bind,source="$(pwd)"/crontabs/,target=/crontab-ui/crontabs/ -d -p 8000:8000 alseambusher/crontab-ui
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 Host crontab mounts are intentionally unsupported because they defeat container isolation.
