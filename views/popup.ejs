@@ -36,6 +36,7 @@
             <button type="button" class="btn btn-outline-secondary" data-schedule="@reboot">Ao iniciar</button>
           </div>
           <div class="schedule-preview"><span>Expressão cron</span><code id="job-string">* * * * *</code></div>
+          <p id="job-schedule-description" class="schedule-description" role="status" aria-live="polite">A cada minuto.</p>
           <div class="row g-2 mt-2" aria-label="Personalizar expressão cron">
             <div class="col"><label class="visually-hidden" for="job-minute">Minuto</label><input type="text" class="form-control schedule-part" id="job-minute" value="*" placeholder="Min"/></div>
             <div class="col"><label class="visually-hidden" for="job-hour">Hora</label><input type="text" class="form-control schedule-part" id="job-hour" value="*" placeholder="Hora"/></div>

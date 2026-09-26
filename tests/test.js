@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const Datastore = require('@seald-io/nedb');
+const cronstrue = require('cronstrue/i18n');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
 fs.mkdirSync(testDbPath, { recursive: true });
@@ -45,6 +46,16 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Crontab UI');
       expect(res.text).toContain('Tarefas agendadas');
       expect(res.text).toContain('Criar primeira tarefa');
+      expect(res.text).toContain('id="job-schedule-description"');
+      expect(res.text).toContain('vendor/cronstrue/cronstrue-i18n.min.js');
+    });
+  });
+
+  describe('Descrição de horários cron', () => {
+    it('produz uma descrição em português para uma expressão válida', () => {
+      expect(cronstrue.toString('0 2 * * *', {
+        locale: 'pt_PT', use24HourTimeFormat: true, verbose: true
+      })).toContain('02:00');
     });
   });
 

@@ -104,7 +104,7 @@ if (!authEnabled && !isLoopback && process.env.ALLOW_INSECURE_NO_AUTH !== 'true'
   throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PWD are required when HOST is not loopback');
 }
 
-// security headers (relaxed for local/HTTP usage and CDN assets)
+// Security headers: all browser assets are served locally, including third-party libraries.
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -151,6 +151,7 @@ app.use(csrfProtection);
 app.use(baseUrl, express.static(path.join(__dirname, 'public')));
 app.use(baseUrl, express.static(path.join(__dirname, 'public', 'css')));
 app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
+app.use(`${baseUrl}/vendor/cronstrue`, express.static(path.join(__dirname, 'node_modules', 'cronstrue', 'dist')));
 
 // --- Routes ---
 

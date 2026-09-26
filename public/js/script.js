@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', function() {
   if (setScheduleButton) setScheduleButton.addEventListener('click', set_schedule);
   document.querySelectorAll('.schedule-part').forEach(function(input) {
     input.addEventListener('focus', function() { input.select(); });
+    input.addEventListener('input', function() {
+      schedule = scheduleFromFields();
+      job_string();
+    });
   });
   var copyButton = document.getElementById('copy-crontab');
   if (copyButton) copyButton.addEventListener('click', copyCrontab);
@@ -330,7 +334,54 @@ function job_string() {
   var cmd = collapsedCommand();
   var preview = document.getElementById('job-string');
   if (preview) preview.textContent = (schedule + ' ' + cmd).trim() || '* * * * *';
+  updateScheduleDescription(schedule || scheduleFromFields());
   return schedule + ' ' + cmd;
+}
+
+function scheduleFromFields() {
+  return [
+    $('#job-minute').val(),
+    $('#job-hour').val(),
+    $('#job-day').val(),
+    $('#job-month').val(),
+    $('#job-week').val()
+  ].map(function(part) { return String(part || '').trim() || '*'; }).join(' ');
+}
+
+function updateScheduleDescription(value) {
+  var description = document.getElementById('job-schedule-description');
+  if (description) description.textContent = describeSchedule(value);
+}
+
+function describeSchedule(value) {
+  if (!window.cronstrue) {
+    return 'Não foi possível carregar o tradutor de expressões cron.';
+  }
+  try {
+    return window.cronstrue.toString(value, {
+      locale: 'pt_PT',
+      use24HourTimeFormat: true,
+      verbose: true,
+      throwExceptionOnParseError: true
+    });
+  } catch (error) {
+    return cronDescriptionError(error);
+  }
+}
+
+function cronDescriptionError(error) {
+  var technicalMessage = String(error);
+  var messages = [
+    [/minutes part/i, 'O campo minuto deve estar entre 0 e 59.'],
+    [/hours part/i, 'O campo hora deve estar entre 0 e 23.'],
+    [/DOM part/i, 'O campo dia do mês deve estar entre 1 e 31.'],
+    [/month part/i, 'O campo mês deve estar entre 1 e 12.'],
+    [/DOW part/i, 'O campo dia da semana deve estar entre 0 e 6.']
+  ];
+  for (var index = 0; index < messages.length; index += 1) {
+    if (messages[index][0].test(technicalMessage)) return messages[index][1];
+  }
+  return 'A expressão cron não é válida. Verifique os cinco campos antes de guardar.';
 }
 
 function toggleEnvironment() {
@@ -339,7 +390,7 @@ function toggleEnvironment() {
 }
 
 function set_schedule() {
-  schedule = $('#job-minute').val() + ' ' + $('#job-hour').val() + ' ' + $('#job-day').val() + ' ' + $('#job-month').val() + ' ' + $('#job-week').val();
+  schedule = scheduleFromFields();
   job_string();
 }
 

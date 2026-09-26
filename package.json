@@ -14,7 +14,7 @@
     "@seald-io/nedb": "^4.1.2",
     "connect-busboy": "^1.0.0",
     "cron-parser": "^5.5.0",
-    "cronstrue": "^3.14.0",
+    "cronstrue": "^3.27.0",
     "dayjs": "^1.11.20",
     "ejs": "^3.1.10",
     "express": "5.2.1",
