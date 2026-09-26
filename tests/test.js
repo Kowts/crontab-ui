@@ -24,14 +24,11 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
 });
 
 const app = require('../app');
+const crontab = require('../crontab');
 const { requireRole } = require('../middleware/authorization');
 const { configuredUsers } = require('../middleware/auth');
 
 describe('Crontab UI', () => {
-  afterAll(() => {
-    fs.rmSync(testDbPath, { recursive: true, force: true });
-  });
-
   describe('GET /', () => {
     it('should return the main page', async () => {
       const res = await request(app).get('/');
@@ -355,6 +352,80 @@ describe('Crontab UI', () => {
   });
 });
 
+describe('POST /save job identifier validation', () => {
+  let jobId;
+
+  function findJob(id) {
+    return new Promise((resolve) => crontab.get_crontab(id, resolve));
+  }
+
+  beforeAll(async () => {
+    const response = await request(app).post('/save').send({
+      _id: -1,
+      name: 'id-validation-sentinel',
+      command: 'echo unchanged',
+      schedule: '* * * * *',
+      logging: false,
+      mailing: {},
+    });
+    expect(response.status).toBe(200);
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    jobId = jobs.find((job) => job.name === 'id-validation-sentinel')._id;
+  });
+
+  it('creates a job only when _id is the numeric sentinel -1', async () => {
+    const response = await request(app).post('/save').send({
+      _id: -1,
+      name: 'id-validation-create',
+      command: 'echo created',
+      schedule: '* * * * *',
+      logging: false,
+      mailing: {},
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('updates a job when _id is a valid string', async () => {
+    const response = await request(app).post('/save').send({
+      _id: jobId,
+      name: 'id-validation-sentinel',
+      command: 'echo updated',
+      schedule: '* * * * *',
+      logging: false,
+      mailing: {},
+    });
+    expect(response.status).toBe(200);
+    expect((await findJob(jobId)).command).toBe('echo updated');
+  });
+
+  it.each([
+    ['object', { $ne: null }],
+    ['array', ['not-an-id']],
+    ['$ne operator', { $ne: null }],
+    ['$gt operator', { $gt: '' }],
+    ['too long string', 'a'.repeat(65)],
+    ['invalid characters', '../other-job'],
+    ['null', null],
+    ['undefined', undefined],
+  ])('rejects an invalid _id: %s without changing an existing job', async (_label, invalidId) => {
+    const payload = {
+      name: 'tampered',
+      command: 'echo tampered',
+      schedule: '* * * * *',
+      logging: false,
+      mailing: {},
+    };
+    if (invalidId !== undefined) payload._id = invalidId;
+
+    const response = await request(app).post('/save').send(payload);
+    expect(response.status).toBe(400);
+    expect(response.body.message).toBe('Invalid job id');
+    const persisted = await findJob(jobId);
+    expect(persisted.name).toBe('id-validation-sentinel');
+    expect(persisted.command).toBe('echo updated');
+  });
+});
+
 describe('Routes module', () => {
   it('should export routes with base_url prefix', () => {
     const { routes, base_url } = require('../routes');
@@ -440,4 +511,8 @@ describe('Basic authentication users configuration', () => {
     process.env.BASIC_AUTH_USERS_JSON = '{}';
     expect(() => configuredUsers()).toThrow('must contain non-empty');
   });
+});
+
+afterAll(() => {
+  fs.rmSync(testDbPath, { recursive: true, force: true });
 });

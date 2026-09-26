@@ -103,10 +103,13 @@ exports.create_new = (name, command, schedule, logging, mailing, callback = () =
   db.insert(tab, callback);
 };
 
-exports.update = (data, callback = () => {}) => {
+exports.update = (_id, data, callback = () => {}) => {
+  if (typeof _id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(_id)) {
+    return callback(new Error('Invalid job id'));
+  }
   const tab = buildCrontab(data.name, data.command, data.schedule, null, data.logging, data.mailing);
   tab.saved = false;
-  db.update({ _id: data._id }, tab, callback);
+  db.update({ _id }, tab, callback);
 };
 
 exports.status = (_id, stopped, callback = () => {}) => {
@@ -375,7 +378,7 @@ exports.import_crontab = () => {
           } else {
             doc.command = command;
             doc.schedule = schedule;
-            exports.update(doc);
+            exports.update(doc._id, doc);
           }
         });
       }

@@ -120,7 +120,12 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
 });
 
 app.post(routes.save, requireRole('operator'), (req, res) => {
-  const { name, command, schedule, logging, mailing } = req.body;
+  const { name, command, schedule, mailing } = req.body;
+  const isCreate = req.body._id === -1;
+  const isUpdate = typeof req.body._id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.body._id);
+  if (!isCreate && !isUpdate) {
+    return res.status(400).json({ message: 'Invalid job id' });
+  }
   if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
     || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
     || typeof schedule !== 'string' || schedule.length > 128 || /[\r\n]/.test(schedule)
@@ -135,13 +140,13 @@ app.post(routes.save, requireRole('operator'), (req, res) => {
   } catch (_error) {
     return res.status(400).json({ message: 'Invalid cron schedule or mail profile' });
   }
-  if (req.body._id == -1) { // eslint-disable-line eqeqeq
+  if (isCreate) {
     crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });
   } else {
-    crontab.update(req.body, (err) => {
+    crontab.update(req.body._id, req.body, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });
