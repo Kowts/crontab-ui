@@ -124,14 +124,6 @@ app.use(helmet({
   strictTransportSecurity: process.env.NODE_ENV !== 'production' ? false : undefined,
 }));
 
-// rate limiting
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
-
 function serializeForHtml(value) {
   return JSON.stringify(value)
     .replace(/</g, '\\u003c')
@@ -159,6 +151,14 @@ app.use(baseUrl, express.static(path.join(__dirname, 'public')));
 app.use(baseUrl, express.static(path.join(__dirname, 'public', 'css')));
 app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
 app.use(`${baseUrl}/vendor/cronstrue`, express.static(path.join(__dirname, 'node_modules', 'cronstrue', 'dist')));
+
+// Static assets are cacheable and do not consume the quota reserved for application operations.
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 
 // --- Routes ---
 

@@ -60,6 +60,12 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('id="import_file"');
       expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
     });
+
+    it('serves static assets without consuming the application rate-limit quota', async () => {
+      const res = await request(app).get('/js/theme.js');
+      expect(res.status).toBe(200);
+      expect(res.headers['ratelimit-limit']).toBeUndefined();
+    });
   });
 
   describe('Interface language', () => {
