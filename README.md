@@ -6,11 +6,26 @@ Web-based cron job management with access controls, backups, auditing, and execu
 
 > Running a task is equivalent to running its command with the service process's privileges. Deploy the application only in environments where authorized administrators may create and publish those commands.
 
+## What's new in this fork
+
+This fork extends the original visual crontab management interface with production-oriented operational controls:
+
+- Role-based access control (RBAC), task ownership, and server-enforced permissions for administrative operations.
+- Strict validation for task payloads, cron expressions, environment variables, imports, and recovery requests.
+- Server-only SMTP profiles: task records store only a `profileId`, never mail credentials.
+- Atomic, mutex-protected import, restore, and backup workflows with count- and age-based retention.
+- Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
+- Production deployment safeguards, including mandatory authentication outside loopback, CSRF protection, TLS or trusted-proxy enforcement, and hardened Docker guidance.
+
 ## Canonical source and releases
 
 The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). The remote currently has no published tags: do not replace `<release-tag>` with a version inferred only from `package.json`. For production, approve a commit after validation, create an annotated tag, and publish a release; the `main` branch is intended for ongoing development and validation.
 
 Do not use `npm install -g crontab-ui` to install this fork: that name may resolve to a different package and does not guarantee the security controls documented here.
+
+### Upstream reference
+
+[The original upstream README](README/README.ORIGINAL.md) is retained for historical comparison only. It contains outdated setup and deployment instructions that do not provide this fork's security controls; use this README and the operational guides in this repository instead.
 
 ## Platform requirements and limitations
 

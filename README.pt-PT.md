@@ -6,11 +6,26 @@ Gestão web de tarefas cron com controlo de acesso, cópias de segurança, audit
 
 > A execução de uma tarefa é equivalente a executar o respetivo comando com os privilégios do processo do serviço. Instale a aplicação apenas em ambientes onde os administradores autorizados possam criar e publicar esses comandos.
 
+## Novidades deste fork
+
+Este fork estende a interface visual original de gestão de crontab com controlos operacionais orientados a produção:
+
+- Controlo de acesso por papéis (RBAC), propriedade das tarefas e permissões impostas pelo servidor para operações administrativas.
+- Validação rigorosa de payloads de tarefas, expressões cron, variáveis de ambiente, importações e pedidos de recuperação.
+- Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId`, nunca credenciais de correio.
+- Fluxos atómicos e protegidos por bloqueio para importação, restauro e backups, com retenção por quantidade e idade.
+- Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
+- Salvaguardas para deployment em produção, incluindo autenticação obrigatória fora de loopback, proteção CSRF, imposição de TLS ou proxy de confiança e orientação para Docker endurecido.
+
 ## Origem canónica e versões
 
 A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). O remoto não tem, neste momento, tags publicadas: não substitua `<release-tag>` por uma versão assumida apenas a partir de `package.json`. Para produção, aprove um commit depois da validação, crie uma tag anotada e publique a release; o ramo `main` destina-se a desenvolvimento e validação contínua.
 
 Não use `npm install -g crontab-ui` como instrução de instalação deste fork: esse nome pode resolver para outro pacote e não garante a presença dos controlos documentados aqui.
+
+### Referência do projeto original
+
+O [README original do projeto de origem](README/README.ORIGINAL.md) é mantido apenas para comparação histórica. Contém instruções de instalação e deployment desatualizadas que não incluem os controlos de segurança deste fork; utilize antes este README e os guias operacionais deste repositório.
 
 ## Requisitos e limites da plataforma
 
