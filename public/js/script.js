@@ -50,9 +50,11 @@ function initPage() {
     });
   }
   var importInput = document.getElementById('import_file');
-  if (importInput) importInput.addEventListener('change', function() {
-    if (!this.files.length) return;
-    fetch(document.getElementById('import_form').action, {
+  var importForm = document.getElementById('import_form');
+  if (importForm && importInput) importForm.addEventListener('submit', function(event) {
+    event.preventDefault();
+    if (!importInput.files.length) return;
+    fetch(importForm.action, {
       method: 'POST', body: new FormData(document.getElementById('import_form')),
       headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
     }).then(function(response) {
@@ -390,10 +392,7 @@ function restore_backup(db_name) {
 }
 
 function import_db() {
-  messageBox(
-    '<p>' + tr('importBody') + '</p>', tr('importTitle'), tr('selectFile'), tr('cancel'), function() {
-      $('#import_file').click();
-    });
+  getModal('import-modal').show();
 }
 
 
