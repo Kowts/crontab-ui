@@ -89,6 +89,22 @@ document.addEventListener('DOMContentLoaded', function() {
   if (languageSelect) languageSelect.addEventListener('change', function() {
     $.post(routes.locale, { locale: languageSelect.value }).done(function() { window.location.reload(); });
   });
+  var themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle && window.CrontabUITheme) {
+    function updateThemeToggle(theme) {
+      var dark = theme === 'dark';
+      var label = tr(dark ? 'switchToLightTheme' : 'switchToDarkTheme');
+      themeToggle.setAttribute('aria-pressed', String(dark));
+      themeToggle.setAttribute('aria-label', label);
+      themeToggle.setAttribute('title', label);
+      var icon = document.getElementById('theme-toggle-icon');
+      if (icon) icon.className = dark ? 'bi bi-sun' : 'bi bi-moon-stars';
+    }
+    updateThemeToggle(window.CrontabUITheme.current());
+    themeToggle.addEventListener('click', function() {
+      updateThemeToggle(window.CrontabUITheme.toggle());
+    });
+  }
   var environmentInput = document.getElementById('env_vars');
   if (environmentInput) environmentInput.addEventListener('input', function() { renderEnvironment(environmentInput.value); });
 });

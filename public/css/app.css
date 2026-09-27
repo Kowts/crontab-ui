@@ -11,6 +11,25 @@
   --app-radius: 14px;
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app-ink: #e8eef8;
+  --app-muted: #aab8cd;
+  --app-border: #34445c;
+  --app-surface: #182438;
+  --app-canvas: #0e1624;
+  --app-primary: #6da8ff;
+  --app-primary-dark: #8bb9ff;
+  --app-success: #57d6ad;
+  --bs-body-color: #e8eef8;
+  --bs-body-bg: #0e1624;
+  --bs-border-color: #34445c;
+  --bs-secondary-bg: #182438;
+  --bs-tertiary-bg: #202e44;
+  --bs-emphasis-color: #fff;
+  --bs-secondary-color: #aab8cd;
+}
+
 body.app-body {
   min-height: 100vh;
   color: var(--app-ink);
@@ -25,6 +44,8 @@ body.app-body {
 .app-user { color: #d9e3f2; font-size: .9rem; }
 .language-select { min-height: 32px; padding: .2rem 1.7rem .2rem .55rem; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; color: #e8eff9; background-color: transparent; font-size: .84rem; }
 .language-select option { color: var(--app-ink); background: #fff; }
+.app-nav-icon-button { display: inline-grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; color: #e8eff9; background: transparent; font-size: 1rem; line-height: 1; text-decoration: none; }
+.app-nav-icon-button:hover, .app-nav-icon-button:focus-visible { border-color: rgba(255,255,255,.7); color: #fff; background: rgba(255,255,255,.1); outline: 0; }
 .app-user::before { content: ""; display: inline-block; width: .45rem; height: .45rem; margin-right: .55rem; border-radius: 50%; background: #d5e4ff; vertical-align: middle; }
 
 .app-shell { max-width: 1320px; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
@@ -102,6 +123,25 @@ body.app-body {
 .backup-notice strong { display: block; margin-bottom: .35rem; }
 .backup-list { margin: 0; padding-left: 1.1rem; color: var(--app-muted); }
 .backup-list li + li { margin-top: .35rem; }
+
+:root[data-theme="dark"] .language-select option { color: var(--app-ink); background: var(--app-surface); }
+:root[data-theme="dark"] .btn-primary { color: #081426; }
+:root[data-theme="dark"] .btn-primary:hover, :root[data-theme="dark"] .btn-primary:focus { color: #081426; }
+:root[data-theme="dark"] .btn-outline-secondary { color: var(--app-ink); border-color: var(--app-border); background: var(--app-surface); }
+:root[data-theme="dark"] .btn-outline-secondary:hover, :root[data-theme="dark"] .btn-outline-secondary:focus { color: #fff; border-color: #627590; background: #24344d; }
+:root[data-theme="dark"] .card-heading { border-bottom-color: var(--app-border); }
+:root[data-theme="dark"] .environment-editor, :root[data-theme="dark"] .form-control, :root[data-theme="dark"] .job-status { color: var(--app-ink); border-color: var(--app-border); background: #111d30; }
+:root[data-theme="dark"] .environment-editor::placeholder, :root[data-theme="dark"] .form-control::placeholder { color: #91a2ba; }
+:root[data-theme="dark"] .schedule-presets .btn { color: var(--app-muted); border-color: var(--app-border); background: var(--app-surface); }
+:root[data-theme="dark"] .schedule-presets .btn:hover, :root[data-theme="dark"] .schedule-presets .btn:focus { color: var(--app-primary); border-color: var(--app-primary); background: #213654; }
+:root[data-theme="dark"] .schedule-preview, :root[data-theme="dark"] .job-options { background: #111d30; border-color: var(--app-border); }
+:root[data-theme="dark"] .backup-notice { color: #ffd18a; border-color: #805c24; background: #382b16; }
+:root[data-theme="dark"] .jobs-footer, :root[data-theme="dark"] .app-card table.dataTable, :root[data-theme="dark"] .app-card .table > :not(caption) > * > * { border-color: var(--app-border); }
+:root[data-theme="dark"] .app-card .table { --bs-table-bg: var(--app-surface); --bs-table-color: var(--app-ink); --bs-table-striped-color: var(--app-ink); --bs-table-striped-bg: #1d2a40; --bs-table-hover-color: #fff; --bs-table-hover-bg: #24344d; }
+:root[data-theme="dark"] .app-card .table thead th { color: #bdc9da; }
+:root[data-theme="dark"] .app-card .dataTables_filter input, :root[data-theme="dark"] .app-card .dataTables_length select { color: var(--app-ink); border-color: var(--app-border); background: #111d30; }
+:root[data-theme="dark"] .dropdown-menu { --bs-dropdown-color: var(--app-ink); --bs-dropdown-bg: var(--app-surface); --bs-dropdown-border-color: var(--app-border); --bs-dropdown-link-color: var(--app-ink); --bs-dropdown-link-hover-color: #fff; --bs-dropdown-link-hover-bg: #24344d; --bs-dropdown-link-active-bg: #294d80; }
+:root[data-theme="dark"] .modal-content { color: var(--app-ink); background: var(--app-surface); }
 
 @media (max-width: 767.98px) {
   .app-shell { padding: 1.5rem 1rem 2rem; }

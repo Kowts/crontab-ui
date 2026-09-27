@@ -48,6 +48,10 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Create first task');
       expect(res.text).toContain('id="job-schedule-description"');
       expect(res.text).toContain('vendor/cronstrue/cronstrue-i18n.min.js');
+      expect(res.text).toContain('src="js/theme.js"');
+      expect(res.text).toContain('id="theme-toggle"');
+      expect(res.text).toContain('https://github.com/Kowts/crontab-ui');
+      expect(res.text).toContain('rel="noopener noreferrer"');
       expect(res.text).toContain('id="environment-display"');
       expect(res.text).toContain('for="job-minute">Minute</label>');
       expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
@@ -60,6 +64,8 @@ describe('Crontab UI', () => {
       const portuguese = await request(app).get('/').set('Cookie', 'crontab_ui_locale=pt');
       expect(english.text).toContain('Scheduled tasks');
       expect(portuguese.text).toContain('Tarefas agendadas');
+      expect(english.text).toContain('Switch to dark theme');
+      expect(portuguese.text).toContain('Mudar para tema escuro');
     });
 
     it('persists a supported locale in an HttpOnly cookie', async () => {

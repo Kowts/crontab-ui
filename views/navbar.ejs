@@ -23,6 +23,12 @@
         </li>
       </ul>
       <div class="d-flex align-items-center gap-3">
+        <button type="button" id="theme-toggle" class="app-nav-icon-button" aria-pressed="false" aria-label="<%= t('switchToDarkTheme') %>" title="<%= t('switchToDarkTheme') %>">
+          <i id="theme-toggle-icon" class="bi bi-moon-stars" aria-hidden="true"></i>
+        </button>
+        <a class="app-nav-icon-button" href="https://github.com/Kowts/crontab-ui" target="_blank" rel="noopener noreferrer" aria-label="<%= t('viewRepository') %>" title="<%= t('viewRepository') %>">
+          <i class="bi bi-github" aria-hidden="true"></i>
+        </a>
         <label class="visually-hidden" for="language-select"><%= t('language') %></label>
         <select id="language-select" class="language-select" aria-label="<%= t('language') %>">
           <option value="en" <%= locale === 'en' ? 'selected' : '' %>>English</option>
