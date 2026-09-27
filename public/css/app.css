@@ -84,7 +84,15 @@ body.app-body {
 .job-state { display: inline-flex; align-items: center; gap: .32rem; padding: .2rem .46rem; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.2; }
 .job-state-published { color: #08775a; background: #e4f8f0; }
 .job-state-local { color: #9b6100; background: #fff3db; }
+.job-state-stopped { color: #5a687b; background: #e8edf4; }
 .job-access { display: inline-flex; align-items: center; gap: .38rem; color: var(--app-ink); font-size: .84rem; font-weight: 650; }
+.btn-run, .btn-log-stderr, .btn-log-stdout { border-width: 1px; }
+.btn-run { color: #08775a; border-color: #59b99e; background: #f1fcf8; }
+.btn-log-stderr { color: #b63a46; border-color: #e5a2aa; background: #fff7f7; }
+.btn-log-stdout { color: #137b96; border-color: #91cad8; background: #f2fbfd; }
+.btn-run:hover, .btn-run:focus { color: #fff; border-color: #08775a; background: #08775a; }
+.btn-log-stderr:hover, .btn-log-stderr:focus { color: #fff; border-color: #b63a46; background: #b63a46; }
+.btn-log-stdout:hover, .btn-log-stdout:focus { color: #fff; border-color: #137b96; background: #137b96; }
 .app-card .dataTables_filter input, .app-card .dataTables_length select { border: 1px solid var(--app-border); border-radius: 8px; padding: .42rem .65rem; }
 .app-card .dataTables_filter input:focus { outline: 0; border-color: #8cb7f7; box-shadow: 0 0 0 .18rem rgba(23,105,224,.1); }
 .jobs-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; padding: 1rem 1.5rem; border-top: 1px solid #edf1f6; color: var(--app-muted); font-size: .86rem; }
@@ -139,6 +147,10 @@ body.app-body {
 :root[data-theme="dark"] .jobs-footer, :root[data-theme="dark"] .app-card table.dataTable, :root[data-theme="dark"] .app-card .table > :not(caption) > * > * { border-color: var(--app-border); }
 :root[data-theme="dark"] .app-card .table { --bs-table-bg: var(--app-surface); --bs-table-color: var(--app-ink); --bs-table-striped-color: var(--app-ink); --bs-table-striped-bg: #1d2a40; --bs-table-hover-color: #fff; --bs-table-hover-bg: #24344d; }
 :root[data-theme="dark"] .app-card .table thead th { color: #bdc9da; }
+:root[data-theme="dark"] .job-state-stopped { color: #c4cfde; background: #2b384c; }
+:root[data-theme="dark"] .btn-run { color: #76dfbe; border-color: #327d69; background: #132f2b; }
+:root[data-theme="dark"] .btn-log-stderr { color: #ffadb5; border-color: #914b55; background: #3c2027; }
+:root[data-theme="dark"] .btn-log-stdout { color: #8bd7eb; border-color: #3a7889; background: #152f38; }
 :root[data-theme="dark"] .app-card .dataTables_filter input, :root[data-theme="dark"] .app-card .dataTables_length select { color: var(--app-ink); border-color: var(--app-border); background: #111d30; }
 :root[data-theme="dark"] .dropdown-menu { --bs-dropdown-color: var(--app-ink); --bs-dropdown-bg: var(--app-surface); --bs-dropdown-border-color: var(--app-border); --bs-dropdown-link-color: var(--app-ink); --bs-dropdown-link-hover-color: #fff; --bs-dropdown-link-hover-bg: #24344d; --bs-dropdown-link-active-bg: #294d80; }
 :root[data-theme="dark"] .modal-content { color: var(--app-ink); background: var(--app-surface); }

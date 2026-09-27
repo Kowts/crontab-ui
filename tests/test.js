@@ -54,6 +54,8 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('rel="noopener noreferrer"');
       expect(res.text).toContain('id="environment-display"');
       expect(res.text).toContain('for="job-minute">Minute</label>');
+      expect(res.text).toContain('data-schedule="0 0 1 1 *"');
+      expect(res.text).toContain('Yearly');
       expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
     });
   });
