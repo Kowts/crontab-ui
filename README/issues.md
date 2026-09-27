@@ -1,21 +1,28 @@
-Issues
-======
+# Diagnóstico e recuperação
 
-You can submit issues in the [issue tracker](https://github.com/alseambusher/crontab-ui/issues) of the repository.
+## A aplicação não está acessível
 
-Common issues
--------------
-__crontab-ui is running but is not accessible on browser__ -
-This is usually because the place where your crontab-ui is installed does not give access to others. It can be resolved by either __giving permission__ to the user (Recommended) or running crontab-ui as root. Refer [this](https://github.com/alseambusher/crontab-ui/issues/8)
+Confirme primeiro o processo/contentor, a ligação em loopback e o reverse proxy. O serviço não deve ser exposto directamente à Internet.
 
-__Hosting crontab-ui : it works on localhost but not outside the server__ - You have to host it using nginx, apache2, etc. Refer [this](nginx.md).
+```bash
+docker compose ps
+docker compose exec crontab-ui curl -fsS http://127.0.0.1:8000/healthz
+```
 
-__crontab-ui stopped working__ - It can happen that your crontab-ui can stop working for some reason like adding incorrect jobs or timings. You can try resetting crontab-ui by running `crontab-ui --reset`.
+`/healthz` não requer credenciais, mas aceita apenas ligações loopback. O comando acima é válido dentro do contentor; a porta só fica disponível no anfitrião quando for usada explicitamente a sobreposição de desenvolvimento.
 
-__Where is my root node_modules folder__ - You can find it by `npm root -g`
+Se o healthcheck falhar, reveja os logs do contentor e as permissões do volume `crontab-data`. Não execute a aplicação como `root` para contornar permissões; atribua apenas ao utilizador do serviço acesso ao directório persistente e ao mecanismo de agendamento isolado.
 
-__Mailing related issue__ - Refer [this](http://lifepluslinux.blogspot.com/2017/03/introducing-mailing-in-crontab-ui.html).
+## A publicação ou importação do crontab falhou
 
-__Run crontab-ui as a daemon__ - Install [pm2](https://github.com/Unitech/pm2) using `npm install -g pm2`. Then just run `pm2 start crontab-ui`
+Estas operações requerem um sistema Unix/Linux com o binário `crontab` e permissões adequadas no directório de staging configurado por `CRON_PATH`. Consulte o ID de auditoria apresentado pela interface e o diário `crontabs/logs/operations.jsonl`.
 
-__Long commands are silently truncated__ - Crontab has a hard limit of 1000 characters per line. Crontab-ui's logging and mailing wrappers add ~500 characters of overhead, leaving roughly 400-500 characters for your actual command. If your command is long, put it in a script file and call that instead (e.g., `bash /path/to/script.sh`).
+Uma falha de publicação restaura o ambiente e o ficheiro de staging anteriores. Corrija a causa e publique novamente; não edite `crontab.db` manualmente.
+
+## Recuperar uma configuração
+
+Não use `crontab-ui --reset` como mecanismo de recuperação. Preserve o volume de dados, suspenda o acesso público e restaure apenas uma cópia reconhecida através da área administrativa **Backups**. Consulte o procedimento completo no [README principal](../README.md#backups-recuperação-e-auditoria).
+
+## Problemas de correio
+
+Os dados SMTP são exclusivos do servidor em `MAIL_PROFILES_JSON`. Confirme o identificador do perfil, o acesso à rede SMTP e o diário de auditoria. Nunca introduza palavras-passe SMTP na tarefa, no browser ou num ficheiro versionado.
