@@ -27,6 +27,26 @@ This fork extends the original visual crontab management interface with producti
 
 ![Dark theme new task dialog with schedule presets, a human-readable cron expression, and labelled cron fields](docs/images/new-task-dark.png)
 
+## Operational flow
+
+```mermaid
+flowchart TD
+    U[Authorized operator] --> A[Authentication and RBAC]
+    A -->|Allowed operation| UI[Crontab UI]
+    UI --> V[Server validation<br/>payload, cron, ownership and CSRF]
+    V -->|Save locally| DB[(NeDB database<br/>CRON_DB_PATH)]
+    DB -->|Review and publish| P[Crontab staging]
+    P --> C[System crontab]
+    C --> X[Scheduled command execution]
+    UI -->|Run now| X
+    X --> O[Bounded stdout and stderr]
+    O --> L[(Logs and audit trail<br/>operation ID)]
+    DB --> B[Atomic backup or restore]
+    B --> R[(Retained backups)]
+```
+
+Tasks are saved locally first. They affect the system scheduler only after an authorized operator explicitly reviews and publishes them.
+
 ## Canonical source and releases
 
 The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). The remote currently has no published tags: do not replace `<release-tag>` with a version inferred only from `package.json`. For production, approve a commit after validation, create an annotated tag, and publish a release; the `main` branch is intended for ongoing development and validation.

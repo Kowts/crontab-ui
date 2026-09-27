@@ -27,6 +27,26 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 
 ![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron e campos identificados](docs/images/new-task-dark.png)
 
+## Fluxo operacional
+
+```mermaid
+flowchart TD
+    U[Operador autorizado] --> A[Autenticação e RBAC]
+    A -->|Operação permitida| UI[Crontab UI]
+    UI --> V[Validação no servidor<br/>payload, cron, propriedade e CSRF]
+    V -->|Guardar localmente| DB[(Base de dados NeDB<br/>CRON_DB_PATH)]
+    DB -->|Rever e publicar| P[Staging do crontab]
+    P --> C[Crontab do sistema]
+    C --> X[Execução agendada de comando]
+    UI -->|Executar agora| X
+    X --> O[stdout e stderr limitados]
+    O --> L[(Logs e trilho de auditoria<br/>ID da operação)]
+    DB --> B[Backup ou restauro atómico]
+    B --> R[(Backups retidos)]
+```
+
+As tarefas são guardadas primeiro localmente. Só afetam o agendador do sistema depois de um operador autorizado as rever e publicar explicitamente.
+
 ## Origem canónica e versões
 
 A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). O remoto não tem, neste momento, tags publicadas: não substitua `<release-tag>` por uma versão assumida apenas a partir de `package.json`. Para produção, aprove um commit depois da validação, crie uma tag anotada e publique a release; o ramo `main` destina-se a desenvolvimento e validação contínua.
