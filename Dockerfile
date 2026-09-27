@@ -8,7 +8,11 @@ RUN npm ci --omit=dev
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 
 ENV   CRON_PATH=/etc/crontabs
-RUN   touch $CRON_PATH/root && chmod +x $CRON_PATH/root
+RUN   mkdir -p "$CRON_PATH" \
+      && touch "$CRON_PATH/root" \
+      && chown -R node:node "$CRON_PATH" \
+      && chmod 0700 "$CRON_PATH" \
+      && chmod 0600 "$CRON_PATH/root"
 
 RUN   apk --no-cache add \
       curl \

@@ -13,7 +13,7 @@ const configuredAttachmentLimit = Number(process.env.MAIL_MAX_ATTACHMENT_BYTES |
 const maxAttachmentBytes = Number.isSafeInteger(configuredAttachmentLimit)
   && configuredAttachmentLimit > 0 && configuredAttachmentLimit <= 10 * 1024 * 1024
   ? configuredAttachmentLimit : 512 * 1024;
-const outputFolder = process.env.CRON_PATH || '/tmp';
+const outputFolder = crontab.output_folder;
 
 function outputAttachment(name) {
   const file = path.resolve(outputFolder, `${jobId}.${name}`);

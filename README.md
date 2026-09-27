@@ -121,8 +121,8 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | --- | --- |
 | `NODE_ENV` | Use `production` for deployment; enables secure cookies and requires TLS or a trusted proxy. |
 | `HOST`, `PORT`, `BASE_URL` | HTTP listener and public prefix. Defaults: `127.0.0.1`, `8000`, no prefix. |
-| `CRON_DB_PATH` | Persistent directory for the database, backups, environment, and audit log. Default: `./crontabs`. |
-| `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. |
+| `CRON_DB_PATH` | Persistent directory for the database, backups, environment, audit log, and execution output. Default: `./crontabs`. |
+| `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. Default: `$CRON_DB_PATH/crontab-staging`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |

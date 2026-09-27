@@ -33,22 +33,20 @@ const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
 const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
 const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
 
-let cronPath = '/tmp';
+const cronPath = process.env.CRON_PATH || path.join(dbFolder, 'crontab-staging');
 let databaseOperationActive = false;
 const manualRuns = new Map();
 let activeManualRunId = null;
 if (process.env.CRON_PATH !== undefined) {
   console.log(`Path to crond files set using env variables ${process.env.CRON_PATH}`);
-  cronPath = process.env.CRON_PATH;
 }
 
 db.loadDatabase((err) => {
   if (err) throw err;
 });
 
-if (!fs.existsSync(logFolder)) {
-  fs.mkdirSync(logFolder);
-}
+fs.mkdirSync(logFolder, { recursive: true, mode: 0o700 });
+fs.mkdirSync(cronPath, { recursive: true, mode: 0o700 });
 
 function buildCrontab(name, command, schedule, stopped, logging, mailing, ownership = {}) {
   return {
@@ -78,6 +76,7 @@ function applySystemCrontab(filePath, callback) {
 
 exports.db_folder = dbFolder;
 exports.log_folder = logFolder;
+exports.output_folder = logFolder;
 exports.audit_file = auditFile;
 exports.env_file = envFile;
 exports.crontab_db_file = crontabDbFile;
@@ -182,16 +181,23 @@ function writeOutput(file, content) {
   if (remaining) fs.appendFileSync(file, content.subarray(0, remaining));
 }
 
-function recordOutput(tab, result) {
-  const stdout = path.join(cronPath, `${tab._id}.stdout`);
-  const stderr = path.join(cronPath, `${tab._id}.stderr`);
-  fs.writeFileSync(stdout, result.stdout);
-  fs.writeFileSync(stderr, result.stderr);
-  if (tab.logging === true || tab.logging === 'true') {
-    writeOutput(path.join(logFolder, `${tab._id}.stdout.log`), result.stdout);
-    writeOutput(path.join(logFolder, `${tab._id}.log`), result.stderr);
+function recordOutput(tab, result, operationId) {
+  try {
+    fs.mkdirSync(logFolder, { recursive: true, mode: 0o700 });
+    const stdout = path.join(logFolder, `${tab._id}.stdout`);
+    const stderr = path.join(logFolder, `${tab._id}.stderr`);
+    fs.writeFileSync(stdout, result.stdout, { mode: 0o600 });
+    fs.writeFileSync(stderr, result.stderr, { mode: 0o600 });
+    if (tab.logging === true || tab.logging === 'true') {
+      writeOutput(path.join(logFolder, `${tab._id}.stdout.log`), result.stdout);
+      writeOutput(path.join(logFolder, `${tab._id}.log`), result.stderr);
+    }
+    return { stdout, stderr };
+  } catch (error) {
+    audit({ operationId, type: 'execution_output', jobId: tab._id, status: 'failed', error: error.message });
+    console.error(`Unable to persist execution output for ${tab._id}: ${error.message}`);
+    return null;
   }
-  return { stdout, stderr };
 }
 
 function sendMail(tab, operationId) {
@@ -252,8 +258,9 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: { ...process.env, ...jobEnvironment } }, (error, result) => {
-      recordOutput(res, result);
-      sendMail(res, operationId);
+      const output = recordOutput(res, result, operationId);
+      if (output) sendMail(res, operationId);
+      else if (res.mailing?.profileId) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
@@ -300,8 +307,9 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
       env: { ...process.env, ...jobEnvironment }, onStart: (controller) => { run.controller = controller; },
     }, (error, result) => {
-      recordOutput(job, result);
-      sendMail(job, operationId);
+      const output = recordOutput(job, result, operationId);
+      if (output) sendMail(job, operationId);
+      else if (job.mailing?.profileId) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       run.status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
       run.completedAt = Date.now();

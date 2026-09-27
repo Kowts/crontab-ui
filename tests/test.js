@@ -119,6 +119,14 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Can manage and run');
       expect(res.text).toContain('Saving changes locally does not publish them to the service crontab.');
     });
+
+    it('uses distinct controls for manual execution and schedule deactivation', async () => {
+      const res = await request(app).get('/');
+      expect(res.text).toContain('title="Run now without publishing"');
+      expect(res.text).toContain('title="Disable scheduled task"');
+      expect(res.text).toContain('class="bi bi-stop-fill"');
+      expect(res.text).not.toContain('class="bi bi-pause-fill"');
+    });
   });
 
   describe('Asynchronous manual execution', () => {
@@ -135,6 +143,19 @@ describe('Crontab UI', () => {
       const status = await request(app).get('/runjob/status').query({ operationId: started.body.operationId });
       expect(status.status).toBe(200);
       expect(['running', 'completed']).toContain(status.body.status);
+    });
+
+    it('stores execution output in the managed log directory instead of CRON_PATH', async () => {
+      const job = await new Promise((resolve, reject) => {
+        crontab.create_new('managed-output', `"${process.execPath}" -e "process.stdout.write('managed-output')"`, '* * * * *', false, {}, {}, (error, created) => {
+          if (error) reject(error);
+          else resolve(created);
+        });
+      });
+      const error = await new Promise((resolve) => crontab.runjob(job._id, (runError) => resolve(runError)));
+      expect(error).toBeNull();
+      expect(fs.readFileSync(path.join(crontab.output_folder, `${job._id}.stdout`), 'utf8')).toBe('managed-output');
+      expect(fs.existsSync(path.join(testDbPath, `${job._id}.stdout`))).toBe(false);
     });
   });
 

@@ -48,7 +48,7 @@ body.app-body {
 .app-nav-icon-button:hover, .app-nav-icon-button:focus-visible { border-color: rgba(255,255,255,.7); color: #fff; background: rgba(255,255,255,.1); outline: 0; }
 .app-user::before { content: ""; display: inline-block; width: .45rem; height: .45rem; margin-right: .55rem; border-radius: 50%; background: #d5e4ff; vertical-align: middle; }
 
-.app-shell { max-width: 1600px; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }
+.app-shell { max-width: 1600px; margin: 0 auto; padding: 2.25rem clamp(1.5rem, 3vw, 3rem) 3rem; }
 .breadcrumb-lite { margin-bottom: .55rem; color: var(--app-muted); font-size: .85rem; }
 .breadcrumb-lite span { margin: 0 .45rem; opacity: .55; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 2.5rem; }
@@ -77,6 +77,7 @@ body.app-body {
 .jobs-toolbar .dropdown-menu { min-width: 14rem; padding: .5rem; border-color: var(--app-border); border-radius: 10px; box-shadow: 0 12px 30px rgba(27, 47, 78, .14); }
 .jobs-toolbar .dropdown-item { border-radius: 7px; padding: .55rem .65rem; }
 .app-card .dataTables_wrapper { padding: 1.15rem 1.5rem 0; }
+.app-card .dt-container > .row:not(.dt-layout-table) { padding: .75rem 1.5rem; }
 .app-card table.dataTable { margin-top: 1rem !important; border-top: 1px solid #e9eef5; }
 .app-card .table > :not(caption) > * > * { padding: .9rem .75rem; border-bottom-color: #edf1f6; }
 .app-card .table thead th { color: #5a6a83; font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .045em; }
@@ -86,11 +87,15 @@ body.app-body {
 .job-state-local { color: #9b6100; background: #fff3db; }
 .job-state-stopped { color: #5a687b; background: #e8edf4; }
 .job-access { display: inline-flex; align-items: center; gap: .38rem; color: var(--app-ink); font-size: .84rem; font-weight: 650; }
-.btn-run, .btn-log-stderr, .btn-log-stdout { border-width: 1px; }
+.btn-run, .btn-schedule-disable, .btn-schedule-enable, .btn-log-stderr, .btn-log-stdout { border-width: 1px; }
 .btn-run { color: #08775a; border-color: #59b99e; background: #f1fcf8; }
+.btn-schedule-disable { color: #b63a46; border-color: #e5a2aa; background: #fff7f7; }
+.btn-schedule-enable { color: #1769e0; border-color: #9ebced; background: #f3f7ff; }
 .btn-log-stderr { color: #b63a46; border-color: #e5a2aa; background: #fff7f7; }
 .btn-log-stdout { color: #137b96; border-color: #91cad8; background: #f2fbfd; }
 .btn-run:hover, .btn-run:focus { color: #fff; border-color: #08775a; background: #08775a; }
+.btn-schedule-disable:hover, .btn-schedule-disable:focus { color: #fff; border-color: #b63a46; background: #b63a46; }
+.btn-schedule-enable:hover, .btn-schedule-enable:focus { color: #fff; border-color: #1769e0; background: #1769e0; }
 .btn-log-stderr:hover, .btn-log-stderr:focus { color: #fff; border-color: #b63a46; background: #b63a46; }
 .btn-log-stdout:hover, .btn-log-stdout:focus { color: #fff; border-color: #137b96; background: #137b96; }
 .app-card .dataTables_filter input, .app-card .dataTables_length select { border: 1px solid var(--app-border); border-radius: 8px; padding: .42rem .65rem; }
@@ -149,6 +154,8 @@ body.app-body {
 :root[data-theme="dark"] .app-card .table thead th { color: #bdc9da; }
 :root[data-theme="dark"] .job-state-stopped { color: #c4cfde; background: #2b384c; }
 :root[data-theme="dark"] .btn-run { color: #76dfbe; border-color: #327d69; background: #132f2b; }
+:root[data-theme="dark"] .btn-schedule-disable { color: #ffabb4; border-color: #87505a; background: #381f27; }
+:root[data-theme="dark"] .btn-schedule-enable { color: #a9c6ff; border-color: #4d6c9f; background: #182a46; }
 :root[data-theme="dark"] .btn-log-stderr { color: #ffadb5; border-color: #914b55; background: #3c2027; }
 :root[data-theme="dark"] .btn-log-stdout { color: #8bd7eb; border-color: #3a7889; background: #152f38; }
 :root[data-theme="dark"] .app-card .dataTables_filter input, :root[data-theme="dark"] .app-card .dataTables_length select { color: var(--app-ink); border-color: var(--app-border); background: #111d30; }
@@ -161,5 +168,6 @@ body.app-body {
   .page-actions { justify-content: flex-start; margin-top: 1rem; }
   .card-heading, .card-body-app, .modal-header, .modal-body, .modal-footer { padding-left: 1rem; padding-right: 1rem; }
   .app-card .dataTables_wrapper { padding-inline: 1rem; overflow-x: auto; }
+  .app-card .dt-container > .row:not(.dt-layout-table) { padding-inline: 1rem; }
   .schedule-preview { align-items: flex-start; flex-direction: column; }
 }

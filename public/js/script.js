@@ -39,9 +39,14 @@ function initPage() {
     return new bootstrap.Tooltip(el);
   });
   if (document.getElementById('main_table')) {
+    function updatePagingVisibility(api) {
+      var pager = api.table().container().querySelector('.dt-paging');
+      if (pager) pager.classList.toggle('d-none', api.page.info().pages <= 1);
+    }
     $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
       columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }, { orderable: false }],
+      drawCallback: function() { updatePagingVisibility(this.api()); },
       language: {
         search: '', searchPlaceholder: tr('dataSearch'),
         lengthMenu: tr('dataPerPage'), info: tr('dataInfo'),
@@ -200,7 +205,7 @@ function deleteJob(_id) {
 }
 
 function stopJob(_id) {
-  messageBox('<p>' + tr('pauseTaskBody') + '</p>', tr('pauseTaskTitle'), tr('pause'), tr('cancel'), function() {
+  messageBox('<p>' + tr('disableScheduleBody') + '</p>', tr('disableScheduleTitle'), tr('disableSchedule'), tr('cancel'), function() {
     $.post(routes.stop, {_id: _id}, function(result) {
       updateJobStatus(result.id, result.stopped);
     }).fail(handleOperationFailure);
@@ -208,7 +213,7 @@ function stopJob(_id) {
 }
 
 function startJob(_id) {
-  messageBox('<p>' + tr('activateTaskBody') + '</p>', tr('activateTaskTitle'), tr('activate'), tr('cancel'), function() {
+  messageBox('<p>' + tr('enableScheduleBody') + '</p>', tr('enableScheduleTitle'), tr('enableSchedule'), tr('cancel'), function() {
     $.post(routes.start, {_id: _id}, function(result) {
       updateJobStatus(result.id, result.stopped);
     }).fail(handleOperationFailure);
@@ -231,19 +236,60 @@ function updateJobStatus(_id, stopped) {
   var button = row.querySelector('[data-toggle-job]');
   if (!button) return;
   button.dataset.action = stopped ? 'start' : 'stop';
-  button.innerHTML = stopped
-    ? '<i class="bi bi-play-fill"></i><span class="visually-hidden">' + tr('activate') + '</span>'
-    : '<i class="bi bi-pause-fill"></i><span class="visually-hidden">' + tr('pause') + '</span>';
+  var label = stopped ? tr('enableSchedule') : tr('disableSchedule');
+  button.setAttribute('title', label);
+  button.setAttribute('aria-label', label);
+  button.classList.toggle('btn-schedule-enable', stopped);
+  button.classList.toggle('btn-schedule-disable', !stopped);
+  setButtonIconAndLabel(button, stopped ? 'bi-power' : 'bi-stop-fill', label);
+  updateScheduleStateBadge(row, stopped);
+}
+
+function setButtonIconAndLabel(button, iconClass, label) {
+  var icon = document.createElement('i');
+  icon.className = 'bi ' + iconClass;
+  icon.setAttribute('aria-hidden', 'true');
+  var hiddenLabel = document.createElement('span');
+  hiddenLabel.className = 'visually-hidden';
+  hiddenLabel.textContent = label;
+  button.replaceChildren(icon, hiddenLabel);
+}
+
+function updateScheduleStateBadge(row, stopped) {
+  var badge = row.querySelector('[data-job-schedule-state]');
+  if (!stopped) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'job-state job-state-stopped';
+    badge.dataset.jobScheduleState = '';
+    var meta = row.querySelector('.job-meta');
+    if (!meta) return;
+    meta.prepend(badge);
+  }
+  badge.replaceChildren();
+  var icon = document.createElement('i');
+  icon.className = 'bi bi-stop-circle-fill';
+  icon.setAttribute('aria-hidden', 'true');
+  badge.append(icon, document.createTextNode(tr('disabled')));
 }
 
 function trackManualRun(jobId, operationId) {
   var button = document.querySelector('[data-action="run"][data-id="' + jobId + '"]');
-  if (button) { button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span class="visually-hidden">' + tr('run') + '</span>'; }
+  if (button) {
+    button.disabled = true;
+    button.setAttribute('aria-label', tr('run'));
+    button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span class="visually-hidden">' + tr('run') + '</span>';
+  }
   var cancelButton = null;
   if (button && button.parentNode) {
     cancelButton = document.createElement('button');
     cancelButton.type = 'button';
     cancelButton.className = 'btn btn-sm btn-outline-danger ms-1';
+    cancelButton.title = tr('stopExecution');
+    cancelButton.setAttribute('aria-label', tr('stopExecution'));
     cancelButton.innerHTML = '<i class="bi bi-stop-fill" aria-hidden="true"></i><span class="visually-hidden">' + tr('cancel') + '</span>';
     cancelButton.addEventListener('click', function() {
       cancelButton.disabled = true;
@@ -258,10 +304,19 @@ function trackManualRun(jobId, operationId) {
   var poll = function() {
     $.get(routes.run_status, { operationId: operationId }).done(function(run) {
       if (run.status === 'running') return setTimeout(poll, 1500);
-      if (button) { button.disabled = false; button.innerHTML = '<i class="bi bi-play-fill"></i><span class="visually-hidden">' + tr('run') + '</span>'; }
+      if (button) {
+        button.disabled = false;
+        button.setAttribute('title', tr('runNow'));
+        button.setAttribute('aria-label', tr('runNow'));
+        setButtonIconAndLabel(button, 'bi-play-fill', tr('runNow'));
+      }
       if (cancelButton) cancelButton.remove();
       try { sessionStorage.removeItem('crontab_ui_manual_run'); } catch (_error) { /* optional persistence */ }
-      infoMessageBox(tr('runSuccess', { auditOperationId: tr('auditOperationId', { operationId: operationId }) }), tr('runComplete'));
+      var auditOperationId = tr('auditOperationId', { operationId: operationId });
+      var message = run.status === 'completed' ? tr('runSuccess', { auditOperationId: auditOperationId })
+        : run.status === 'cancelled' ? tr('runStopped', { auditOperationId: auditOperationId })
+          : tr('runFailed', { auditOperationId: auditOperationId });
+      infoMessageBox(message, run.status === 'failed' ? tr('error') : tr('runComplete'));
     }).fail(function(response) { if (button) button.disabled = false; if (cancelButton) cancelButton.remove(); handleOperationFailure(response); });
   };
   poll();

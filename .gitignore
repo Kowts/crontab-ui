@@ -6,3 +6,5 @@ node_modules
 crontabs/*.db
 crontabs/logs/*.log
 crontabs/logs/*.jsonl
+crontabs/logs/*.stdout
+crontabs/logs/*.stderr
