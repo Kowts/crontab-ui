@@ -239,14 +239,30 @@ function updateJobStatus(_id, stopped) {
 function trackManualRun(jobId, operationId) {
   var button = document.querySelector('[data-action="run"][data-id="' + jobId + '"]');
   if (button) { button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span class="visually-hidden">' + tr('run') + '</span>'; }
+  var cancelButton = null;
+  if (button && button.parentNode) {
+    cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'btn btn-sm btn-outline-danger ms-1';
+    cancelButton.innerHTML = '<i class="bi bi-stop-fill" aria-hidden="true"></i><span class="visually-hidden">' + tr('cancel') + '</span>';
+    cancelButton.addEventListener('click', function() {
+      cancelButton.disabled = true;
+      $.post(routes.cancel_run, { operationId: operationId }).fail(function(response) {
+        cancelButton.disabled = false;
+        handleOperationFailure(response);
+      });
+    });
+    button.after(cancelButton);
+  }
   try { sessionStorage.setItem('crontab_ui_manual_run', JSON.stringify({ jobId: jobId, operationId: operationId })); } catch (_error) { /* optional persistence */ }
   var poll = function() {
     $.get(routes.run_status, { operationId: operationId }).done(function(run) {
       if (run.status === 'running') return setTimeout(poll, 1500);
       if (button) { button.disabled = false; button.innerHTML = '<i class="bi bi-play-fill"></i><span class="visually-hidden">' + tr('run') + '</span>'; }
+      if (cancelButton) cancelButton.remove();
       try { sessionStorage.removeItem('crontab_ui_manual_run'); } catch (_error) { /* optional persistence */ }
       infoMessageBox(tr('runSuccess', { auditOperationId: tr('auditOperationId', { operationId: operationId }) }), tr('runComplete'));
-    }).fail(function(response) { if (button) button.disabled = false; handleOperationFailure(response); });
+    }).fail(function(response) { if (button) button.disabled = false; if (cancelButton) cancelButton.remove(); handleOperationFailure(response); });
   };
   poll();
 }
