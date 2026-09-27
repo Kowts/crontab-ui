@@ -36,7 +36,7 @@ flowchart TD
     U[Authorized operator] --> A[Authentication and RBAC]
     A -->|Allowed operation| UI[Crontab UI]
     UI --> V[Server validation<br/>payload, cron, ownership and CSRF]
-    V -->|Save locally| DB[(NeDB database<br/>CRON_DB_PATH)]
+    V -->|Save locally| DB[(SQLite database<br/>CRON_DB_PATH)]
     DB -->|Review and publish| P[Crontab staging]
     P --> C[System crontab]
     C --> X[Scheduled command execution]
@@ -153,7 +153,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | --- | --- |
 | `NODE_ENV` | Use `production` for deployment; enables secure cookies and requires TLS or a trusted proxy. |
 | `HOST`, `PORT`, `BASE_URL` | HTTP listener and public prefix. Defaults: `127.0.0.1`, `8000`, no prefix. |
-| `CRON_DB_PATH` | Persistent directory for the database, backups, environment, audit log, and execution output. Default: `./crontabs`. |
+| `CRON_DB_PATH` | Persistent directory for the SQLite database (`crontab.db`), backups, environment, audit log, and execution output. Default: `./crontabs`. |
 | `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. Default: `$CRON_DB_PATH/crontab-staging`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
@@ -183,6 +183,8 @@ Every manual or scheduled execution has a timeout, a combined output limit, and 
 ## Backups, recovery, and audit
 
 Before importing a database or restoring a backup, the application creates a backup and validates the candidate before replacing the active database. Recognized backups follow count- and age-based retention; retention failures are audited.
+
+On first start, a legacy NeDB `crontab.db` is migrated automatically to SQLite. The original file is retained alongside it as `crontab.db.legacy-nedb-<timestamp>`; preserve it until the migrated tasks and a recovery restore have been verified, then remove it using the normal change-management process.
 
 Recovery procedure:
 

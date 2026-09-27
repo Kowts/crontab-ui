@@ -1,6 +1,5 @@
 'use strict';
 
-const Datastore = require('@seald-io/nedb');
 const path = require('path');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
@@ -10,6 +9,7 @@ const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
+const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -21,7 +21,7 @@ const auditFile = path.join(logFolder, 'operations.jsonl');
 const envFile = path.join(dbFolder, 'env.db');
 const crontabDbFile = path.join(dbFolder, 'crontab.db');
 
-const db = new Datastore({ filename: crontabDbFile, autocompactionInterval: 60000 });
+const db = new SqliteDatastore({ filename: crontabDbFile });
 const commandTimeoutMs = Number(process.env.COMMAND_TIMEOUT_MS || 300000);
 const commandMaxBuffer = Number(process.env.COMMAND_MAX_BUFFER || 1024 * 1024);
 const commandKillGraceMs = Number(process.env.COMMAND_KILL_GRACE_MS || 5000);
@@ -83,6 +83,7 @@ exports.crontab_db_file = crontabDbFile;
 
 exports.create_new = (name, command, schedule, logging, mailing, ownership = {}, callback = () => {}) => {
   const tab = buildCrontab(name, command, schedule, false, logging, mailing, ownership);
+  tab._id = crypto.randomUUID();
   tab.created = Date.now();
   tab.saved = false;
   db.insert(tab, callback);
@@ -436,27 +437,20 @@ function writeAtomicFile(destination, contents, callback) {
 }
 
 function backupDatabase(callback) {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dest = path.join(dbFolder, `backup-${timestamp}.db`);
-  const copyDatabase = () => fs.mkdir(dbFolder, { recursive: true }, (mkdirErr) => {
-    if (mkdirErr) return callback(mkdirErr);
-    return writeAtomicFile(
-      dest,
-      db.getAllData().map((document) => JSON.stringify(document)).join('\n'),
-      (err) => {
-        if (err) {
-          console.error(err);
-          return callback(err);
-        }
-        applyRetention();
-        return callback(null, path.basename(dest));
-      }
-    );
-  });
-
-  db.compactDatafile((err) => {
-    if (err) return callback(err);
-    return copyDatabase();
+  setImmediate(() => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(dbFolder, `backup-${timestamp}.db`);
+    const temporary = path.join(dbFolder, `.backup-${crypto.randomUUID()}.tmp`);
+    try {
+      fs.mkdirSync(dbFolder, { recursive: true, mode: 0o700 });
+      db.snapshotTo(temporary);
+      fs.renameSync(temporary, dest);
+      applyRetention();
+      callback(null, path.basename(dest));
+    } catch (error) {
+      fs.rmSync(temporary, { force: true });
+      callback(error);
+    }
   });
 }
 
@@ -476,10 +470,14 @@ function withDatabaseLock(operation, callback) {
 exports.backup = (callback = () => {}) => withDatabaseLock(backupDatabase, callback);
 
 function validateDatabaseFile(fileName, callback) {
-  const candidate = new Datastore({ filename: fileName });
-  candidate.loadDatabase((err) => {
-    if (err) return callback(err);
-    return candidate.find({}).exec((findErr) => callback(findErr));
+  setImmediate(() => {
+    try {
+      if (!isSqliteFile(fileName)) throw new Error('Imported database is not a SQLite database');
+      readJobsFromFile(fileName);
+      callback(null);
+    } catch (error) {
+      callback(error);
+    }
   });
 }
 
@@ -542,77 +540,62 @@ function validateImportedJob(document) {
   };
 }
 
-function replaceTemporaryFile(source, destination, callback) {
-  fs.unlink(destination, (unlinkError) => {
-    if (unlinkError && unlinkError.code !== 'ENOENT') return callback(unlinkError);
-    return fs.rename(source, destination, callback);
-  });
-}
-
 exports.normalise_database = (temporaryFile, callback) => {
-  const candidate = new Datastore({ filename: temporaryFile });
-  candidate.loadDatabase((loadError) => {
-    if (loadError) return callback(loadError);
-    return candidate.find({}).exec((findError, documents) => {
-      if (findError) return callback(findError);
-      let jobs;
-      try {
-        jobs = documents.map(validateImportedJob);
-      } catch (validationError) {
-        return callback(validationError);
-      }
-
-      const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
-      const normalised = new Datastore({ filename: normalisedFile });
-      return normalised.loadDatabase((normalisedLoadError) => {
-        if (normalisedLoadError) return callback(normalisedLoadError);
-        return normalised.insert(jobs, (insertError) => {
-          if (insertError) return callback(insertError);
-          return normalised.compactDatafile((compactError) => {
-            if (compactError) return callback(compactError);
-            return replaceTemporaryFile(normalisedFile, temporaryFile, callback);
-          });
-        });
-      });
-    });
+  setImmediate(() => {
+    const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
+    try {
+      const jobs = readJobsFromFile(temporaryFile).map((document) => ({
+        ...validateImportedJob(document),
+        _id: crypto.randomUUID(),
+      }));
+      createDatabaseFile(normalisedFile, jobs);
+      fs.rmSync(temporaryFile, { force: true });
+      fs.renameSync(normalisedFile, temporaryFile);
+      callback(null);
+    } catch (error) {
+      fs.rmSync(normalisedFile, { force: true });
+      callback(error);
+    }
   });
 };
 
 function replaceDatabase(temporaryFile, done) {
-  const fail = (error) => fs.unlink(temporaryFile, () => done(error));
-  const loadReplacement = (rollbackFile) => db.loadDatabase((loadError) => {
-    if (!loadError) {
-      if (rollbackFile) fs.unlink(rollbackFile, () => {});
-      return done();
-    }
-    if (!rollbackFile) return fail(loadError);
-    return fs.rename(rollbackFile, crontabDbFile, () => db.loadDatabase(() => fail(loadError)));
-  });
-
-  const replaceFile = () => {
-    if (process.platform !== 'win32') {
-      return fs.rename(temporaryFile, crontabDbFile, (error) => {
-        if (error) return fail(error);
-        return loadReplacement();
-      });
-    }
-
-    const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
-    return fs.rename(crontabDbFile, rollbackFile, (moveError) => {
-      if (moveError && moveError.code !== 'ENOENT') return fail(moveError);
-      return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
-        if (!replaceError) return loadReplacement(moveError ? null : rollbackFile);
-        if (moveError) return fail(replaceError);
-        return fs.rename(rollbackFile, crontabDbFile, () => fail(replaceError));
-      });
-    });
-  };
-
   validateDatabaseFile(temporaryFile, (validationError) => {
-    if (validationError) return fail(validationError);
+    if (validationError) {
+      fs.rm(temporaryFile, { force: true }, () => done(validationError));
+      return;
+    }
     return backupDatabase((backupError) => {
-      if (backupError) return fail(backupError);
-      return replaceFile();
+      if (backupError) {
+        fs.rm(temporaryFile, { force: true }, () => done(backupError));
+        return;
+      }
+      setImmediate(() => {
+        const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
+        let movedCurrent = false;
+        try {
+          db.close();
+          if (process.platform === 'win32' && fs.existsSync(crontabDbFile)) {
+            fs.renameSync(crontabDbFile, rollbackFile);
+            movedCurrent = true;
+          }
+          fs.renameSync(temporaryFile, crontabDbFile);
+          db.open();
+          if (movedCurrent) fs.rmSync(rollbackFile, { force: true });
+          done(null);
+        } catch (error) {
+          try {
+            if (movedCurrent && !fs.existsSync(crontabDbFile) && fs.existsSync(rollbackFile)) {
+              fs.renameSync(rollbackFile, crontabDbFile);
+            }
+            if (!db.database) db.open();
+          } catch (rollbackError) {
+            error.rollbackError = rollbackError.message;
+          }
+          fs.rmSync(temporaryFile, { force: true });
+          done(error);
+        }
+      });
     });
   });
 }
@@ -632,9 +615,12 @@ exports.restore = (dbName, callback = () => {}) => withDatabaseLock((done) => {
   const temporaryFile = path.join(dbFolder, `.restore-${crypto.randomUUID()}.db`);
   fs.copyFile(source, temporaryFile, (copyError) => {
     if (copyError) return done(copyError);
-    return replaceDatabase(temporaryFile, (error) => {
-      if (error) fs.unlink(temporaryFile, () => {});
-      done(error);
+    return exports.normalise_database(temporaryFile, (normaliseError) => {
+      if (normaliseError) return done(normaliseError);
+      return replaceDatabase(temporaryFile, (error) => {
+        if (error) fs.unlink(temporaryFile, () => {});
+        done(error);
+      });
     });
   });
 }, callback);
@@ -649,7 +635,11 @@ exports.delete_backup = (dbName, callback = () => {}) => withDatabaseLock((done)
 }, callback);
 
 exports.reload_db = () => {
-  db.loadDatabase();
+  db.reload();
+};
+
+exports.close_db = () => {
+  db.close();
 };
 
 exports.get_env = () => {
@@ -718,15 +708,15 @@ function writeImportedJobs(entries, callback) {
       saved: false,
     }));
     const temporaryFile = path.join(dbFolder, `.system-import-${crypto.randomUUID()}.db`);
-    const contents = existingJobs.concat(importedJobs).map((job) => JSON.stringify(job)).join('\n');
-
-    return writeAtomicFile(temporaryFile, contents, (writeError) => {
-      if (writeError) return callback(writeError);
-      return replaceDatabase(temporaryFile, (replaceError) => callback(replaceError, {
+    try {
+      createDatabaseFile(temporaryFile, existingJobs.concat(importedJobs));
+    } catch (error) {
+      return callback(error);
+    }
+    return replaceDatabase(temporaryFile, (replaceError) => callback(replaceError, {
         imported: importedJobs.length,
         unchanged: entries.length - importedJobs.length,
       }));
-    });
   });
 }
 

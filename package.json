@@ -11,7 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@seald-io/nedb": "^4.1.2",
+    "better-sqlite3": "11.10.0",
     "connect-busboy": "^1.0.0",
     "cron-parser": "^5.5.0",
     "cronstrue": "^3.27.0",

@@ -1,9 +1,11 @@
 *.swp
 node_modules
+coverage/
 .env
 .env.*
 !.env.example
 crontabs/*.db
+crontabs/*.legacy-nedb-*
 crontabs/logs/*.log
 crontabs/logs/*.jsonl
 crontabs/logs/*.stdout

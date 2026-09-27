@@ -6,8 +6,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const Datastore = require('@seald-io/nedb');
 const cronstrue = require('cronstrue/i18n');
+const { SqliteDatastore, readJobsFromFile, isSqliteFile } = require('../lib/database');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
 fs.mkdirSync(testDbPath, { recursive: true });
@@ -210,6 +210,8 @@ describe('Crontab UI', () => {
     it('should create a backup', async () => {
       const res = await request(app).post('/backup');
       expect(res.status).toBe(200);
+      const latest = crontab.get_backup_names()[0];
+      expect(isSqliteFile(path.join(testDbPath, latest))).toBe(true);
     });
   });
 
@@ -512,7 +514,7 @@ describe('Crontab UI', () => {
     });
   });
 
-  describe('NeDB import normalisation', () => {
+  describe('Database import normalisation', () => {
     function normalise(file) {
       return new Promise((resolve, reject) => crontab.normalise_database(file, (error) => {
         if (error) reject(error);
@@ -521,11 +523,7 @@ describe('Crontab UI', () => {
     }
 
     function records(file) {
-      const datastore = new Datastore({ filename: file });
-      return new Promise((resolve, reject) => datastore.loadDatabase((loadError) => {
-        if (loadError) return reject(loadError);
-        return datastore.find({}).exec((findError, docs) => (findError ? reject(findError) : resolve(docs)));
-      }));
+      return readJobsFromFile(file);
     }
 
     function writeCandidate(name, documents) {
@@ -541,7 +539,8 @@ describe('Crontab UI', () => {
         hook: 'touch /tmp/should-not-run', timestamp: 'old', created: 1, saved: true,
       }]);
       await normalise(file);
-      const [job] = await records(file);
+      expect(isSqliteFile(file)).toBe(true);
+      const [job] = records(file);
       expect(job._id).not.toBe('externally-controlled-id');
       expect(job.hook).toBeUndefined();
       expect(job.command).toBe('echo imported');
@@ -551,7 +550,23 @@ describe('Crontab UI', () => {
     it('accepts an empty datastore', async () => {
       const file = writeCandidate('normalise-empty.db', []);
       await normalise(file);
-      expect(await records(file)).toEqual([]);
+      expect(records(file)).toEqual([]);
+    });
+
+    it('migrates an existing NeDB database to SQLite while retaining the legacy source', () => {
+      const folder = path.join(testDbPath, `legacy-migration-${Date.now()}`);
+      const file = path.join(folder, 'crontab.db');
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({
+        _id: 'legacy-task', name: 'legacy task', command: 'echo legacy', schedule: '* * * * *',
+        stopped: false, logging: false, mailing: {}, created: 1, saved: false,
+      }));
+
+      const legacyDatabase = new SqliteDatastore({ filename: file });
+      expect(isSqliteFile(file)).toBe(true);
+      expect(legacyDatabase.getAllData()).toEqual([expect.objectContaining({ _id: 'legacy-task', command: 'echo legacy' })]);
+      legacyDatabase.close();
+      expect(fs.readdirSync(folder).some((name) => name.startsWith('crontab.db.legacy-nedb-'))).toBe(true);
     });
 
     it.each([
@@ -1106,5 +1121,6 @@ describe('Application bootstrap', () => {
 });
 
 afterAll(() => {
+  crontab.close_db();
   fs.rmSync(testDbPath, { recursive: true, force: true });
 });

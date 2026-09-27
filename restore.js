@@ -1,16 +1,16 @@
 'use strict';
 
-const Datastore = require('@seald-io/nedb');
 const path = require('path');
 const fs = require('fs');
 const crontab = require('./crontab');
+const { readJobsFromFile } = require('./lib/database');
 
 exports.crontabs = (dbName, callback) => {
-  const db = new Datastore({ filename: path.join(crontab.db_folder, dbName) });
-  db.loadDatabase(() => {});
-  db.find({}).sort({ created: -1 }).exec((err, docs) => {
-    callback(docs);
-  });
+  try {
+    callback(readJobsFromFile(path.join(crontab.db_folder, dbName)));
+  } catch (_error) {
+    callback([]);
+  }
 };
 
 exports.delete = (dbName) => {

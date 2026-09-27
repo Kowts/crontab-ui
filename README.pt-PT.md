@@ -36,7 +36,7 @@ flowchart TD
     U[Operador autorizado] --> A[Autenticação e RBAC]
     A -->|Operação permitida| UI[Crontab UI]
     UI --> V[Validação no servidor<br/>payload, cron, propriedade e CSRF]
-    V -->|Guardar localmente| DB[(Base de dados NeDB<br/>CRON_DB_PATH)]
+    V -->|Guardar localmente| DB[(Base de dados SQLite<br/>CRON_DB_PATH)]
     DB -->|Rever e publicar| P[Staging do crontab]
     P --> C[Crontab do sistema]
     C --> X[Execução agendada de comando]
@@ -153,7 +153,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | --- | --- |
 | `NODE_ENV` | Use `production` no deployment; ativa cookies seguros e exige TLS/proxy de confiança. |
 | `HOST`, `PORT`, `BASE_URL` | Escuta HTTP e prefixo público. Predefinições: `127.0.0.1`, `8000`, sem prefixo. |
-| `CRON_DB_PATH` | Diretório persistente para base, backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. |
+| `CRON_DB_PATH` | Diretório persistente para a base SQLite (`crontab.db`), backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. |
 | `CRON_PATH` | Diretório de staging do crontab. Deve ser acessível apenas ao processo da aplicação e ao mecanismo de agendamento isolado. Predefinição: `$CRON_DB_PATH/crontab-staging`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
 | `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
@@ -183,6 +183,8 @@ Cada execução manual ou agendada tem timeout, limite conjunto de output e ence
 ## Backups, recuperação e auditoria
 
 Antes de importar uma base ou restaurar um backup, a aplicação cria uma cópia de segurança e valida o candidato antes de substituir a base ativa. Os backups reconhecidos seguem a retenção por quantidade e idade; falhas de retenção são auditadas.
+
+No primeiro arranque, uma `crontab.db` NeDB legada é migrada automaticamente para SQLite. O ficheiro original é retido ao lado da nova base como `crontab.db.legacy-nedb-<timestamp>`; preserve-o até confirmar as tarefas migradas e um restauro de recuperação, removendo-o depois através do processo normal de gestão de alterações.
 
 Procedimento de recuperação:
 
