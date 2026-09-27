@@ -12,7 +12,7 @@ function terminate(child, signal) {
   child.kill(signal);
 }
 
-function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGraceMs = 5_000 }, callback) {
+function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGraceMs = 5_000, onStart = null }, callback) {
   const startedAt = Date.now();
   const child = process.platform === 'win32'
     ? spawn(command, { shell: true, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -32,6 +32,7 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
     terminate(child, 'SIGTERM');
     killTimer = setTimeout(() => terminate(child, 'SIGKILL'), killGraceMs);
   };
+  const controller = { cancel: () => terminateTree('cancelled') };
   const collect = (target) => (chunk) => {
     const available = Math.max(0, maxOutputBytes - output.bytes);
     if (available) {
@@ -74,6 +75,8 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
       : exitCode === 0 ? null : Object.assign(new Error(`Command exited with code ${exitCode}`), { code: exitCode, signal });
     callback(error, result);
   });
+  if (typeof onStart === 'function') onStart(controller);
+  return controller;
 }
 
 module.exports = { execute };

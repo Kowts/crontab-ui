@@ -297,13 +297,35 @@ app.post(routes.remove, requireRole('operator'), validateIdParam, requireJobAcce
 });
 
 app.post(routes.run, requireRole('executor'), validateIdParam, requireJobAccess('execute'), auditOperation('request_run_job', (req) => ({ jobId: req.body._id })), (req, res) => {
-  crontab.runjob(req.body._id, {
+  crontab.startManualRun(req.body._id, {
     requestId: req.requestId,
     actor: req.auth?.user || (app.locals.authEnabled ? null : 'local'),
     sourceIp: req.ip,
   }, (err, result) => {
-    if (err) return res.status(500).json({ message: 'Job execution failed', operationId: result?.operationId });
+    if (err) return res.status(err.statusCode || 500).json({ message: err.message || 'Job execution failed' });
     return res.status(202).json(result);
+  });
+});
+
+app.get(routes.run_status, requireRole('viewer'), (req, res) => {
+  const operationId = String(req.query.operationId || '');
+  const run = crontab.getManualRun(operationId);
+  if (!run) return res.status(404).json({ message: 'Execution not found' });
+  return crontab.get_crontab(run.jobId, (job) => {
+    if (!job || !canAccessJob(req, job, 'read')) return res.status(403).json({ message: 'Not authorized for this job' });
+    return res.json(run);
+  });
+});
+
+app.post(routes.cancel_run, requireRole('executor'), (req, res) => {
+  const operationId = String(req.body.operationId || '');
+  const run = crontab.getManualRun(operationId);
+  if (!run) return res.status(404).json({ message: 'Execution not found' });
+  return crontab.get_crontab(run.jobId, (job) => {
+    if (!job || !canAccessJob(req, job, 'execute')) return res.status(403).json({ message: 'Not authorized for this job' });
+    const cancelled = crontab.cancelManualRun(operationId, { requestId: req.requestId, actor: req.auth?.user || 'local', sourceIp: req.ip });
+    if (!cancelled) return res.status(409).json({ message: 'Execution is no longer active' });
+    return res.status(202).json(cancelled);
   });
 });
 

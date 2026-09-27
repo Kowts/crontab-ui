@@ -7,6 +7,8 @@ const routes = {
   health: '/healthz',
   save: '/save',
   run: '/runjob',
+  run_status: '/runjob/status',
+  cancel_run: '/runjob/cancel',
   crontab: '/crontab',
   stop: '/stop',
   start: '/start',

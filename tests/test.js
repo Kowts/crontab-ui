@@ -111,6 +111,23 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Asynchronous manual execution', () => {
+    it('returns an operation ID immediately and exposes its status', async () => {
+      const job = await new Promise((resolve, reject) => {
+        crontab.create_new('async-run', 'echo async-run', '* * * * *', false, {}, {}, (error, created) => {
+          if (error) reject(error);
+          else resolve(created);
+        });
+      });
+      const started = await request(app).post('/runjob').send({ _id: job._id });
+      expect(started.status).toBe(202);
+      expect(started.body.operationId).toMatch(/^[a-f0-9-]{36}$/);
+      const status = await request(app).get('/runjob/status').query({ operationId: started.body.operationId });
+      expect(status.status).toBe(200);
+      expect(['running', 'completed']).toContain(status.body.status);
+    });
+  });
+
   describe('Mail profile validation', () => {
     it('should reject an unknown server-side mail profile', async () => {
       const res = await request(app).post('/save').send({

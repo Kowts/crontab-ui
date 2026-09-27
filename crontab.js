@@ -35,6 +35,8 @@ const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MA
 
 let cronPath = '/tmp';
 let databaseOperationActive = false;
+const manualRuns = new Map();
+let activeManualRunId = null;
 if (process.env.CRON_PATH !== undefined) {
   console.log(`Path to crond files set using env variables ${process.env.CRON_PATH}`);
   cronPath = process.env.CRON_PATH;
@@ -257,6 +259,66 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });
+};
+
+function pruneManualRuns() {
+  const cutoff = Date.now() - (24 * 60 * 60 * 1000);
+  for (const [operationId, run] of manualRuns) {
+    if (run.completedAt && run.completedAt < cutoff) manualRuns.delete(operationId);
+  }
+  const completed = [...manualRuns.entries()].filter(([, run]) => run.completedAt).sort((a, b) => b[1].completedAt - a[1].completedAt);
+  completed.slice(10).forEach(([operationId]) => manualRuns.delete(operationId));
+}
+
+exports.getManualRun = (operationId) => {
+  pruneManualRuns();
+  const run = manualRuns.get(operationId);
+  if (!run) return null;
+  const safeRun = { ...run };
+  delete safeRun.controller;
+  return safeRun;
+};
+
+exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
+  if (activeManualRunId) return callback(Object.assign(new Error('A manual execution is already active'), { statusCode: 409 }));
+  return db.find({ _id }).exec((err, docs) => {
+    if (err || !docs.length) return callback(err || new Error('Job not found'));
+    let jobEnvironment;
+    try {
+      jobEnvironment = parseEnvironment(exports.get_env());
+    } catch (environmentError) {
+      return callback(environmentError);
+    }
+    const job = docs[0];
+    const operationId = crypto.randomUUID();
+    const run = { operationId, jobId: _id, status: 'running', startedAt: Date.now(), controller: null };
+    manualRuns.set(operationId, run);
+    activeManualRunId = operationId;
+    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext });
+    callback(null, exports.getManualRun(operationId));
+    run.controller = execute(job.command, {
+      timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
+      env: { ...process.env, ...jobEnvironment }, onStart: (controller) => { run.controller = controller; },
+    }, (error, result) => {
+      recordOutput(job, result);
+      sendMail(job, operationId);
+      applyRetention();
+      run.status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
+      run.completedAt = Date.now();
+      run.result = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
+      activeManualRunId = null;
+      audit({ operationId, type: 'manual_run', jobId: _id, status: run.status, error: error?.message, ...run.result, ...auditContext });
+      pruneManualRuns();
+    });
+  });
+};
+
+exports.cancelManualRun = (operationId, auditContext = {}) => {
+  const run = manualRuns.get(operationId);
+  if (!run || run.status !== 'running' || !run.controller) return null;
+  run.controller.cancel();
+  audit({ operationId, type: 'manual_run', jobId: run.jobId, status: 'cancellation_requested', ...auditContext });
+  return exports.getManualRun(operationId);
 };
 
 function restoreFile(filePath, contents, existed, callback) {
