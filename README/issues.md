@@ -9,7 +9,7 @@ docker compose ps
 docker compose exec crontab-ui curl -fsS http://127.0.0.1:8000/healthz
 ```
 
-`/healthz` não requer credenciais, mas aceita apenas ligações loopback. O comando acima é válido dentro do contentor; a porta só fica disponível no anfitrião quando for usada explicitamente a sobreposição de desenvolvimento.
+`/healthz` não requer credenciais, mas aceita apenas ligações loopback. A imagem instala `curl`, pelo que o comando acima é válido dentro do contentor; a porta só fica disponível no anfitrião quando for usada explicitamente a sobreposição de desenvolvimento.
 
 Se o healthcheck falhar, reveja os logs do contentor e as permissões do volume `crontab-data`. Não execute a aplicação como `root` para contornar permissões; atribua apenas ao utilizador do serviço acesso ao directório persistente e ao mecanismo de agendamento isolado.
 

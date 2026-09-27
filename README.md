@@ -50,13 +50,14 @@ O exemplo pressupõe que um proxy HTTPS local termina TLS e é a única origem q
 
 ## Deployment com Docker Compose
 
-O `docker-compose.yml` não publica a porta da aplicação e passa `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET` e `TRUSTED_PROXY` para o contentor. Não inclui um serviço Nginx: o proxy tem de ser gerido separadamente e ligado à rede Docker `crontab-ui_default` (ou a uma rede externa explicitamente configurada). Copie os valores abaixo para um ficheiro secreto, por exemplo `.env.production`, que **não** deve ser versionado:
+O `docker-compose.yml` não publica a porta da aplicação e passa `NODE_ENV=production`, `HOST=0.0.0.0`, `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET` e `TRUSTED_PROXY` para o contentor. A imagem é etiquetada localmente como `kowts/crontab-ui`. Declara a rede partilhada `crontab-ui-internal`, cujo nome pode ser alterado com `CRONTAB_UI_NETWORK`; o Compose do proxy deve referenciá-la como rede externa. O repositório não inclui um serviço Nginx, pelo que o proxy continua a ser gerido separadamente. Copie os valores abaixo para um ficheiro secreto, por exemplo `.env.production`, que **não** deve ser versionado:
 
 ```dotenv
 # Escolha apenas este mecanismo para vários utilizadores.
 BASIC_AUTH_USERS_JSON={"admin":"substitua-por-um-segredo","operator":"substitua-por-outro-segredo"}
 AUTHZ_ROLE_MAP_JSON={"admin":"admin","operator":"operator"}
 CSRF_SECRET=substitua-por-um-segredo-aleatorio-longo
+CRONTAB_UI_NETWORK=crontab-ui-internal
 # Exemplo ilustrativo: confirme a rede efectiva antes de usar este valor.
 # Deve identificar a origem directa do proxy que encaminha para o contentor.
 TRUSTED_PROXY=172.20.0.0/16
@@ -111,6 +112,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
 | `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
 | `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
+| `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |
 | `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId`. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites de execução de tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. |

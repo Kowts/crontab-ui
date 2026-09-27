@@ -1,10 +1,14 @@
 services:
   crontab-ui:
     build: .
-    image: alseambusher/crontab-ui
+    image: kowts/crontab-ui
     expose:
       - "8000"
+    networks:
+      - crontab-ui-internal
     environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
       BASIC_AUTH_USERS_JSON: ${BASIC_AUTH_USERS_JSON:?Configure authenticated users}
       AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:?Configure user roles}
       CSRF_SECRET: ${CSRF_SECRET:?Configure CSRF secret}
@@ -30,3 +34,7 @@ services:
 
 volumes:
   crontab-data:
+
+networks:
+  crontab-ui-internal:
+    name: ${CRONTAB_UI_NETWORK:-crontab-ui-internal}
