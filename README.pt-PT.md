@@ -2,6 +2,8 @@
 
 [English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
+<p align="center"><img src="public/images/crontab-ui.svg" width="112" alt="Ícone do Crontab UI"></p>
+
 Gestão web de tarefas cron com controlo de acesso, cópias de segurança, auditoria e limites de execução.
 
 > A execução de uma tarefa é equivalente a executar o respetivo comando com os privilégios do processo do serviço. Instale a aplicação apenas em ambientes onde os administradores autorizados possam criar e publicar esses comandos.

@@ -1,7 +1,10 @@
 <% const displayRole = typeof currentRole === 'undefined' ? 'viewer' : currentRole; %>
 <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
   <div class="container-fluid app-shell py-0">
-    <a class="navbar-brand" href="<%= JSON.parse(routes).root %>">Crontab UI</a>
+    <a class="navbar-brand d-inline-flex align-items-center gap-2" href="<%= JSON.parse(routes).root %>">
+      <img src="<%= JSON.parse(routes).root %>images/crontab-ui.svg" width="24" height="24" alt="" aria-hidden="true">
+      <span>Crontab UI</span>
+    </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="<%= t('openMenu') %>">
       <span class="navbar-toggler-icon"></span>
     </button>

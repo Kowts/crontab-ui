@@ -2,6 +2,8 @@
 
 [English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
+<p align="center"><img src="public/images/crontab-ui.svg" width="112" alt="Crontab UI icon"></p>
+
 Web-based cron job management with access controls, backups, auditing, and execution limits.
 
 > Running a task is equivalent to running its command with the service process's privileges. Deploy the application only in environments where authorized administrators may create and publish those commands.
