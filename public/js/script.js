@@ -31,6 +31,10 @@ function initPage() {
   }
 
   $.ajaxSetup({ headers: { 'X-CSRF-Token': csrfToken() } });
+  try {
+    var pendingRun = JSON.parse(sessionStorage.getItem('crontab_ui_manual_run') || 'null');
+    if (pendingRun && pendingRun.jobId && pendingRun.operationId) trackManualRun(pendingRun.jobId, pendingRun.operationId);
+  } catch (_error) { /* optional persistence */ }
   [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).forEach(function(el) {
     return new bootstrap.Tooltip(el);
   });
@@ -195,16 +199,16 @@ function deleteJob(_id) {
 
 function stopJob(_id) {
   messageBox('<p>' + tr('pauseTaskBody') + '</p>', tr('pauseTaskTitle'), tr('pause'), tr('cancel'), function() {
-    $.post(routes.stop, {_id: _id}, function() {
-      location.reload();
+    $.post(routes.stop, {_id: _id}, function(result) {
+      updateJobStatus(result.id, result.stopped);
     }).fail(handleOperationFailure);
   });
 }
 
 function startJob(_id) {
   messageBox('<p>' + tr('activateTaskBody') + '</p>', tr('activateTaskTitle'), tr('activate'), tr('cancel'), function() {
-    $.post(routes.start, {_id: _id}, function() {
-      location.reload();
+    $.post(routes.start, {_id: _id}, function(result) {
+      updateJobStatus(result.id, result.stopped);
     }).fail(handleOperationFailure);
   });
 }
@@ -212,9 +216,37 @@ function startJob(_id) {
 function runJob(_id) {
   messageBox('<p>' + tr('runTaskBody') + '</p>', tr('runTaskTitle'), tr('run'), tr('cancel'), function() {
     $.post(routes.run, {_id: _id}, function(result) {
-      infoMessageBox(tr('runSuccess', { auditOperationId: tr('auditOperationId', { operationId: result.operationId }) }), tr('runComplete'));
+      trackManualRun(_id, result.operationId);
     }).fail(handleOperationFailure);
   });
+}
+
+function updateJobStatus(_id, stopped) {
+  crontabs.forEach(function(job) { if (job._id === _id) job.stopped = stopped; });
+  var row = document.querySelector('[data-job-row][data-id="' + _id + '"]');
+  if (!row) return;
+  row.classList.toggle('table-light', stopped);
+  var button = row.querySelector('[data-toggle-job]');
+  if (!button) return;
+  button.dataset.action = stopped ? 'start' : 'stop';
+  button.innerHTML = stopped
+    ? '<i class="bi bi-play-fill"></i><span class="visually-hidden">' + tr('activate') + '</span>'
+    : '<i class="bi bi-pause-fill"></i><span class="visually-hidden">' + tr('pause') + '</span>';
+}
+
+function trackManualRun(jobId, operationId) {
+  var button = document.querySelector('[data-action="run"][data-id="' + jobId + '"]');
+  if (button) { button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span class="visually-hidden">' + tr('run') + '</span>'; }
+  try { sessionStorage.setItem('crontab_ui_manual_run', JSON.stringify({ jobId: jobId, operationId: operationId })); } catch (_error) { /* optional persistence */ }
+  var poll = function() {
+    $.get(routes.run_status, { operationId: operationId }).done(function(run) {
+      if (run.status === 'running') return setTimeout(poll, 1500);
+      if (button) { button.disabled = false; button.innerHTML = '<i class="bi bi-play-fill"></i><span class="visually-hidden">' + tr('run') + '</span>'; }
+      try { sessionStorage.removeItem('crontab_ui_manual_run'); } catch (_error) { /* optional persistence */ }
+      infoMessageBox(tr('runSuccess', { auditOperationId: tr('auditOperationId', { operationId: operationId }) }), tr('runComplete'));
+    }).fail(function(response) { if (button) button.disabled = false; handleOperationFailure(response); });
+  };
+  poll();
 }
 
 function setCrontab() {

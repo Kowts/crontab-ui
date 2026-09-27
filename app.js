@@ -278,14 +278,14 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
 app.post(routes.stop, requireRole('operator'), validateIdParam, requireJobAccess('write'), auditOperation('stop_job', (req) => ({ jobId: req.body._id })), (req, res) => {
   crontab.status(req.body._id, true, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to stop job' });
-    return res.end();
+    return res.json({ id: req.body._id, stopped: true });
   });
 });
 
 app.post(routes.start, requireRole('operator'), validateIdParam, requireJobAccess('write'), auditOperation('start_job', (req) => ({ jobId: req.body._id })), (req, res) => {
   crontab.status(req.body._id, false, (err) => {
     if (err) return res.status(500).json({ message: 'Unable to start job' });
-    return res.end();
+    return res.json({ id: req.body._id, stopped: false });
   });
 });
 

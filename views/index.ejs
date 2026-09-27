@@ -97,7 +97,7 @@
         </thead>
         <tbody>
           <% jobs.forEach(function(crontab, index){ %>
-            <tr class="<%= crontab.stopped ? 'table-light' : '' %>">
+            <tr data-job-row data-id="<%= crontab._id %>" class="<%= crontab.stopped ? 'table-light' : '' %>">
               <td><%= index + 1 %></td>
               <td>
                 <strong><%= crontab.name || crontab._id %></strong>
@@ -119,7 +119,7 @@
                 <% } %>
                 <% if (!crontab.stopped && canRunJobs) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden"><%= t('run') %></span></button><% } %>
                 <% if (canManageJobs) { %>
-                  <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-pause-fill"></i><span class="visually-hidden"><%= t('pause') %></span></button><% } else { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden"><%= t('activate') %></span></button><% } %>
+                  <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-toggle-job data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-pause-fill"></i><span class="visually-hidden"><%= t('pause') %></span></button><% } else { %><button type="button" class="btn btn-sm btn-outline-secondary" data-toggle-job data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden"><%= t('activate') %></span></button><% } %>
                   <button type="button" class="btn btn-sm btn-outline-secondary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil"></i><span class="visually-hidden"><%= t('edit') %></span></button>
                   <button type="button" class="btn btn-sm btn-outline-secondary" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i><span class="visually-hidden"><%= t('duplicate') %></span></button>
                   <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i><span class="visually-hidden"><%= t('delete') %></span></button>
