@@ -356,21 +356,63 @@ describe('Crontab UI', () => {
     });
   });
 
-  describe('GET /import_crontab (auto-backup)', () => {
-    it('should create a backup before importing', async () => {
-      // ensure a job exists so crontab.db is non-empty
-      await request(app).post('/save').send({
-        _id: -1, name: 'backup-test', command: 'echo backup',
-        schedule: '* * * * *', logging: 'false', mailing: {},
+  describe('POST /import_crontab', () => {
+    it('waits for the complete system import before returning its result', async () => {
+      const originalImport = crontab.import_crontab;
+      let completed = false;
+      crontab.import_crontab = (callback) => setTimeout(() => {
+        completed = true;
+        callback(null, { imported: 2, unchanged: 1 });
+      }, 25);
+
+      try {
+        const res = await request(app).post('/import_crontab');
+        expect(res.status).toBe(200);
+        expect(completed).toBe(true);
+        expect(res.body).toEqual({ imported: 2, unchanged: 1 });
+      } finally {
+        crontab.import_crontab = originalImport;
+      }
+    });
+
+    it('imports valid entries atomically, creates a backup, and skips duplicates', async () => {
+      const backupsBefore = crontab.get_backup_names().length;
+      const result = await new Promise((resolve, reject) => {
+        crontab.import_crontab((error, summary) => {
+          if (error) return reject(error);
+          return resolve(summary);
+        }, (callback) => callback(null, [
+          '# system crontab',
+          '*/5 * * * * echo imported-job',
+          '@reboot echo boot-job',
+          'MAILTO=ops@example.test',
+          '*/5 * * * * echo imported-job',
+          'invalid cron line',
+        ].join('\n')));
       });
-      // small delay so backup filename (based on date) doesn't collide
-      await new Promise((r) => setTimeout(r, 1100));
-      const backupsBefore = fs.readdirSync(testDbPath)
-        .filter((f) => f.startsWith('backup'));
-      await request(app).post('/import_crontab');
-      const backupsAfter = fs.readdirSync(testDbPath)
-        .filter((f) => f.startsWith('backup'));
-      expect(backupsAfter.length).toBe(backupsBefore.length + 1);
+
+      expect(result).toMatchObject({ imported: 2, unchanged: 1 });
+      expect(crontab.get_backup_names().length).toBe(backupsBefore + 1);
+      const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+      expect(jobs.filter((job) => job.command === 'echo imported-job')).toHaveLength(1);
+      expect(jobs.some((job) => job.command === 'echo boot-job' && job.schedule === '@reboot')).toBe(true);
+    });
+
+    it('rejects a concurrent system import while the first operation owns the database lock', async () => {
+      let releaseFirstImport;
+      const firstImport = new Promise((resolve, reject) => {
+        crontab.import_crontab((error) => (error ? reject(error) : resolve()), (callback) => {
+          releaseFirstImport = callback;
+        });
+      });
+      const conflict = await new Promise((resolve) => {
+        crontab.import_crontab((error) => resolve(error), (callback) => callback(null, ''));
+      });
+      expect(conflict).toBeInstanceOf(Error);
+      expect(conflict.statusCode).toBe(409);
+
+      releaseFirstImport(null, '');
+      await firstImport;
     });
   });
 

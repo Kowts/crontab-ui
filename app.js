@@ -429,10 +429,9 @@ app.post(routes.import, requireRole('admin'), auditOperation('import_database'),
 });
 
 app.post(routes.import_crontab, requireRole('admin'), auditOperation('import_system_crontab'), (req, res, next) => {
-  crontab.backup((err) => {
+  crontab.import_crontab((err, result) => {
     if (err) return next(err);
-    crontab.import_crontab();
-    res.end();
+    return res.status(200).json(result);
   });
 });
 

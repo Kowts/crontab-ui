@@ -109,6 +109,8 @@ Cada execução, manual ou agendada, usa o mesmo executor, com `COMMAND_TIMEOUT_
 
 Os logs de tarefas são limitados por `LOG_MAX_BYTES`, rodam até `LOG_ROTATION_COUNT` ficheiros e continuam sujeitos a `LOG_RETENTION_DAYS`. O mesmo limite, rotação e retenção aplicam-se ao diário de auditoria `crontabs/logs/operations.jsonl`. Cada operação administrativa, recusa de autenticação/autorização e execução é registada em JSON Lines com ID de correlação, actor/papel quando aplicável, IP de origem, resultado e duração; comandos são representados apenas pelo seu hash SHA-256. Configure também `BACKUP_RETENTION_COUNT` e `BACKUP_RETENTION_DAYS`. Falhas de limpeza são registadas na auditoria; monitorize e exporte esse ficheiro para armazenamento centralizado com acesso restrito.
 
+A importação do crontab do sistema executa `crontab -l` sem shell, tem os limites `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS` e `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER`, e mantém a leitura, cópia de segurança e substituição da base de dados sob o mesmo bloqueio. A resposta só é enviada após a importação terminar; linhas não agendadas (comentários e variáveis de ambiente) são ignoradas, e tarefas já existentes com o mesmo horário e comando não são duplicadas.
+
 ### Recuperação
 
 Antes de uma importação ou restauro é criada uma cópia de segurança. Para recuperar, abra um backup na interface e use **Restore**. A aplicação valida o ficheiro candidato antes de substituir a base activa e impede operações concorrentes. Teste regularmente a recuperação numa cópia não produtiva.

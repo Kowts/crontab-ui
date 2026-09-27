@@ -2,7 +2,7 @@
 
 const Datastore = require('@seald-io/nedb');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
@@ -30,6 +30,8 @@ const logRotationCount = Number(process.env.LOG_ROTATION_COUNT || 5);
 const logRetentionDays = Number(process.env.LOG_RETENTION_DAYS || 30);
 const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
+const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
+const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
 
 let cronPath = '/tmp';
 let databaseOperationActive = false;
@@ -553,38 +555,94 @@ exports.get_env = () => {
   return '';
 };
 
-exports.import_crontab = () => {
-  exec('crontab -l', (error, stdout) => {
-    const lines = stdout.split('\n');
-    const namePrefix = Date.now();
+function parseSystemCrontab(content) {
+  if (typeof content !== 'string') throw new Error('System crontab returned invalid output');
 
-    lines.forEach((line, index) => {
-      line = line.replace(/\t+/g, ' ');
-      const regex = /^((@[a-zA-Z]+\s+)|(([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+([^\s]+)\s+))/;
-      const command = line.replace(regex, '').trim();
-      const schedule = line.replace(command, '').trim();
+  return content.split(/\r?\n/).map((rawLine, index) => {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) return null;
 
-      let isValid = false;
-      try {
-        isValid = CronExpressionParser.parse(schedule) !== null;
-      } catch (_e) { /* ignore */ }
+    const macro = line.match(/^(@[A-Za-z]+)\s+(.+)$/);
+    const fields = macro || line.match(/^((?:\S+\s+){4}\S+)\s+(.+)$/);
+    if (!fields) return null;
 
-      if (command && schedule && isValid) {
-        const name = `${namePrefix}_${index}`;
-        db.findOne({ command, schedule }, (err, doc) => {
-          if (err) throw err;
-          if (!doc) {
-            exports.create_new(name, command, schedule, null);
-          } else {
-            doc.command = command;
-            doc.schedule = schedule;
-            exports.update(doc._id, doc);
-          }
-        });
-      }
+    const schedule = fields[1];
+    const command = fields[2].trim();
+    if (!command || /[\r\n]/.test(command)) return null;
+
+    try {
+      if (schedule !== '@reboot') CronExpressionParser.parse(schedule);
+    } catch (_error) {
+      return null;
+    }
+    return { command, schedule, index };
+  }).filter(Boolean);
+}
+
+function readSystemCrontab(callback) {
+  return execFile('crontab', ['-l'], {
+    timeout: systemCrontabImportTimeoutMs,
+    maxBuffer: systemCrontabImportMaxBuffer,
+    windowsHide: true,
+  }, callback);
+}
+
+function writeImportedJobs(entries, callback) {
+  return db.find({}).exec((findError, existingJobs) => {
+    if (findError) return callback(findError);
+    const existing = new Set(existingJobs.map((job) => `${job.schedule}\u0000${job.command}`));
+    const uniqueEntries = entries.filter((entry) => {
+      const key = `${entry.schedule}\u0000${entry.command}`;
+      if (existing.has(key)) return false;
+      existing.add(key);
+      return true;
+    });
+
+    if (!uniqueEntries.length) {
+      return backupDatabase((backupError, backupName) => callback(backupError, {
+        imported: 0,
+        unchanged: entries.length,
+        backup: backupName,
+      }));
+    }
+
+    const createdAt = Date.now();
+    const importedJobs = uniqueEntries.map((entry) => ({
+      ...buildCrontab(`system-${createdAt}-${entry.index}`, entry.command, entry.schedule, false, false, {}),
+      _id: crypto.randomUUID(),
+      created: createdAt,
+      saved: false,
+    }));
+    const temporaryFile = path.join(dbFolder, `.system-import-${crypto.randomUUID()}.db`);
+    const contents = existingJobs.concat(importedJobs).map((job) => JSON.stringify(job)).join('\n');
+
+    return writeAtomicFile(temporaryFile, contents, (writeError) => {
+      if (writeError) return callback(writeError);
+      return replaceDatabase(temporaryFile, (replaceError) => callback(replaceError, {
+        imported: importedJobs.length,
+        unchanged: entries.length - importedJobs.length,
+      }));
     });
   });
-};
+}
+
+// The read function is injectable only to make the command boundary testable. Production always uses crontab -l.
+exports.import_crontab = (callback = () => {}, readCrontab = readSystemCrontab) => withDatabaseLock((done) => {
+  try {
+    return readCrontab((readError, stdout) => {
+      if (readError) return done(readError);
+      let entries;
+      try {
+        entries = parseSystemCrontab(stdout);
+      } catch (parseError) {
+        return done(parseError);
+      }
+      return writeImportedJobs(entries, done);
+    });
+  } catch (error) {
+    return done(error);
+  }
+}, callback);
 
 exports.preview_crontab = (envVars, callback) => {
   try {
