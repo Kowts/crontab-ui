@@ -98,6 +98,10 @@ describe('Crontab UI', () => {
       expect(res.status).toBe(200);
       expect(res.text).toContain('test-job');
       expect(res.text).toContain('echo hello');
+      expect(res.text).toContain('Local change — not published');
+      expect(res.text).toContain('Owner: local');
+      expect(res.text).toContain('Can manage and run');
+      expect(res.text).toContain('Saving changes locally does not publish them to the service crontab.');
     });
   });
 
@@ -267,6 +271,7 @@ describe('Crontab UI', () => {
     it('should reject an invalid job id in a mutating route', async () => {
       const res = await request(app).post('/runjob').send({ _id: '../bad' });
       expect(res.status).toBe(400);
+      expect(res.headers['x-request-id']).toMatch(/^[a-f0-9-]{36}$/);
     });
 
     it('should reject an environment payload containing a NUL byte', async () => {

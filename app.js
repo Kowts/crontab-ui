@@ -197,6 +197,13 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     docs = docs.filter((job) => canAccessJob(req, job, 'read'));
     const currentRole = app.locals.authEnabled ? configuredRoles()[req.auth?.user] : 'admin';
+    docs = docs.map((job) => ({
+      ...job,
+      permissions: {
+        execute: canAccessJob(req, job, 'execute'),
+        write: canAccessJob(req, job, 'write'),
+      },
+    }));
     res.render('index', {
       routes: serializeForHtml(routesRelative),
       crontabs: serializeForHtml(docs),

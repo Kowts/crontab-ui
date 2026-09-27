@@ -37,7 +37,7 @@ function initPage() {
   if (document.getElementById('main_table')) {
     $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
-      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }],
+      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }, { orderable: false }],
       language: {
         search: '', searchPlaceholder: tr('dataSearch'),
         lengthMenu: tr('dataPerPage'), info: tr('dataInfo'),
@@ -53,7 +53,9 @@ function initPage() {
       headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
     }).then(function(response) {
       if (response.ok) window.location.assign(response.url);
-      else errorMessageBox('Import failed');
+      else return response.json().catch(function() { return {}; }).then(function(body) {
+        errorMessageBox(body.message || tr('importTitle'), body.operationId || response.headers.get('X-Request-ID'));
+      });
     });
   });
 }
@@ -126,8 +128,16 @@ function infoMessageBox(message, title) {
   getModal('info-popup').show();
 }
 
-function errorMessageBox(message) {
-  infoMessageBox(tr('operationFailed', { message: message }), tr('error'));
+function errorMessageBox(message, operationId) {
+  var details = tr('operationFailed', { message: message || tr('error') });
+  if (operationId) details += ' ' + tr('auditOperationId', { operationId: operationId });
+  infoMessageBox(details, tr('error'));
+}
+
+function handleOperationFailure(response) {
+  var body = response && response.responseJSON ? response.responseJSON : {};
+  var operationId = body.operationId || (response && response.getResponseHeader && response.getResponseHeader('X-Request-ID'));
+  errorMessageBox(body.message || (response && response.statusText) || tr('error'), operationId);
 }
 
 function messageBox(body, title, ok_text, close_text, callback) {
@@ -163,7 +173,7 @@ function deleteJob(_id) {
   messageBox('<p>' + tr('deleteTaskBody') + '</p>', tr('deleteTaskTitle'), tr('delete'), tr('cancel'), function() {
     $.post(routes.remove, {_id: _id}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -171,7 +181,7 @@ function stopJob(_id) {
   messageBox('<p>' + tr('pauseTaskBody') + '</p>', tr('pauseTaskTitle'), tr('pause'), tr('cancel'), function() {
     $.post(routes.stop, {_id: _id}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -179,15 +189,15 @@ function startJob(_id) {
   messageBox('<p>' + tr('activateTaskBody') + '</p>', tr('activateTaskTitle'), tr('activate'), tr('cancel'), function() {
     $.post(routes.start, {_id: _id}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
 function runJob(_id) {
   messageBox('<p>' + tr('runTaskBody') + '</p>', tr('runTaskTitle'), tr('run'), tr('cancel'), function() {
-    $.post(routes.run, {_id: _id}, function() {
-      location.reload();
-    });
+    $.post(routes.run, {_id: _id}, function(result) {
+      infoMessageBox(tr('runSuccess', { auditOperationId: tr('auditOperationId', { operationId: result.operationId }) }), tr('runComplete'));
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -196,9 +206,7 @@ function setCrontab() {
     $.post(routes.crontab, { env_vars: $('#env_vars').val() }, function() {
       infoMessageBox(tr('publishSuccess'), tr('publicationComplete'));
       location.reload();
-    }).fail(function(response) {
-      errorMessageBox(response.statusText);
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -208,7 +216,7 @@ function getCrontab() {
     $.post(routes.import_crontab, {}, function() {
         infoMessageBox(tr('importSuccess'), tr('importComplete'));
         location.reload();
-      });
+      }).fail(handleOperationFailure);
     });
 }
 
@@ -248,7 +256,7 @@ function editJob(_id) {
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
     getModal('job').hide();
   });
 }
@@ -279,7 +287,7 @@ function newJob() {
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
     getModal('job').hide();
   });
 }
@@ -304,7 +312,7 @@ function duplicateJob(_id) {
     mailing: mailing
   }, function() {
     location.reload();
-  });
+  }).fail(handleOperationFailure);
 }
 
 function doBackup() {
@@ -313,7 +321,7 @@ function doBackup() {
     tr('createBackup'), tr('createBackup'), tr('cancel'), function() {
     $.post(routes.backup, {}, function() {
       location.reload();
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -321,7 +329,7 @@ function delete_backup(db_name) {
   messageBox('<p>' + tr('deleteBackupBody') + '</p>', tr('deleteBackupTitle'), tr('delete'), tr('cancel'), function() {
     $.post(routes.delete_backup, { db: db_name }, function() {
       location = routes.root;
-    });
+    }).fail(handleOperationFailure);
   });
 }
 
@@ -329,7 +337,7 @@ function restore_backup(db_name) {
   messageBox('<p>' + tr('restoreBackupBody') + '</p>', tr('restoreBackupTitle'), tr('restoreBackup'), tr('cancel'), function() {
     $.post(routes.restore_backup, { db: db_name }, function() {
       location = routes.root;
-    });
+    }).fail(handleOperationFailure);
   });
 }
 

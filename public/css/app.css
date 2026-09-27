@@ -59,6 +59,11 @@ body.app-body {
 .app-card table.dataTable { margin-top: 1rem !important; border-top: 1px solid #e9eef5; }
 .app-card .table > :not(caption) > * > * { padding: .9rem .75rem; border-bottom-color: #edf1f6; }
 .app-card .table thead th { color: #5a6a83; font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .045em; }
+.job-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+.job-state { display: inline-flex; align-items: center; gap: .32rem; padding: .2rem .46rem; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.2; }
+.job-state-published { color: #08775a; background: #e4f8f0; }
+.job-state-local { color: #9b6100; background: #fff3db; }
+.job-access { display: inline-flex; align-items: center; gap: .38rem; color: var(--app-ink); font-size: .84rem; font-weight: 650; }
 .app-card .dataTables_filter input, .app-card .dataTables_length select { border: 1px solid var(--app-border); border-radius: 8px; padding: .42rem .65rem; }
 .app-card .dataTables_filter input:focus { outline: 0; border-color: #8cb7f7; box-shadow: 0 0 0 .18rem rgba(23,105,224,.1); }
 .jobs-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .75rem; padding: 1rem 1.5rem; border-top: 1px solid #edf1f6; color: var(--app-muted); font-size: .86rem; }
