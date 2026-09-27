@@ -1,6 +1,8 @@
 *.swp
 node_modules
 .env
+.env.*
+!.env.example
 crontabs/*.db
 crontabs/logs/*.log
 crontabs/logs/*.jsonl
