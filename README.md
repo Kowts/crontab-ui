@@ -17,6 +17,16 @@ This fork extends the original visual crontab management interface with producti
 - Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
 - Production deployment safeguards, including mandatory authentication outside loopback, CSRF protection, TLS or trusted-proxy enforcement, and hardened Docker guidance.
 
+## Interface
+
+### Task overview
+
+![Dark theme task overview showing task ownership, local publication state, and operation controls](docs/images/task-list-dark.png)
+
+### Create a task
+
+![Dark theme new task dialog with schedule presets, a human-readable cron expression, and labelled cron fields](docs/images/new-task-dark.png)
+
 ## Canonical source and releases
 
 The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). The remote currently has no published tags: do not replace `<release-tag>` with a version inferred only from `package.json`. For production, approve a commit after validation, create an annotated tag, and publish a release; the `main` branch is intended for ongoing development and validation.

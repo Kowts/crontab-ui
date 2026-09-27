@@ -17,6 +17,16 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 - Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
 - Salvaguardas para deployment em produção, incluindo autenticação obrigatória fora de loopback, proteção CSRF, imposição de TLS ou proxy de confiança e orientação para Docker endurecido.
 
+## Interface
+
+### Lista de tarefas
+
+![Tema escuro com proprietário da tarefa, estado de publicação local e controlos operacionais](docs/images/task-list-dark.png)
+
+### Criar uma tarefa
+
+![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron e campos identificados](docs/images/new-task-dark.png)
+
 ## Origem canónica e versões
 
 A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). O remoto não tem, neste momento, tags publicadas: não substitua `<release-tag>` por uma versão assumida apenas a partir de `package.json`. Para produção, aprove um commit depois da validação, crie uma tag anotada e publique a release; o ramo `main` destina-se a desenvolvimento e validação contínua.
