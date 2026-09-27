@@ -49,6 +49,7 @@ body.app-body {
 .link-action { padding: .25rem; border: 0; color: var(--app-primary); background: none; font-weight: 650; }
 .environment-editor { width: 100%; min-height: 4.1rem; resize: vertical; padding: 1rem; border: 1px solid #cedbed; border-radius: 10px; background: #f8fbff; color: var(--app-ink); }
 .environment-editor:focus { border-color: #8cb7f7; box-shadow: 0 0 0 .2rem rgba(23,105,224,.12); }
+.environment-readonly { min-height: 2.5rem; margin: 0; padding: .1rem 0; border: 0; background: transparent; color: var(--app-muted); font: inherit; white-space: pre-wrap; word-break: break-word; }
 
 .jobs-count { display: inline-flex; align-items: center; margin-left: .5rem; padding: .2rem .6rem; border-radius: 999px; background: #e6faf4; color: var(--app-success); font-size: .78rem; font-weight: 650; }
 .jobs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
@@ -89,6 +90,7 @@ body.app-body {
 .schedule-preview { display: flex; align-items: center; justify-content: space-between; gap: .7rem; margin-top: 1.1rem; padding: .8rem .95rem; border: 1px solid #d7e2ef; border-radius: 9px; background: #f6f9fd; }
 .schedule-preview code { color: var(--app-primary); font-weight: 750; }
 .schedule-description { margin: .7rem 0 0; color: var(--app-muted); font-size: .9rem; }
+.schedule-part-label { display: block; margin-bottom: .35rem; color: var(--app-muted); font-size: .76rem; font-weight: 650; }
 .job-options { margin-top: 1.25rem; padding: 1rem; border-radius: 10px; background: #f7f9fc; }
 .job-options .form-text { margin-left: 1.55rem; color: var(--app-muted); }
 .backup-notice { margin-bottom: 1rem; padding: 1rem; border: 1px solid #f4cd8a; border-radius: 10px; color: #80520f; background: #fff8e9; }

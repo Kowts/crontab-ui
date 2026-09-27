@@ -225,8 +225,17 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
   jobId: typeof req.body._id === 'string' ? req.body._id : null,
   commandSha256: commandFingerprint(req.body.command),
 })), (req, res) => {
-  const { name, command, schedule, mailing } = req.body;
-  const isCreate = req.body._id === -1;
+  const { name, command, schedule } = req.body;
+  let mailing = req.body.mailing === undefined ? {} : req.body.mailing;
+  if (typeof mailing === 'string') {
+    try {
+      mailing = JSON.parse(mailing);
+    } catch (_error) {
+      return res.status(400).json({ message: 'Invalid job payload' });
+    }
+  }
+  // URL-encoded browser form data represents the creation sentinel as "-1".
+  const isCreate = req.body._id === -1 || req.body._id === '-1';
   const isUpdate = typeof req.body._id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(req.body._id);
   if (!isCreate && !isUpdate) {
     return res.status(400).json({ message: 'Invalid job id' });
@@ -247,12 +256,12 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
   }
   if (isCreate) {
     const owner = req.auth?.user || 'local';
-    crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, req.body.mailing, { owner, createdBy: owner }, (err) => {
+    crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, mailing, { owner, createdBy: owner }, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });
   } else {
-    crontab.update(req.body._id, req.body, (err) => {
+    crontab.update(req.body._id, { ...req.body, mailing }, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });

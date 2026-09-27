@@ -3,3 +3,4 @@ node_modules
 .env
 crontabs/*.db
 crontabs/logs/*.log
+crontabs/logs/*.jsonl

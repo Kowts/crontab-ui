@@ -21,10 +21,14 @@ function initPage() {
   var routeState = document.getElementById('routes-state');
   var env = document.getElementById('env-state');
   var i18nState = document.getElementById('i18n-state');
+  if (i18nState) i18n = JSON.parse(i18nState.textContent);
   if (jobs) crontabs = JSON.parse(jobs.textContent);
   if (routeState) routes = JSON.parse(routeState.textContent);
-  if (env) $('#env_vars').val(JSON.parse(env.textContent));
-  if (i18nState) i18n = JSON.parse(i18nState.textContent);
+  if (env) {
+    var environmentValue = JSON.parse(env.textContent);
+    $('#env_vars').val(environmentValue);
+    renderEnvironment(environmentValue);
+  }
 
   $.ajaxSetup({ headers: { 'X-CSRF-Token': csrfToken() } });
   [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).forEach(function(el) {
@@ -83,6 +87,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (languageSelect) languageSelect.addEventListener('change', function() {
     $.post(routes.locale, { locale: languageSelect.value }).done(function() { window.location.reload(); });
   });
+  var environmentInput = document.getElementById('env_vars');
+  if (environmentInput) environmentInput.addEventListener('input', function() { renderEnvironment(environmentInput.value); });
 });
 
 document.addEventListener('click', function(event) {
@@ -395,7 +401,18 @@ function cronDescriptionError(error) {
 
 function toggleEnvironment() {
   var editor = document.getElementById('environment-editor');
-  if (editor) editor.classList.toggle('d-none');
+  var display = document.getElementById('environment-display');
+  var toggle = document.getElementById('environment-toggle');
+  if (!editor || !display) return;
+  var editing = editor.classList.contains('d-none');
+  editor.classList.toggle('d-none', !editing);
+  display.parentElement.classList.toggle('d-none', editing);
+  if (toggle) toggle.textContent = editing ? tr('done') : tr('edit');
+}
+
+function renderEnvironment(value) {
+  var display = document.getElementById('environment-display');
+  if (display) display.textContent = String(value || '').trim() || tr('environmentEmpty');
 }
 
 function set_schedule() {

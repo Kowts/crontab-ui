@@ -48,6 +48,9 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Create first task');
       expect(res.text).toContain('id="job-schedule-description"');
       expect(res.text).toContain('vendor/cronstrue/cronstrue-i18n.min.js');
+      expect(res.text).toContain('id="environment-display"');
+      expect(res.text).toContain('for="job-minute">Minute</label>');
+      expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
     });
   });
 
@@ -568,7 +571,7 @@ describe('POST /save job identifier validation', () => {
     jobId = jobs.find((job) => job.name === 'id-validation-sentinel')._id;
   });
 
-  it('creates a job only when _id is the numeric sentinel -1', async () => {
+  it('creates a job when _id uses the numeric creation sentinel', async () => {
     const response = await request(app).post('/save').send({
       _id: -1,
       name: 'id-validation-create',
@@ -576,6 +579,17 @@ describe('POST /save job identifier validation', () => {
       schedule: '* * * * *',
       logging: false,
       mailing: {},
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it('accepts the URL-encoded creation sentinel sent by the browser form', async () => {
+    const response = await request(app).post('/save').type('form').send({
+      _id: '-1',
+      name: 'urlencoded-create',
+      command: 'echo created-from-form',
+      schedule: '* * * * *',
+      logging: 'false',
     });
     expect(response.status).toBe(200);
   });

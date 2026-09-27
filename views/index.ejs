@@ -47,9 +47,12 @@
     <section class="app-card" aria-labelledby="environment-heading">
       <div class="card-heading">
         <h2 id="environment-heading"><%= t('environmentVariables') %></h2>
-        <button type="button" class="link-action" data-action="toggle-environment"><%= t('edit') %></button>
+        <button type="button" class="link-action" data-action="toggle-environment" id="environment-toggle"><%= t('edit') %></button>
       </div>
-      <div class="card-body-app" id="environment-editor">
+      <div class="card-body-app">
+        <pre class="environment-readonly" id="environment-display"><%= t('environmentEmpty') %></pre>
+      </div>
+      <div class="card-body-app d-none" id="environment-editor">
         <textarea class="environment-editor" rows="3" id="env_vars" placeholder="<%= t('environmentPlaceholder') %>"></textarea>
       </div>
     </section>
