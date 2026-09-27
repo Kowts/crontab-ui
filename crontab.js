@@ -2,7 +2,7 @@
 
 const Datastore = require('@seald-io/nedb');
 const path = require('path');
-const { exec, execFile, spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
@@ -64,6 +64,14 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing, owners
 
 function makeCommand(tab) {
   return `"${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
+}
+
+function applySystemCrontab(filePath, callback) {
+  return execFile('crontab', [filePath], {
+    timeout: commandTimeoutMs,
+    maxBuffer: commandMaxBuffer,
+    windowsHide: true,
+  }, callback);
 }
 
 exports.db_folder = dbFolder;
@@ -251,9 +259,27 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
   });
 };
 
-exports.set_crontab = (environment, callback) => {
-  const envVars = serialiseEnvironment(environment);
-  exports.crontabs((tabs) => {
+function restoreFile(filePath, contents, existed, callback) {
+  if (!existed) return fs.rm(filePath, { force: true }, callback);
+  return writeAtomicFile(filePath, contents, callback);
+}
+
+function markPublished(ids, callback) {
+  if (!ids.length) return callback(null);
+  return db.update({ _id: { $in: ids } }, { $set: { saved: true } }, { multi: true }, callback);
+}
+
+function setCrontab(environment, callback, applyCrontab) {
+  let envVars;
+  try {
+    envVars = serialiseEnvironment(environment);
+  } catch (error) {
+    return callback(error);
+  }
+  const previousEnvironmentExists = fs.existsSync(envFile);
+  const previousEnvironment = previousEnvironmentExists ? fs.readFileSync(envFile, 'utf8') : '';
+
+  return exports.crontabs((tabs) => {
     let crontabString = '';
     if (envVars) {
       crontabString += `${envVars}\n`;
@@ -264,29 +290,37 @@ exports.set_crontab = (environment, callback) => {
       }
     }
 
-    fs.writeFile(envFile, envVars, (err) => {
-      if (err) {
-        console.error(err);
-        return callback(err);
-      }
-      const fileName = process.env.CRON_IN_DOCKER !== undefined ? 'root' : 'crontab';
-      fs.writeFile(path.join(cronPath, fileName), crontabString, (err) => {
-        if (err) {
-          console.error(err);
-          return callback(err);
+    const fileName = process.env.CRON_IN_DOCKER !== undefined ? 'root' : 'crontab';
+    const crontabFile = path.join(cronPath, fileName);
+    const previousCrontabExists = fs.existsSync(crontabFile);
+    const previousCrontab = previousCrontabExists ? fs.readFileSync(crontabFile, 'utf8') : '';
+    const rollback = (error) => restoreFile(crontabFile, previousCrontab, previousCrontabExists, (cronRollbackError) => {
+      return restoreFile(envFile, previousEnvironment, previousEnvironmentExists, (environmentRollbackError) => {
+        if (cronRollbackError || environmentRollbackError) {
+          error.rollbackError = [cronRollbackError, environmentRollbackError]
+            .filter(Boolean).map((rollbackError) => rollbackError.message).join('; ');
         }
-        exec(`crontab ${path.join(cronPath, fileName)}`, (err) => {
-          if (err) {
-            console.error(err);
-            return callback(err);
-          }
-          db.update({}, { $set: { saved: true } }, { multi: true });
-          callback();
+        callback(error);
+      });
+    });
+
+    return writeAtomicFile(envFile, envVars, (environmentError) => {
+      if (environmentError) return callback(environmentError);
+      return writeAtomicFile(crontabFile, crontabString, (writeError) => {
+        if (writeError) return rollback(writeError);
+        return applyCrontab(crontabFile, (applyError) => {
+          if (applyError) return rollback(applyError);
+          return markPublished(tabs.map((tab) => tab._id), callback);
         });
       });
     });
   });
-};
+}
+
+exports.set_crontab = (environment, callback = () => {}, applyCrontab = applySystemCrontab) => withDatabaseLock(
+  (done) => setCrontab(environment, done, applyCrontab),
+  callback
+);
 
 exports.get_backup_names = () => {
   if (!fs.existsSync(dbFolder)) return [];

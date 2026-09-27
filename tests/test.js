@@ -565,6 +565,47 @@ describe('Environment definitions', () => {
   });
 });
 
+describe('Crontab publication', () => {
+  function createJob(name, command) {
+    return new Promise((resolve, reject) => crontab.create_new(
+      name, command, '* * * * *', false, {}, {}, (error, job) => (error ? reject(error) : resolve(job))
+    ));
+  }
+
+  function publish(environment, applyCrontab) {
+    return new Promise((resolve, reject) => crontab.set_crontab(
+      environment, (error) => (error ? reject(error) : resolve()), applyCrontab
+    ));
+  }
+
+  it('uses a bounded command boundary and marks only the published snapshot as saved', async () => {
+    const publishedJob = await createJob('publication-snapshot', 'echo publication-snapshot');
+    let publishedFile;
+    await publish({ PATH: '/usr/bin' }, (file, callback) => {
+      publishedFile = file;
+      createJob('publication-concurrent', 'echo publication-concurrent').then(() => callback(null));
+    });
+
+    expect(path.basename(publishedFile)).toBe('crontab');
+    expect(fs.readFileSync(publishedFile, 'utf8')).toContain(publishedJob._id);
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    expect(jobs.find((job) => job._id === publishedJob._id).saved).toBe(true);
+    expect(jobs.find((job) => job.command === 'echo publication-concurrent').saved).toBe(false);
+  });
+
+  it('restores the environment and staged crontab when applying it fails', async () => {
+    const stagedCrontab = path.join(testDbPath, 'crontab');
+    fs.writeFileSync(crontab.env_file, 'PATH=/before');
+    fs.writeFileSync(stagedCrontab, '# previous crontab');
+
+    await expect(publish({ PATH: '/after' }, (_file, callback) => callback(new Error('apply failed'))))
+      .rejects.toThrow('apply failed');
+
+    expect(fs.readFileSync(crontab.env_file, 'utf8')).toBe('PATH=/before');
+    expect(fs.readFileSync(stagedCrontab, 'utf8')).toBe('# previous crontab');
+  });
+});
+
 describe('Bounded command execution', () => {
   function executeCommand(command, options) {
     return new Promise((resolve) => execute(command, options, (error, result) => resolve({ error, result })));
