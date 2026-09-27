@@ -35,7 +35,7 @@ const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { validateProductionTransport } = require('../config/transport');
-const { canAccessJob } = require('../middleware/job-authorization');
+const { canAccessJob, requireSaveAccess } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
 describe('Crontab UI', () => {
@@ -809,6 +809,16 @@ describe('Job ownership authorization', () => {
   it('restricts legacy unowned jobs to administrators', () => {
     expect(canAccessJob(requestFor('alice'), {}, 'read')).toBe(false);
     expect(canAccessJob(requestFor('admin'), {}, 'write')).toBe(true);
+  });
+
+  it('allows a URL-encoded creation sentinel before checking task ownership', () => {
+    let called = false;
+    requireSaveAccess(
+      { body: { _id: '-1' }, app: { locals: { authEnabled: true } }, auth: { user: 'alice' } },
+      {},
+      () => { called = true; }
+    );
+    expect(called).toBe(true);
   });
 });
 

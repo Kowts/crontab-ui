@@ -28,7 +28,8 @@ function requireJobAccess(action) {
 }
 
 function requireSaveAccess(req, res, next) {
-  if (req.body._id === -1) return next();
+  // Browser form encoding serialises the creation sentinel as a string.
+  if (req.body._id === -1 || req.body._id === '-1') return next();
   if (typeof req.body._id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(req.body._id)) return next();
   return requireJobAccess('write')(req, res, next);
 }
