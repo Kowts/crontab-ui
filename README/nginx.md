@@ -1,10 +1,10 @@
-# Nginx, TLS e proxy de confiança
+# Nginx, TLS, and trusted proxy
 
-Nginx deve ser o único ponto público. O contentor Crontab UI permanece numa rede interna e não deve publicar a porta 8000 no anfitrião em produção. O Compose base não inclui Nginx, mas declara a rede partilhada `crontab-ui-internal`; o Compose do proxy deve referenciá-la como rede externa para que a ligação sobreviva à recriação do contentor Nginx.
+Nginx should be the only public entry point. The Crontab UI container remains on an internal network and must not expose port 8000 on the host in production. The base Compose file does not include Nginx, but it declares the shared `crontab-ui-internal` network; the proxy Compose project must reference it as an external network so the connection survives Nginx container recreation.
 
-Configure `TRUSTED_PROXY` com o endereço ou CIDR da rede de onde o Nginx realmente liga ao contentor. Não use um valor amplo apenas para aceitar cabeçalhos enviados pelo cliente. A aplicação usa este valor para decidir se confia na origem directa; só então `X-Forwarded-For` influencia o IP registado e `X-Forwarded-Proto` permite reconhecer HTTPS.
+Configure `TRUSTED_PROXY` with the address or network CIDR from which Nginx actually connects to the container. Do not use a broad value merely to accept client-provided headers. The application uses this value to decide whether to trust the direct source; only then does `X-Forwarded-For` affect the recorded IP and does `X-Forwarded-Proto` allow HTTPS recognition.
 
-Exemplo de virtual host TLS:
+Example TLS virtual host:
 
 ```nginx
 server {
@@ -31,12 +31,12 @@ server {
 }
 ```
 
-O valor de `TRUSTED_PROXY` deve corresponder à topologia efectiva. `172.20.0.0/16` é apenas ilustrativo; confirme a rede com `docker network inspect crontab-ui-internal` antes do deployment. Se o Nginx for gerido por outro projecto Compose, declare a rede como externa nesse projecto em vez de usar `docker network connect` manualmente:
+The `TRUSTED_PROXY` value must match the effective topology. `172.20.0.0/16` is illustrative only; confirm the network with `docker network inspect crontab-ui-internal` before deployment. If Nginx is managed by another Compose project, declare the network as external in that project instead of using manual `docker network connect`:
 
 ```yaml
 services:
   nginx:
-    # imagem, certificados e portas são geridos pelo deployment
+    # Image, certificates, and ports are managed by the deployment.
     networks:
       - crontab-ui-internal
 
@@ -46,6 +46,6 @@ networks:
     name: ${CRONTAB_UI_NETWORK:-crontab-ui-internal}
 ```
 
-Se houver mais do que um proxy legítimo, configure a cadeia completa e reveja o tratamento de IP de cliente. No cenário de um único proxy público, `X-Forwarded-For $remote_addr` impede o transporte de um valor enviado pelo cliente.
+If there is more than one legitimate proxy, configure the full chain and review client IP handling. In the single public-proxy scenario, `X-Forwarded-For $remote_addr` prevents forwarding a value supplied by the client.
 
-TLS no proxy não substitui autenticação, RBAC ou CSRF: mantenha `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON` e `CSRF_SECRET` configurados no contentor da aplicação.
+TLS at the proxy does not replace authentication, RBAC, or CSRF protection: keep `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, and `CSRF_SECRET` configured in the application container.

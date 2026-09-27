@@ -1,28 +1,28 @@
-# Diagnóstico e recuperação
+# Troubleshooting and recovery
 
-## A aplicação não está acessível
+## The application is not reachable
 
-Confirme primeiro o processo/contentor, a ligação em loopback e o reverse proxy. O serviço não deve ser exposto directamente à Internet.
+First confirm the process/container, the loopback connection, and the reverse proxy. The service must not be directly exposed to the Internet.
 
 ```bash
 docker compose ps
 docker compose exec crontab-ui curl -fsS http://127.0.0.1:8000/healthz
 ```
 
-`/healthz` não requer credenciais, mas aceita apenas ligações loopback. A imagem instala `curl`, pelo que o comando acima é válido dentro do contentor; a porta só fica disponível no anfitrião quando for usada explicitamente a sobreposição de desenvolvimento.
+`/healthz` does not require credentials, but accepts loopback connections only. The image installs `curl`, so the command above is valid inside the container; the port is available on the host only when the development overlay is explicitly used.
 
-Se o healthcheck falhar, reveja os logs do contentor e as permissões do volume `crontab-data`. Não execute a aplicação como `root` para contornar permissões; atribua apenas ao utilizador do serviço acesso ao directório persistente e ao mecanismo de agendamento isolado.
+If the health check fails, review container logs and `crontab-data` volume permissions. Do not run the application as `root` to bypass permissions; grant only the service user access to the persistent directory and isolated scheduling mechanism.
 
-## A publicação ou importação do crontab falhou
+## Publishing to or importing from crontab failed
 
-Estas operações requerem um sistema Unix/Linux com o binário `crontab` e permissões adequadas no directório de staging configurado por `CRON_PATH`. Consulte o ID de auditoria apresentado pela interface e o diário `crontabs/logs/operations.jsonl`.
+These operations require a Unix/Linux system with the `crontab` executable and appropriate permissions on the staging directory configured by `CRON_PATH`. Check the audit ID shown in the interface and `crontabs/logs/operations.jsonl`.
 
-Uma falha de publicação restaura o ambiente e o ficheiro de staging anteriores. Corrija a causa e publique novamente; não edite `crontab.db` manualmente.
+A publishing failure restores the previous environment and staging file. Fix the cause and publish again; do not edit `crontab.db` manually.
 
-## Recuperar uma configuração
+## Recovering a configuration
 
-Não use `crontab-ui --reset` como mecanismo de recuperação. Preserve o volume de dados, suspenda o acesso público e restaure apenas uma cópia reconhecida através da área administrativa **Backups**. Consulte o procedimento completo no [README principal](../README.md#backups-recuperação-e-auditoria).
+Do not use `crontab-ui --reset` as a recovery mechanism. Preserve the data volume, suspend public access, and restore only a recognized backup through the administrative **Backups** area. See the complete procedure in the [main README](../README.md#backups-recovery-and-audit).
 
-## Problemas de correio
+## Email problems
 
-Os dados SMTP são exclusivos do servidor em `MAIL_PROFILES_JSON`. Confirme o identificador do perfil, o acesso à rede SMTP e o diário de auditoria. Nunca introduza palavras-passe SMTP na tarefa, no browser ou num ficheiro versionado.
+SMTP data is server-only in `MAIL_PROFILES_JSON`. Verify the profile identifier, SMTP network access, and audit log. Never enter SMTP passwords in a task, browser, or tracked file.

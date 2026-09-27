@@ -1,164 +1,166 @@
 # Crontab UI
 
-Gestão web de tarefas cron com controlo de acesso, cópias de segurança, auditoria e limites de execução.
+[English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
-> A execução de uma tarefa é equivalente a executar o respectivo comando com os privilégios do processo do serviço. Instale a aplicação apenas em ambientes onde os administradores autorizados possam criar e publicar esses comandos.
+Web-based cron job management with access controls, backups, auditing, and execution limits.
 
-## Origem canónica e versões
+> Running a task is equivalent to running its command with the service process's privileges. Deploy the application only in environments where authorized administrators may create and publish those commands.
 
-A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). O remoto não tem, neste momento, tags publicadas: não substitua `<tag-da-release>` por uma versão assumida apenas a partir de `package.json`. Para produção, aprove um commit depois da validação, crie uma tag anotada e publique a release; o ramo `main` destina-se a desenvolvimento e validação contínua.
+## Canonical source and releases
 
-Não use `npm install -g crontab-ui` como instrução de instalação deste fork: esse nome pode resolver para outro pacote e não garante a presença dos controlos documentados aqui.
+The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). The remote currently has no published tags: do not replace `<release-tag>` with a version inferred only from `package.json`. For production, approve a commit after validation, create an annotated tag, and publish a release; the `main` branch is intended for ongoing development and validation.
 
-## Requisitos e limites da plataforma
+Do not use `npm install -g crontab-ui` to install this fork: that name may resolve to a different package and does not guarantee the security controls documented here.
 
-- Node.js 20 ou superior;
-- Linux/Unix com o binário `crontab` disponível para importar ou publicar no crontab do sistema;
-- permissões de escrita apenas no directório de dados e no mecanismo de agendamento gerido pelo serviço;
-- para produção, TLS nativo ou reverse proxy HTTPS de confiança.
+## Platform requirements and limitations
 
-A interface e os testes podem correr em Windows, mas as operações **Obter do crontab** e **Publicar no crontab** dependem de `crontab` e não são suportadas nativamente nesse sistema operativo.
+- Node.js 20 or later;
+- Linux/Unix with the `crontab` executable available to import from or publish to the system crontab;
+- write permissions only for the data directory and the scheduling mechanism managed by the service;
+- native TLS or a trusted HTTPS reverse proxy for production.
 
-## Instalação a partir do repositório
+The interface and tests can run on Windows, but **Get from crontab** and **Publish to crontab** require `crontab` and are not natively supported by that operating system.
 
-Para desenvolvimento ou para preparar uma release candidata:
+## Installation from the repository
+
+For development or to prepare a release candidate:
 
 ```bash
 git clone https://github.com/Kowts/crontab-ui.git
 cd crontab-ui
-git checkout <commit-aprovado-ou-tag-publicada>
+git checkout <approved-commit-or-published-tag>
 npm ci
 npm run lint
 npm test
 ```
 
-Antes de iniciar, configure as variáveis no gestor de segredos/ambiente do processo. O projecto **não** carrega `.env` automaticamente. Defina sempre um `CRON_DB_PATH` persistente e com acesso exclusivo do utilizador do serviço.
+Before starting, configure variables in the secret manager or process environment. The project does **not** load `.env` automatically. Always set a persistent `CRON_DB_PATH` that only the service user can access.
 
 ```bash
 export NODE_ENV=production
 export HOST=127.0.0.1
 export PORT=8000
 export CRON_DB_PATH=/var/lib/crontab-ui
-export BASIC_AUTH_USERS_JSON='{"admin":"substitua-por-um-segredo"}'
+export BASIC_AUTH_USERS_JSON='{"admin":"replace-with-a-secret"}'
 export AUTHZ_ROLE_MAP_JSON='{"admin":"admin"}'
-export CSRF_SECRET='substitua-por-um-segredo-aleatorio-longo'
+export CSRF_SECRET='replace-with-a-long-random-secret'
 export TRUSTED_PROXY='127.0.0.1'
 npm start
 ```
 
-O exemplo pressupõe que um proxy HTTPS local termina TLS e é a única origem que acede ao serviço. Consulte [a configuração Nginx](README/nginx.md) para o cabeçalho `X-Forwarded-Proto` e o valor de `TRUSTED_PROXY`.
+This example assumes that a local HTTPS proxy terminates TLS and is the only source that connects to the service. See the [Nginx configuration](README/nginx.md) for the `X-Forwarded-Proto` header and `TRUSTED_PROXY` value.
 
-## Deployment com Docker Compose
+## Docker Compose deployment
 
-O `docker-compose.yml` não publica a porta da aplicação e passa `NODE_ENV=production`, `HOST=0.0.0.0`, `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET` e `TRUSTED_PROXY` para o contentor. A imagem é etiquetada localmente como `kowts/crontab-ui`. Declara a rede partilhada `crontab-ui-internal`, cujo nome pode ser alterado com `CRONTAB_UI_NETWORK`; o Compose do proxy deve referenciá-la como rede externa. O repositório não inclui um serviço Nginx, pelo que o proxy continua a ser gerido separadamente. Copie os valores abaixo para um ficheiro secreto, por exemplo `.env.production`, que **não** deve ser versionado:
+`docker-compose.yml` does not expose the application port and passes `NODE_ENV=production`, `HOST=0.0.0.0`, `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET`, and `TRUSTED_PROXY` to the container. The image is locally tagged as `kowts/crontab-ui`. It declares the shared `crontab-ui-internal` network, whose name can be changed with `CRONTAB_UI_NETWORK`; the proxy Compose project must reference it as an external network. The repository does not include an Nginx service, so the proxy remains separately managed. Copy the following values into a secret file, such as `.env.production`, which **must not** be committed:
 
 ```dotenv
-# Escolha apenas este mecanismo para vários utilizadores.
-BASIC_AUTH_USERS_JSON={"admin":"substitua-por-um-segredo","operator":"substitua-por-outro-segredo"}
+# Use this scheme only when configuring multiple users.
+BASIC_AUTH_USERS_JSON={"admin":"replace-with-a-secret","operator":"replace-with-another-secret"}
 AUTHZ_ROLE_MAP_JSON={"admin":"admin","operator":"operator"}
-CSRF_SECRET=substitua-por-um-segredo-aleatorio-longo
+CSRF_SECRET=replace-with-a-long-random-secret
 CRONTAB_UI_NETWORK=crontab-ui-internal
-# Exemplo ilustrativo: confirme a rede efectiva antes de usar este valor.
-# Deve identificar a origem directa do proxy que encaminha para o contentor.
+# Illustrative example: confirm the effective network before using this value.
+# It must identify the direct proxy source that forwards traffic to the container.
 TRUSTED_PROXY=172.20.0.0/16
 ```
 
-Valide os valores sem os expor no terminal e inicie:
+Validate values without exposing them in the terminal, then start the service:
 
 ```bash
 docker compose --env-file .env.production up -d --build
 docker compose ps
 ```
 
-Para desenvolvimento local, a sobreposição publica a porta apenas em loopback. Este modo não substitui um teste de integração com o proxy de produção:
+For local development, the overlay exposes the port on loopback only. This mode does not replace an integration test with the production proxy:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-Não monte o directório de crontab do anfitrião no contentor. Use exclusivamente o volume gerido `crontab-data`; montar o crontab do anfitrião concede à aplicação controlo sobre o agendamento do anfitrião e elimina o isolamento do contentor.
+Do not mount the host crontab directory into the container. Use only the managed `crontab-data` volume; mounting the host crontab grants the application control over host scheduling and removes container isolation.
 
-## Autenticação e autorização
+## Authentication and authorization
 
-Quando `HOST` não é loopback, a autenticação é obrigatória. Estão disponíveis duas alternativas:
+When `HOST` is not loopback, authentication is mandatory. Two alternatives are available:
 
-- `BASIC_AUTH_USER` e `BASIC_AUTH_PWD`, para um único utilizador;
-- `BASIC_AUTH_USERS_JSON`, para um mapa de vários utilizadores.
+- `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` for a single user;
+- `BASIC_AUTH_USERS_JSON` for a map of multiple users.
 
-Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`.
+When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`.
 
-| Papel | Capacidades |
+| Role | Capabilities |
 | --- | --- |
-| `viewer` | Consulta tarefas próprias, pré-visualização, exportação e registos. |
-| `executor` | Capacidades de consulta e execução de tarefas próprias. |
-| `operator` | Capacidades de consulta e criação, alteração, pausa, activação, remoção e execução de tarefas próprias. |
-| `admin` | Acesso global, ambiente, importação/exportação, cópias de segurança, restauro e importação do crontab do sistema. |
+| `viewer` | Read own tasks, previews, exports, and logs. |
+| `executor` | Viewer capabilities and execution of own tasks. |
+| `operator` | Viewer capabilities and creation, editing, pausing, activation, removal, and execution of own tasks. |
+| `admin` | Global access, environment management, import/export, backups, restore, and system crontab import. |
 
-Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas importadas do sistema não têm proprietário e ficam reservadas a administradores até serem recriadas ou atribuídas por um procedimento administrativo. A interface mostra proprietário, capacidades efectivas e se uma tarefa está apenas local ou publicada; o servidor continua a impor as permissões em todos os endpoints.
+Each created task receives `owner` and `createdBy`. Legacy tasks and tasks imported from the system do not have an owner and remain restricted to administrators until they are recreated or assigned through an administrative process. The interface displays the owner, effective capabilities, and whether a task is only local or published; the server continues to enforce permissions on every endpoint.
 
-## Configuração de referência
+## Configuration reference
 
-`.env.example` é um modelo de nomes e formatos, não um ficheiro carregado pela aplicação. Mantenha segredos no cofre de segredos ou no ambiente do deployment.
+`.env.example` is a template for names and formats, not a file loaded by the application. Keep secrets in the secret manager or deployment environment.
 
-| Variável | Finalidade e valor predefinido |
+| Variable | Purpose and default value |
 | --- | --- |
-| `NODE_ENV` | Use `production` no deployment; activa cookies seguros e exige TLS/proxy de confiança. |
-| `HOST`, `PORT`, `BASE_URL` | Escuta HTTP e prefixo público. Predefinições: `127.0.0.1`, `8000`, sem prefixo. |
-| `CRON_DB_PATH` | Directório persistente para base, backups, ambiente e auditoria. Predefinição: `./crontabs`. |
-| `CRON_PATH` | Directório de staging do crontab. Deve ser acessível apenas ao processo da aplicação e ao mecanismo de agendamento isolado. |
-| `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
-| `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
-| `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |
-| `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
-| `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
-| `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
-| `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |
-| `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId`. |
-| `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
-| `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites de execução de tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. |
-| `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Tamanho, rotação e retenção de logs. Predefinições: `10485760`, `5`, `30`. |
-| `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Número e idade máximos de backups. Predefinições: `30`, `90`. |
-| `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limites da leitura `crontab -l`. Predefinições: `30000`, `262144`. |
-| `ENABLE_AUTOSAVE` | Activa publicação automática após alterações; só use quando o risco operacional tiver sido aceite. |
+| `NODE_ENV` | Use `production` for deployment; enables secure cookies and requires TLS or a trusted proxy. |
+| `HOST`, `PORT`, `BASE_URL` | HTTP listener and public prefix. Defaults: `127.0.0.1`, `8000`, no prefix. |
+| `CRON_DB_PATH` | Persistent directory for the database, backups, environment, and audit log. Default: `./crontabs`. |
+| `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. |
+| `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
+| `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
+| `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
+| `CSRF_SECRET` | Persistent secret required in production. |
+| `SSL_CERT`, `SSL_KEY` | Native TLS; both must be defined together. |
+| `TRUSTED_PROXY` | Address, CIDR, or Express proxy alias for the trusted HTTPS proxy. |
+| `CRONTAB_UI_NETWORK` | Name of the Docker network shared with the proxy. Compose default: `crontab-ui-internal`. |
+| `MAIL_PROFILES_JSON` | Server-only SMTP/SMTPS profiles. Tasks retain only `profileId`. |
+| `MAIL_MAX_ATTACHMENT_BYTES` | Maximum output attachment size for email. Default: `524288`. |
+| `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limits for task execution and publishing. Defaults: `300000`, `1048576`, `5000`. |
+| `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Log size, rotation, and retention. Defaults: `10485760`, `5`, `30`. |
+| `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Maximum backup count and age. Defaults: `30`, `90`. |
+| `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limits for `crontab -l` reads. Defaults: `30000`, `262144`. |
+| `ENABLE_AUTOSAVE` | Enables automatic publishing after changes; use only after accepting the operational risk. |
 
-`CRON_IN_DOCKER` é uma variável interna da imagem Docker, não uma configuração de deployment público. `ALLOW_INSECURE_NO_AUTH` não é suportada em produção.
+`CRON_IN_DOCKER` is an internal Docker-image variable, not a public deployment setting. `ALLOW_INSECURE_NO_AUTH` is not supported in production.
 
-## Segurança do correio, ambiente e comandos
+## Email, environment, and command security
 
-Os perfis de correio são definidos em `MAIL_PROFILES_JSON` e aceitam apenas `transporter` SMTP/SMTPS, `from` e um a vinte destinatários `to`. As credenciais não entram na base de dados, nas tarefas nem no browser. Falhas de transporte são auditadas; monitorize o diário de operações.
+Email profiles are defined in `MAIL_PROFILES_JSON` and accept only SMTP/SMTPS `transporter`, `from`, and one to twenty `to` recipients. Credentials never enter the database, tasks, or browser. Transport failures are audited; monitor the operation log.
 
-As variáveis de ambiente introduzidas na interface aceitam apenas linhas `NOME=valor`, com nomes que respeitem `^[A-Z_][A-Z0-9_]*$`. Sintaxe de shell (`export`, `$()`, backticks, pipes, redireccionamentos e `;`) é rejeitada. Isto não transforma comandos de tarefas em seguros: esses comandos continuam a ser uma capacidade privilegiada e devem ser revistos antes de serem criados.
+Environment variables entered through the interface accept only `NAME=value` lines, where names match `^[A-Z_][A-Z0-9_]*$`. Shell syntax (`export`, `$()`, backticks, pipes, redirections, and `;`) is rejected. This does not make task commands safe: those commands remain a privileged capability and must be reviewed before creation.
 
-Cada execução manual ou agendada tem timeout, limite conjunto de output e encerramento SIGTERM/SIGKILL. A importação e publicação do crontab usam execução sem shell; a importação é limitada, deduplicada, protegida por bloqueio e só responde depois de terminar. Em Linux, o executor termina o grupo de processos; em Windows a terminação completa da árvore depende do sistema operativo.
+Every manual or scheduled execution has a timeout, a combined output limit, and SIGTERM/SIGKILL shutdown. Crontab import and publishing use execution without a shell; importing is bounded, deduplicated, mutex-protected, and responds only after completion. On Linux, the executor terminates the process group; on Windows, complete process-tree termination depends on the operating system.
 
-## Backups, recuperação e auditoria
+## Backups, recovery, and audit
 
-Antes de importar uma base ou restaurar um backup, a aplicação cria uma cópia de segurança e valida o candidato antes de substituir a base activa. Os backups reconhecidos seguem a retenção por quantidade e idade; falhas de retenção são auditadas.
+Before importing a database or restoring a backup, the application creates a backup and validates the candidate before replacing the active database. Recognized backups follow count- and age-based retention; retention failures are audited.
 
-Procedimento de recuperação:
+Recovery procedure:
 
-1. Suspenda o acesso público no proxy, preservando o volume `crontab-data` e `crontabs/logs/operations.jsonl`.
-2. Identifique o `operationId` mostrado na interface ou no cabeçalho `X-Request-ID` e preserve o contexto da falha.
-3. Em uma instância isolada, valide a cópia exportada ou o backup candidato.
-4. Use apenas a área administrativa **Backups** para restaurar um backup reconhecido.
-5. Confirme as tarefas, ambiente e pré-visualização antes de publicar novamente no crontab.
+1. Suspend public access at the proxy while preserving the `crontab-data` volume and `crontabs/logs/operations.jsonl`.
+2. Identify the `operationId` displayed in the interface or the `X-Request-ID` header and preserve the failure context.
+3. Validate the exported copy or candidate backup in an isolated instance.
+4. Use only the administrative **Backups** area to restore a recognized backup.
+5. Confirm tasks, environment, and preview before publishing to crontab again.
 
-Não execute o serviço como `root` para contornar permissões e não use `--reset` como recuperação de rotina: ambos podem invalidar a separação de privilégios ou apagar a configuração activa. Corrija permissões do volume e restaure um backup validado.
+Do not run the service as `root` to bypass permissions and do not use `--reset` as routine recovery: both can invalidate privilege separation or erase the active configuration. Correct volume permissions and restore a validated backup.
 
-O diário `operations.jsonl` contém eventos estruturados com actor, papel, resultado, duração e IDs de correlação. Comandos são registados por hash SHA-256. Exporte o diário para retenção central com acesso restrito e teste restauros regularmente numa instância não produtiva.
+`operations.jsonl` contains structured events with actor, role, outcome, duration, and correlation IDs. Commands are recorded as SHA-256 hashes. Export the log to centrally retained storage with restricted access and regularly test restores in a non-production instance.
 
-Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa explícita, revista e auditável.
+Arbitrary hooks are not supported. For post-processing, use an explicit, reviewed, and auditable task.
 
-## Checklist de lançamento
+## Release checklist
 
-1. Fixe uma release/tag de `Kowts/crontab-ui` e execute `npm ci`.
-2. Configure autenticação, RBAC, `CSRF_SECRET`, `CRON_DB_PATH` persistente e TLS nativo ou `TRUSTED_PROXY`.
-3. Execute `npm run lint`, `npm test`, `npm run test:coverage` e `npm audit --omit=dev --audit-level=high`.
-4. Execute um restauro de teste numa instância isolada e confirme a retenção de backups e logs.
-5. Faça build e execução reais da imagem Docker na plataforma alvo, verificando a compatibilidade de `crond`, capacidades e volume persistente.
+1. Pin a `Kowts/crontab-ui` release/tag and run `npm ci`.
+2. Configure authentication, RBAC, `CSRF_SECRET`, persistent `CRON_DB_PATH`, and native TLS or `TRUSTED_PROXY`.
+3. Run `npm run lint`, `npm test`, `npm run test:coverage`, and `npm audit --omit=dev --audit-level=high`.
+4. Perform a restore test in an isolated instance and confirm backup and log retention.
+5. Build and run the Docker image on the target platform, verifying `crond` compatibility, capabilities, and the persistent volume.
 
-## Recursos
+## Resources
 
-- [Configuração de Nginx e TLS](README/nginx.md)
-- [Diagnóstico e recuperação](README/issues.md)
-- [Licença MIT](LICENSE.md)
+- [Nginx and TLS configuration](README/nginx.md)
+- [Troubleshooting and recovery](README/issues.md)
+- [MIT License](LICENSE.md)
