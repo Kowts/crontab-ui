@@ -1,94 +1,31 @@
 <div class="modal fade" id="job" tabindex="-1" aria-labelledby="job-title" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h2 class="modal-title" id="job-title">Nova tarefa</h2>
-          <p class="modal-subtitle">Defina o comando e o horário de execução.</p>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+  <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><div><h2 class="modal-title" id="job-title"><%= t('newTask') %></h2><p class="modal-subtitle"><%= t('manageDescription') %></p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div>
+    <div class="modal-body">
+      <div class="row g-3">
+        <div class="col-md-7"><label class="form-label" for="job-name"><%= t('taskOptional') %></label><input type="text" class="form-control" id="job-name" placeholder="<%= t('taskNamePlaceholder') %>" maxlength="128"/></div>
+        <div class="col-md-5"><label class="form-label"><%= t('status') %></label><div class="job-status"><%= t('active') %></div></div>
+        <div class="col-12"><label class="form-label" for="job-command"><%= t('commandRequired') %> <span aria-hidden="true">*</span></label><textarea class="form-control" id="job-command" rows="3" placeholder="<%= t('commandPlaceholder') %>"></textarea></div>
       </div>
-      <div class="modal-body">
-        <div class="row g-3">
-          <div class="col-md-7">
-            <label class="form-label" for="job-name">Nome da tarefa <span class="text-muted fw-normal">(opcional)</span></label>
-            <input type="text" class="form-control" id="job-name" placeholder="Ex.: Limpeza de ficheiros temporários" maxlength="128"/>
-          </div>
-          <div class="col-md-5">
-            <label class="form-label">Estado</label>
-            <div class="job-status">Ativa</div>
-          </div>
-          <div class="col-12">
-            <label class="form-label" for="job-command">Comando <span aria-hidden="true">*</span></label>
-            <textarea class="form-control" id="job-command" rows="3" placeholder="/opt/scripts/limpeza.sh"></textarea>
-          </div>
+      <section class="schedule-section" aria-labelledby="schedule-heading">
+        <h3 id="schedule-heading"><%= t('whenToRun') %></h3>
+        <div class="schedule-presets">
+          <button type="button" class="btn btn-outline-secondary" data-schedule="* * * * *"><%= t('everyMinute') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="*/5 * * * *"><%= t('everyFiveMinutes') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="@hourly"><%= t('hourly') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="@daily"><%= t('daily') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="@weekly"><%= t('weekly') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="@monthly"><%= t('monthly') %></button><button type="button" class="btn btn-outline-secondary" data-schedule="@reboot"><%= t('atStartup') %></button>
         </div>
-
-        <section class="schedule-section" aria-labelledby="schedule-heading">
-          <h3 id="schedule-heading">Quando executar</h3>
-          <div class="schedule-presets">
-            <button type="button" class="btn btn-outline-secondary" data-schedule="* * * * *">A cada minuto</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="*/5 * * * *">A cada 5 min</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="@hourly">À hora</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="@daily">Diariamente</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="@weekly">Semanalmente</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="@monthly">Mensalmente</button>
-            <button type="button" class="btn btn-outline-secondary" data-schedule="@reboot">Ao iniciar</button>
-          </div>
-          <div class="schedule-preview"><span>Expressão cron</span><code id="job-string">* * * * *</code></div>
-          <p id="job-schedule-description" class="schedule-description" role="status" aria-live="polite">A cada minuto.</p>
-          <div class="row g-2 mt-2" aria-label="Personalizar expressão cron">
-            <div class="col"><label class="visually-hidden" for="job-minute">Minuto</label><input type="text" class="form-control schedule-part" id="job-minute" value="*" placeholder="Min"/></div>
-            <div class="col"><label class="visually-hidden" for="job-hour">Hora</label><input type="text" class="form-control schedule-part" id="job-hour" value="*" placeholder="Hora"/></div>
-            <div class="col"><label class="visually-hidden" for="job-day">Dia</label><input type="text" class="form-control schedule-part" id="job-day" value="*" placeholder="Dia"/></div>
-            <div class="col"><label class="visually-hidden" for="job-month">Mês</label><input type="text" class="form-control schedule-part" id="job-month" value="*" placeholder="Mês"/></div>
-            <div class="col"><label class="visually-hidden" for="job-week">Semana</label><input type="text" class="form-control schedule-part" id="job-week" value="*" placeholder="Semana"/></div>
-            <div class="col-auto"><button type="button" class="btn btn-outline-secondary" id="set-schedule">Aplicar</button></div>
-          </div>
-        </section>
-
-        <div class="job-options">
-          <div class="form-check">
-            <input type="checkbox" class="form-check-input" id="job-logging"/>
-            <label class="form-check-label" for="job-logging">Registar erros desta tarefa</label>
-          </div>
-          <div class="form-text">Os perfis de e-mail são geridos pelo administrador.</div>
+        <div class="schedule-preview"><span><%= t('cronExpression') %></span><code id="job-string">* * * * *</code></div>
+        <p id="job-schedule-description" class="schedule-description" role="status" aria-live="polite"><%= t('scheduleDescriptionDefault') %></p>
+        <div class="row g-2 mt-2" aria-label="<%= t('customiseCron') %>">
+          <div class="col"><label class="visually-hidden" for="job-minute"><%= t('minute') %></label><input type="text" class="form-control schedule-part" id="job-minute" value="*" placeholder="<%= t('minute') %>"/></div><div class="col"><label class="visually-hidden" for="job-hour"><%= t('hour') %></label><input type="text" class="form-control schedule-part" id="job-hour" value="*" placeholder="<%= t('hour') %>"/></div><div class="col"><label class="visually-hidden" for="job-day"><%= t('day') %></label><input type="text" class="form-control schedule-part" id="job-day" value="*" placeholder="<%= t('day') %>"/></div><div class="col"><label class="visually-hidden" for="job-month"><%= t('month') %></label><input type="text" class="form-control schedule-part" id="job-month" value="*" placeholder="<%= t('month') %>"/></div><div class="col"><label class="visually-hidden" for="job-week"><%= t('week') %></label><input type="text" class="form-control schedule-part" id="job-week" value="*" placeholder="<%= t('week') %>"/></div><div class="col-auto"><button type="button" class="btn btn-outline-secondary" id="set-schedule"><%= t('apply') %></button></div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="job-save">Guardar tarefa</button>
-      </div>
+      </section>
+      <div class="job-options"><div class="form-check"><input type="checkbox" class="form-check-input" id="job-logging"/><label class="form-check-label" for="job-logging"><%= t('logErrors') %></label></div><div class="form-text"><%= t('mailProfilesManaged') %></div></div>
     </div>
-  </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><%= t('cancel') %></button><button type="button" class="btn btn-primary" id="job-save"><%= t('saveTask') %></button></div>
+  </div></div>
 </div>
 
-<div class="modal fade" id="popup" tabindex="-1" aria-labelledby="modal-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header"><h2 class="modal-title" id="modal-title">Mensagem</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
-      <div class="modal-body" id="modal-body"></div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="modal-close-button">Cancelar</button><button type="button" class="btn btn-primary" id="modal-button">Confirmar</button></div>
-    </div>
-  </div>
-</div>
+<div class="modal fade" id="popup" tabindex="-1" aria-labelledby="modal-title" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title" id="modal-title"><%= t('actions') %></h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div><div class="modal-body" id="modal-body"></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" id="modal-close-button"><%= t('cancel') %></button><button type="button" class="btn btn-primary" id="modal-button"><%= t('actions') %></button></div></div></div></div>
 
-<div class="modal fade" id="info-popup" tabindex="-1" aria-labelledby="info-title" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header"><h2 class="modal-title" id="info-title">Mensagem</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
-      <div class="modal-body" id="info-body"></div>
-      <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="info-button">Entendi</button></div>
-    </div>
-  </div>
-</div>
+<div class="modal fade" id="info-popup" tabindex="-1" aria-labelledby="info-title" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title" id="info-title"><%= t('actions') %></h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div><div class="modal-body" id="info-body"></div><div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="info-button"><%= t('close') %></button></div></div></div></div>
 
-<div class="modal fade" id="preview-crontab-modal" tabindex="-1" aria-labelledby="preview-crontab-title" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header"><div><h2 class="modal-title" id="preview-crontab-title">Pré-visualização do crontab</h2><p class="modal-subtitle">Reveja o resultado antes de publicar.</p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button></div>
-      <div class="modal-body"><pre id="preview-crontab-content" class="bg-dark text-light p-3 rounded mb-0" style="min-height:200px;white-space:pre-wrap;word-break:break-all;font-size:0.875rem;"></pre></div>
-      <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" id="copy-crontab"><i class="bi bi-clipboard me-1"></i>Copiar</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button></div>
-    </div>
-  </div>
-</div>
+<div class="modal fade" id="preview-crontab-modal" tabindex="-1" aria-labelledby="preview-crontab-title" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title" id="preview-crontab-title"><%= t('previewCrontab') %></h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div><div class="modal-body"><pre id="preview-crontab-content" class="bg-dark text-light p-3 rounded mb-0" style="min-height:200px;white-space:pre-wrap;word-break:break-all;font-size:0.875rem;"></pre></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" id="copy-crontab"><i class="bi bi-clipboard me-1"></i>Copy</button><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><%= t('close') %></button></div></div></div></div>

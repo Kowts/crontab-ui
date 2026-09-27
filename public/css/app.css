@@ -23,6 +23,8 @@ body.app-body {
 .app-navbar .nav-link { color: #b9c6db; padding-inline: 1rem !important; }
 .app-navbar .nav-link:hover, .app-navbar .nav-link:focus { color: #fff; }
 .app-user { color: #d9e3f2; font-size: .9rem; }
+.language-select { min-height: 32px; padding: .2rem 1.7rem .2rem .55rem; border: 1px solid rgba(255,255,255,.28); border-radius: 6px; color: #e8eff9; background-color: transparent; font-size: .84rem; }
+.language-select option { color: var(--app-ink); background: #fff; }
 .app-user::before { content: ""; display: inline-block; width: .45rem; height: .45rem; margin-right: .55rem; border-radius: 50%; background: #d5e4ff; vertical-align: middle; }
 
 .app-shell { max-width: 1320px; margin: 0 auto; padding: 2.25rem 1.25rem 3rem; }

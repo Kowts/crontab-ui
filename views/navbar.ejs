@@ -2,18 +2,18 @@
 <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
   <div class="container-fluid app-shell py-0">
     <a class="navbar-brand" href="<%= JSON.parse(routes).root %>">Crontab UI</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Abrir menu">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="<%= t('openMenu') %>">
       <span class="navbar-toggler-icon"></span>
     </button>
 
     <div class="collapse navbar-collapse" id="navbarContent">
       <ul class="navbar-nav ms-lg-5 me-auto">
-        <li class="nav-item"><a class="nav-link active" href="<%= JSON.parse(routes).root %>">Tarefas</a></li>
+        <li class="nav-item"><a class="nav-link active" href="<%= JSON.parse(routes).root %>"><%= t('tasks') %></a></li>
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Backups</a>
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><%= t('backups') %></a>
           <ul class="dropdown-menu">
             <% if (backups.length === 0){ %>
-              <li><span class="dropdown-item-text text-muted">Sem backups disponíveis</span></li>
+              <li><span class="dropdown-item-text text-muted"><%= t('noBackups') %></span></li>
             <% } else { %>
               <% backups.forEach(function(file){ %>
                 <li><a class="dropdown-item" href="<%= JSON.parse(routes).restore %>?db=<%= file %>"><%= file %></a></li>
@@ -22,7 +22,14 @@
           </ul>
         </li>
       </ul>
-      <div class="app-user text-capitalize"><%= displayRole %></div>
+      <div class="d-flex align-items-center gap-3">
+        <label class="visually-hidden" for="language-select"><%= t('language') %></label>
+        <select id="language-select" class="language-select" aria-label="<%= t('language') %>">
+          <option value="en" <%= locale === 'en' ? 'selected' : '' %>>English</option>
+          <option value="pt" <%= locale === 'pt' ? 'selected' : '' %>>Português</option>
+        </select>
+        <div class="app-user text-capitalize"><%= t(displayRole) %></div>
+      </div>
     </div>
   </div>
 </nav>

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pt-PT">
+<html lang="<%= locale === 'pt' ? 'pt-PT' : 'en' %>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crontab UI — Tarefas agendadas</title>
+<title><%= t('pageTitle') %></title>
 <link href="css/bootstrap.min.css" rel="stylesheet">
 <link href="css/bootstrap-icons.min.css" rel="stylesheet">
 <link href="css/dataTables.bootstrap5.min.css" rel="stylesheet">
@@ -17,6 +17,7 @@
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
 <script id="env-state" type="application/json"><%- env %></script>
+<script id="i18n-state" type="application/json"><%- messages %></script>
 </head>
 <body class="app-body">
 <% const canManageJobs = ['operator', 'admin'].includes(currentRole); %>
@@ -28,16 +29,16 @@
 <%- include('navbar.ejs') -%>
 
 <main class="app-shell">
-  <div class="breadcrumb-lite">Administração <span>/</span> Tarefas agendadas</div>
+  <div class="breadcrumb-lite"><%= t('administration') %> <span>/</span> <%= t('scheduledTasks') %></div>
   <header class="page-heading">
     <div>
-      <h1>Tarefas agendadas</h1>
-      <p>Gere os comandos, horários e a publicação no crontab.</p>
+      <h1><%= t('scheduledTasks') %></h1>
+      <p><%= t('manageDescription') %></p>
     </div>
     <div class="page-actions">
-      <button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square me-1"></i> Pré-visualizar crontab</button>
+      <button type="button" class="btn btn-outline-secondary" data-action="preview"><i class="bi bi-code-square me-1"></i> <%= t('previewCrontab') %></button>
       <% if (canManageJobs) { %>
-        <button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i> Nova tarefa</button>
+        <button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i> <%= t('newTask') %></button>
       <% } %>
     </div>
   </header>
@@ -45,11 +46,11 @@
   <% if (isAdmin) { %>
     <section class="app-card" aria-labelledby="environment-heading">
       <div class="card-heading">
-        <h2 id="environment-heading">Variáveis de ambiente</h2>
-        <button type="button" class="link-action" data-action="toggle-environment">Editar</button>
+        <h2 id="environment-heading"><%= t('environmentVariables') %></h2>
+        <button type="button" class="link-action" data-action="toggle-environment"><%= t('edit') %></button>
       </div>
       <div class="card-body-app" id="environment-editor">
-        <textarea class="environment-editor" rows="3" id="env_vars" placeholder="# Defina PATH, MAILTO e outras variáveis necessárias…"></textarea>
+        <textarea class="environment-editor" rows="3" id="env_vars" placeholder="<%= t('environmentPlaceholder') %>"></textarea>
       </div>
     </section>
   <% } %>
@@ -57,24 +58,24 @@
   <section class="app-card" aria-labelledby="jobs-heading">
     <div class="card-heading">
       <div>
-        <h2 id="jobs-heading">Tarefas <span class="jobs-count"><%= jobs.length %> <%= jobs.length === 1 ? 'tarefa' : 'tarefas' %></span></h2>
+        <h2 id="jobs-heading"><%= t('tasks') %> <span class="jobs-count"><%= t(jobs.length === 1 ? 'taskCount_one' : 'taskCount_other', { count: jobs.length }) %></span></h2>
       </div>
       <div class="jobs-toolbar">
         <% if (isAdmin) { %>
           <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Importar / Exportar</button>
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><%= t('importExport') %></button>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li><button type="button" class="dropdown-item" data-action="import-db"><i class="bi bi-box-arrow-in-down me-2"></i>Importar configuração</button></li>
-              <li><a class="dropdown-item" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up me-2"></i>Exportar configuração</a></li>
+              <li><button type="button" class="dropdown-item" data-action="import-db"><i class="bi bi-box-arrow-in-down me-2"></i><%= t('importConfiguration') %></button></li>
+              <li><a class="dropdown-item" href="<%= JSON.parse(routes).export %>"><i class="bi bi-box-arrow-up me-2"></i><%= t('exportConfiguration') %></a></li>
               <li><hr class="dropdown-divider"></li>
-              <li><button type="button" class="dropdown-item" data-action="import-crontab"><i class="bi bi-arrow-down-circle me-2"></i>Obter do crontab</button></li>
+              <li><button type="button" class="dropdown-item" data-action="import-crontab"><i class="bi bi-arrow-down-circle me-2"></i><%= t('getFromCrontab') %></button></li>
             </ul>
           </div>
           <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Acções</button>
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><%= t('actions') %></button>
             <ul class="dropdown-menu dropdown-menu-end">
-              <li><button type="button" class="dropdown-item" data-action="backup"><i class="bi bi-shield-plus me-2"></i>Criar backup</button></li>
-              <li><button type="button" class="dropdown-item" data-action="set-crontab"><i class="bi bi-cloud-arrow-up me-2"></i>Publicar no crontab</button></li>
+              <li><button type="button" class="dropdown-item" data-action="backup"><i class="bi bi-shield-plus me-2"></i><%= t('createBackup') %></button></li>
+              <li><button type="button" class="dropdown-item" data-action="set-crontab"><i class="bi bi-cloud-arrow-up me-2"></i><%= t('publishToCrontab') %></button></li>
             </ul>
           </div>
           <form id="import_form" enctype="multipart/form-data" action="<%= JSON.parse(routes).import %>" method="post" class="d-none">
@@ -87,7 +88,7 @@
     <% if (hasJobs) { %>
       <table class="table align-middle mb-0" id="main_table">
         <thead>
-          <tr><th>#</th><th>Nome</th><th>Comando</th><th>Horário</th><th>Última alteração</th><th></th></tr>
+          <tr><th>#</th><th><%= t('name') %></th><th><%= t('command') %></th><th><%= t('schedule') %></th><th><%= t('lastModified') %></th><th></th></tr>
         </thead>
         <tbody>
           <% jobs.forEach(function(crontab, index){ %>
@@ -95,7 +96,7 @@
               <td><%= index + 1 %></td>
               <td>
                 <strong><%= crontab.name || crontab._id %></strong>
-                <% if (crontab.saved) { %><i class="bi bi-check-circle-fill text-success ms-1" title="Publicado"></i><% } else { %><i class="bi bi-exclamation-circle-fill text-warning ms-1" title="Alterações por publicar"></i><% } %>
+                <% if (crontab.saved) { %><i class="bi bi-check-circle-fill text-success ms-1" title="<%= t('published') %>"></i><% } else { %><i class="bi bi-exclamation-circle-fill text-warning ms-1" title="<%= t('unpublishedChanges') %>"></i><% } %>
               </td>
               <td><code><%= crontab.command %></code></td>
               <td><span title="<%= crontab.next %>"><%= crontab.schedule %></span><small class="d-block text-muted"><%= crontab.human %></small></td>
@@ -105,12 +106,12 @@
                   <a class="btn btn-sm btn-outline-secondary" title="stderr" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-journal-text"></i></a>
                   <a class="btn btn-sm btn-outline-secondary" title="stdout" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank"><i class="bi bi-terminal"></i></a>
                 <% } %>
-                <% if (!crontab.stopped && canRunJobs) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden">Executar</span></button><% } %>
+                <% if (!crontab.stopped && canRunJobs) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden"><%= t('run') %></span></button><% } %>
                 <% if (canManageJobs) { %>
-                  <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-pause-fill"></i><span class="visually-hidden">Pausar</span></button><% } else { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden">Ativar</span></button><% } %>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil"></i><span class="visually-hidden">Editar</span></button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i><span class="visually-hidden">Duplicar</span></button>
-                  <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i><span class="visually-hidden">Apagar</span></button>
+                  <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-pause-fill"></i><span class="visually-hidden"><%= t('pause') %></span></button><% } else { %><button type="button" class="btn btn-sm btn-outline-secondary" data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="visually-hidden"><%= t('activate') %></span></button><% } %>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil"></i><span class="visually-hidden"><%= t('edit') %></span></button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i><span class="visually-hidden"><%= t('duplicate') %></span></button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i><span class="visually-hidden"><%= t('delete') %></span></button>
                 <% } %>
               </td>
             </tr>
@@ -120,17 +121,16 @@
     <% } else { %>
       <div class="empty-state">
         <div class="empty-state-icon"><i class="bi bi-calendar-plus"></i></div>
-        <h3>Ainda não existem tarefas</h3>
-        <p>Crie a primeira tarefa ou importe uma configuração existente. Poderá rever as alterações antes de publicar no crontab.</p>
+        <h3><%= t('noTasks') %></h3>
+        <p><%= t('noTasksDescription') %></p>
         <div class="empty-state-actions">
-          <% if (canManageJobs) { %><button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i>Criar primeira tarefa</button><% } %>
-          <% if (isAdmin) { %><button type="button" class="btn btn-outline-secondary" data-action="import-db">Importar configuração</button><% } %>
+          <% if (canManageJobs) { %><button type="button" class="btn btn-primary" data-action="new-job"><i class="bi bi-plus-lg me-1"></i><%= t('createFirstTask') %></button><% } %>
+          <% if (isAdmin) { %><button type="button" class="btn btn-outline-secondary" data-action="import-db"><%= t('importConfiguration') %></button><% } %>
         </div>
       </div>
     <% } %>
     <footer class="jobs-footer">
-      <span><i class="bi bi-record-fill me-1"></i> Alterações locais: <%= hasUnsavedChanges ? 'por publicar' : 'nenhuma' %></span>
-      <% if (isAdmin) { %><span><a href="#" data-action="import-crontab">Obter do crontab</a><a href="#" data-action="set-crontab">Publicar</a></span><% } %>
+      <span><i class="bi bi-record-fill me-1"></i> <%= t('localChanges') %>: <%= t(hasUnsavedChanges ? 'pendingPublication' : 'none') %></span>
     </footer>
   </section>
 </main>

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="<%= locale === 'pt' ? 'pt-PT' : 'en' %>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crontab UI</title>
+<title><%= t('pageTitle') %></title>
 <link href="css/bootstrap.min.css" rel="stylesheet">
 <link href="css/bootstrap-icons.min.css" rel="stylesheet">
 <link href="css/app.css" rel="stylesheet">
@@ -12,6 +12,7 @@
 <script src="script.js"></script>
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
+<script id="i18n-state" type="application/json"><%- messages %></script>
 <!-- Legacy bootstrap moved to public/js/script.js.
 	var crontabs = [];
 	var routes = [];
@@ -26,16 +27,16 @@
 <body class="app-body">
 <%- include('navbar.ejs') -%>
 <main class="app-shell">
-  <div class="breadcrumb-lite">Administração <span>/</span> Backups <span>/</span> Detalhe</div>
-  <header class="page-heading"><div><h1>Backup</h1><p><%= db %></p></div></header>
+  <div class="breadcrumb-lite"><%= t('administration') %> <span>/</span> <%= t('backups') %> <span>/</span> <%= t('detail') %></div>
+  <header class="page-heading"><div><h1><%= t('backup') %></h1><p><%= db %></p></div></header>
   <section class="app-card">
 	<table class="table align-middle mb-0">
 	<tr>
-		<th>Id</th>
+		<th><%= t('id') %></th>
 		<th></th>
-		<th>Job</th>
-		<th>Time</th>
-		<th>Last Modified</th>
+		<th><%= t('job') %></th>
+		<th><%= t('time') %></th>
+		<th><%= t('lastModified') %></th>
 	</tr>
 	<% var index = 1 %>
 	<% JSON.parse(crontabs).forEach(function(crontab){ %>
@@ -65,7 +66,7 @@
 
 
 	</table>
-	<div class="card-body-app d-flex gap-2"><button type="button" class="btn btn-primary" data-action="restore-backup" data-db="<%= db %>"><i class="bi bi-arrow-counterclockwise me-1"></i> Restaurar backup</button><button type="button" class="btn btn-outline-danger" data-action="delete-backup" data-db="<%= db %>"><i class="bi bi-trash me-1"></i> Apagar backup</button></div>
+	<div class="card-body-app d-flex gap-2"><button type="button" class="btn btn-primary" data-action="restore-backup" data-db="<%= db %>"><i class="bi bi-arrow-counterclockwise me-1"></i> <%= t('restoreBackup') %></button><button type="button" class="btn btn-outline-danger" data-action="delete-backup" data-db="<%= db %>"><i class="bi bi-trash me-1"></i> <%= t('deleteBackup') %></button></div>
   </section>
 </main>
 <%- include('popup.ejs') -%>

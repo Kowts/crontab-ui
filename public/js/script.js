@@ -2,6 +2,14 @@
 
 var crontabs = [];
 var routes = {};
+var i18n = {};
+
+function tr(key, values) {
+  var text = i18n[key] || key;
+  return text.replace(/\{([a-zA-Z0-9_]+)\}/g, function(_match, name) {
+    return values && values[name] !== undefined ? String(values[name]) : '';
+  });
+}
 
 function csrfToken() {
   var match = document.cookie.match(/(?:^|; )crontab_ui_csrf=([^;]+)/);
@@ -12,9 +20,11 @@ function initPage() {
   var jobs = document.getElementById('crontabs-state');
   var routeState = document.getElementById('routes-state');
   var env = document.getElementById('env-state');
+  var i18nState = document.getElementById('i18n-state');
   if (jobs) crontabs = JSON.parse(jobs.textContent);
   if (routeState) routes = JSON.parse(routeState.textContent);
   if (env) $('#env_vars').val(JSON.parse(env.textContent));
+  if (i18nState) i18n = JSON.parse(i18nState.textContent);
 
   $.ajaxSetup({ headers: { 'X-CSRF-Token': csrfToken() } });
   [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')).forEach(function(el) {
@@ -25,9 +35,9 @@ function initPage() {
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
       columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }],
       language: {
-        search: '', searchPlaceholder: 'Pesquisar tarefas',
-        lengthMenu: '_MENU_ por página', info: 'A mostrar _START_–_END_ de _TOTAL_ tarefas',
-        infoEmpty: 'Sem tarefas', zeroRecords: 'Não foram encontradas tarefas', paginate: { first: '«', last: '»', next: '›', previous: '‹' }
+        search: '', searchPlaceholder: tr('dataSearch'),
+        lengthMenu: tr('dataPerPage'), info: tr('dataInfo'),
+        infoEmpty: tr('dataInfoEmpty'), zeroRecords: tr('dataZero'), paginate: { first: '«', last: '»', next: '›', previous: '‹' }
       }
     });
   }
@@ -69,6 +79,10 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   var copyButton = document.getElementById('copy-crontab');
   if (copyButton) copyButton.addEventListener('click', copyCrontab);
+  var languageSelect = document.getElementById('language-select');
+  if (languageSelect) languageSelect.addEventListener('change', function() {
+    $.post(routes.locale, { locale: languageSelect.value }).done(function() { window.location.reload(); });
+  });
 });
 
 document.addEventListener('click', function(event) {
@@ -107,10 +121,7 @@ function infoMessageBox(message, title) {
 }
 
 function errorMessageBox(message) {
-  var msg =
-    'Operation failed: ' + message + '. ' +
-    'Please see error log for details.';
-  infoMessageBox(msg, 'Error');
+  infoMessageBox(tr('operationFailed', { message: message }), tr('error'));
 }
 
 function messageBox(body, title, ok_text, close_text, callback) {
@@ -122,8 +133,8 @@ function messageBox(body, title, ok_text, close_text, callback) {
     modalBody.appendChild(body);
   }
   document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal-button').textContent = ok_text || 'Confirmar';
-  document.getElementById('modal-close-button').textContent = close_text || 'Cancelar';
+  document.getElementById('modal-button').textContent = ok_text || tr('actions');
+  document.getElementById('modal-close-button').textContent = close_text || tr('cancel');
 
   var btn = document.getElementById('modal-button');
   var newBtn = btn.cloneNode(true);
@@ -143,7 +154,7 @@ var schedule = '';
 var job_command = '';
 
 function deleteJob(_id) {
-  messageBox('<p>Esta tarefa será removida da aplicação.</p>', 'Apagar tarefa', 'Apagar', 'Cancelar', function() {
+  messageBox('<p>' + tr('deleteTaskBody') + '</p>', tr('deleteTaskTitle'), tr('delete'), tr('cancel'), function() {
     $.post(routes.remove, {_id: _id}, function() {
       location.reload();
     });
@@ -151,7 +162,7 @@ function deleteJob(_id) {
 }
 
 function stopJob(_id) {
-  messageBox('<p>A tarefa deixará de ser incluída quando publicar o crontab.</p>', 'Pausar tarefa', 'Pausar', 'Cancelar', function() {
+  messageBox('<p>' + tr('pauseTaskBody') + '</p>', tr('pauseTaskTitle'), tr('pause'), tr('cancel'), function() {
     $.post(routes.stop, {_id: _id}, function() {
       location.reload();
     });
@@ -159,7 +170,7 @@ function stopJob(_id) {
 }
 
 function startJob(_id) {
-  messageBox('<p>A tarefa voltará a ficar disponível para publicação.</p>', 'Ativar tarefa', 'Ativar', 'Cancelar', function() {
+  messageBox('<p>' + tr('activateTaskBody') + '</p>', tr('activateTaskTitle'), tr('activate'), tr('cancel'), function() {
     $.post(routes.start, {_id: _id}, function() {
       location.reload();
     });
@@ -167,7 +178,7 @@ function startJob(_id) {
 }
 
 function runJob(_id) {
-  messageBox('<p>O comando será executado agora com os limites de segurança configurados.</p>', 'Executar tarefa', 'Executar', 'Cancelar', function() {
+  messageBox('<p>' + tr('runTaskBody') + '</p>', tr('runTaskTitle'), tr('run'), tr('cancel'), function() {
     $.post(routes.run, {_id: _id}, function() {
       location.reload();
     });
@@ -175,9 +186,9 @@ function runJob(_id) {
 }
 
 function setCrontab() {
-  messageBox('<p>As alterações locais serão publicadas no crontab do serviço.</p>', 'Publicar no crontab', 'Publicar', 'Cancelar', function() {
+  messageBox('<p>' + tr('publishBody') + '</p>', tr('publishTitle'), tr('publishToCrontab'), tr('cancel'), function() {
     $.post(routes.crontab, { env_vars: $('#env_vars').val() }, function() {
-      infoMessageBox('Crontab publicado com sucesso.', 'Publicação concluída');
+      infoMessageBox(tr('publishSuccess'), tr('publicationComplete'));
       location.reload();
     }).fail(function(response) {
       errorMessageBox(response.statusText);
@@ -187,10 +198,9 @@ function setCrontab() {
 
 function getCrontab() {
   messageBox(
-    '<p>Será criado um backup antes de importar as tarefas do crontab do serviço.</p>',
-    'Obter do crontab', 'Importar', 'Cancelar', function() {
+    '<p>' + tr('getBody') + '</p>', tr('getTitle'), tr('import'), tr('cancel'), function() {
     $.post(routes.import_crontab, {}, function() {
-        infoMessageBox('Tarefas importadas do crontab.', 'Importação concluída');
+        infoMessageBox(tr('importSuccess'), tr('importComplete'));
         location.reload();
       });
     });
@@ -203,7 +213,7 @@ function editJob(_id) {
   });
 
   if (job) {
-    document.getElementById('job-title').textContent = 'Editar tarefa';
+    document.getElementById('job-title').textContent = tr('edit') + ' ' + tr('tasks').toLowerCase().replace(/s$/, '');
     getModal('job').show();
     $('#job-name').val(job.name);
     $('#job-command').val(job.command);
@@ -246,7 +256,7 @@ function newJob() {
   $('#job-month').val('*');
   $('#job-week').val('*');
 
-  document.getElementById('job-title').textContent = 'Nova tarefa';
+  document.getElementById('job-title').textContent = tr('newTask');
   getModal('job').show();
   $('#job-name').val('');
   $('#job-command').val('');
@@ -293,8 +303,8 @@ function duplicateJob(_id) {
 
 function doBackup() {
   messageBox(
-    '<div class="backup-notice"><strong>Antes de continuar</strong>O backup inclui as tarefas e as variáveis de ambiente actualmente guardadas nesta aplicação.</div><ul class="backup-list"><li>Não altera o crontab do servidor.</li><li>Poderá restaurar esta cópia através de Backups.</li></ul>',
-    'Criar backup', 'Criar backup', 'Cancelar', function() {
+    '<div class="backup-notice"><strong>' + tr('backupNoticeTitle') + '</strong>' + tr('backupNotice') + '</div><ul class="backup-list"><li>' + tr('backupDoesNotChange') + '</li><li>' + tr('backupRestoreHint') + '</li></ul>',
+    tr('createBackup'), tr('createBackup'), tr('cancel'), function() {
     $.post(routes.backup, {}, function() {
       location.reload();
     });
@@ -302,7 +312,7 @@ function doBackup() {
 }
 
 function delete_backup(db_name) {
-  messageBox('<p>Esta cópia de segurança será removida de forma permanente.</p>', 'Apagar backup', 'Apagar', 'Cancelar', function() {
+  messageBox('<p>' + tr('deleteBackupBody') + '</p>', tr('deleteBackupTitle'), tr('delete'), tr('cancel'), function() {
     $.post(routes.delete_backup, { db: db_name }, function() {
       location = routes.root;
     });
@@ -310,7 +320,7 @@ function delete_backup(db_name) {
 }
 
 function restore_backup(db_name) {
-  messageBox('<p>A configuração actual será salvaguardada antes de restaurar este backup.</p>', 'Restaurar backup', 'Restaurar', 'Cancelar', function() {
+  messageBox('<p>' + tr('restoreBackupBody') + '</p>', tr('restoreBackupTitle'), tr('restoreBackup'), tr('cancel'), function() {
     $.post(routes.restore_backup, { db: db_name }, function() {
       location = routes.root;
     });
@@ -319,8 +329,7 @@ function restore_backup(db_name) {
 
 function import_db() {
   messageBox(
-    '<p>Será criado um backup automático antes de importar a configuração seleccionada.</p>',
-    'Importar configuração', 'Selecionar ficheiro', 'Cancelar', function() {
+    '<p>' + tr('importBody') + '</p>', tr('importTitle'), tr('selectFile'), tr('cancel'), function() {
       $('#import_file').click();
     });
 }
@@ -355,11 +364,11 @@ function updateScheduleDescription(value) {
 
 function describeSchedule(value) {
   if (!window.cronstrue) {
-    return 'Não foi possível carregar o tradutor de expressões cron.';
+    return tr('cronLoadFailure');
   }
   try {
     return window.cronstrue.toString(value, {
-      locale: 'pt_PT',
+      locale: i18n.scheduledTasks === 'Tarefas agendadas' ? 'pt_PT' : 'en',
       use24HourTimeFormat: true,
       verbose: true,
       throwExceptionOnParseError: true
@@ -372,16 +381,16 @@ function describeSchedule(value) {
 function cronDescriptionError(error) {
   var technicalMessage = String(error);
   var messages = [
-    [/minutes part/i, 'O campo minuto deve estar entre 0 e 59.'],
-    [/hours part/i, 'O campo hora deve estar entre 0 e 23.'],
-    [/DOM part/i, 'O campo dia do mês deve estar entre 1 e 31.'],
-    [/month part/i, 'O campo mês deve estar entre 1 e 12.'],
-    [/DOW part/i, 'O campo dia da semana deve estar entre 0 e 6.']
+    [/minutes part/i, tr('cronMinuteInvalid')],
+    [/hours part/i, tr('cronHourInvalid')],
+    [/DOM part/i, tr('cronDayInvalid')],
+    [/month part/i, tr('cronMonthInvalid')],
+    [/DOW part/i, tr('cronWeekInvalid')]
   ];
   for (var index = 0; index < messages.length; index += 1) {
     if (messages[index][0].test(technicalMessage)) return messages[index][1];
   }
-  return 'A expressão cron não é válida. Verifique os cinco campos antes de guardar.';
+  return tr('cronInvalid');
 }
 
 function toggleEnvironment() {

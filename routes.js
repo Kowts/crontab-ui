@@ -21,6 +21,7 @@ const routes = {
   logger: '/logger',
   stdout: '/stdout',
   preview_crontab: '/preview_crontab',
+  locale: '/locale',
 };
 
 exports.base_url = baseUrl;

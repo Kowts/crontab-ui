@@ -44,10 +44,26 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/');
       expect(res.status).toBe(200);
       expect(res.text).toContain('Crontab UI');
-      expect(res.text).toContain('Tarefas agendadas');
-      expect(res.text).toContain('Criar primeira tarefa');
+      expect(res.text).toContain('Scheduled tasks');
+      expect(res.text).toContain('Create first task');
       expect(res.text).toContain('id="job-schedule-description"');
       expect(res.text).toContain('vendor/cronstrue/cronstrue-i18n.min.js');
+    });
+  });
+
+  describe('Interface language', () => {
+    it('uses English by default and Portuguese when the locale cookie is set', async () => {
+      const english = await request(app).get('/');
+      const portuguese = await request(app).get('/').set('Cookie', 'crontab_ui_locale=pt');
+      expect(english.text).toContain('Scheduled tasks');
+      expect(portuguese.text).toContain('Tarefas agendadas');
+    });
+
+    it('persists a supported locale in an HttpOnly cookie', async () => {
+      const res = await request(app).post('/locale').send({ locale: 'pt' });
+      expect(res.status).toBe(204);
+      expect(res.headers['set-cookie'].join(';')).toContain('crontab_ui_locale=pt');
+      expect(res.headers['set-cookie'].join(';')).toContain('HttpOnly');
     });
   });
 

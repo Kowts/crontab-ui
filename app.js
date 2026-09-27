@@ -31,6 +31,7 @@ const {
 const { getProfile } = require('./config/mail-profiles');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess } = require('./middleware/job-authorization');
+const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
 
 dayjs.extend(relativeTime);
 
@@ -147,6 +148,12 @@ app.use(express.json({ limit: '32kb' }));
 app.use(express.urlencoded({ extended: true, limit: '32kb' }));
 app.use(busboy({ limits: { files: 1, fileSize: 1024 * 1024, fields: 10 } }));
 app.use(csrfProtection);
+app.use((req, res, next) => {
+  const locale = localeFromRequest(req);
+  res.locals.locale = locale;
+  res.locals.t = (key, values) => translate(locale, key, values);
+  next();
+});
 
 app.use(baseUrl, express.static(path.join(__dirname, 'public')));
 app.use(baseUrl, express.static(path.join(__dirname, 'public', 'css')));
@@ -197,8 +204,21 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       env: serializeForHtml(crontab.get_env()),
       currentRole,
       dayjs,
+      messages: serializeForHtml(dictionaries[res.locals.locale]),
     });
   });
+});
+
+app.post(routes.locale, requireRole('viewer'), (req, res) => {
+  if (!['en', 'pt'].includes(req.body.locale)) return res.status(400).json({ message: 'Invalid locale' });
+  res.cookie('crontab_ui_locale', normalizeLocale(req.body.locale), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: baseUrl || '/',
+    maxAge: 365 * 24 * 60 * 60 * 1000,
+  });
+  return res.status(204).end();
 });
 
 app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation('save_job', (req) => ({
@@ -293,6 +313,7 @@ app.get(routes.restore, requireRole('viewer'), validateBackupParam, (req, res) =
       crontabs: serializeForHtml(docs),
       backups: crontab.get_backup_names(),
       db: req.dbName,
+      messages: serializeForHtml(dictionaries[res.locals.locale]),
     });
   });
 });
