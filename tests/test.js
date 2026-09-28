@@ -6,6 +6,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const cronstrue = require('cronstrue/i18n');
 const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
 
@@ -59,6 +60,7 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Yearly');
       expect(res.text).toContain('id="import-modal"');
       expect(res.text).toContain('id="import_file"');
+      expect(res.text).toContain('id="import-preview-modal"');
       expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
     });
 
@@ -74,7 +76,8 @@ describe('Crontab UI', () => {
       expect(clientScript).toContain('window.location.reload()');
       expect(clientScript).toContain("new URL(importForm.getAttribute('action'), window.location.origin)");
       expect(clientScript).toContain('function closeImportModal(callback)');
-      expect(clientScript).toContain('}).catch(function()');
+      expect(clientScript).toContain('function renderImportPreview(summary)');
+      expect(clientScript).toContain('importRequest(true).then(function(summary)');
     });
   });
 
@@ -515,6 +518,20 @@ describe('Crontab UI', () => {
   });
 
   describe('POST /import (auto-backup)', () => {
+    function createCandidate(name, documents) {
+      const candidate = path.join(testDbPath, name);
+      createDatabaseFile(candidate, documents);
+      const content = fs.readFileSync(candidate);
+      fs.rmSync(candidate, { force: true });
+      return content;
+    }
+
+    function createJob(name, command) {
+      return new Promise((resolve, reject) => crontab.create_new(
+        name, command, '* * * * *', false, {}, {}, (error, job) => (error ? reject(error) : resolve(job))
+      ));
+    }
+
     it('should create a backup before importing a db file', async () => {
       // small delay so backup filename (based on date) doesn't collide
       await new Promise((r) => setTimeout(r, 1100));
@@ -540,6 +557,52 @@ describe('Crontab UI', () => {
       expect(response.body.message).toBe('A single .db import file is required');
       expect(fs.readFileSync(path.join(testDbPath, 'crontab.db'), 'utf8')).toBe(before);
       expect(fs.readdirSync(testDbPath).some((file) => file.startsWith('.import-'))).toBe(false);
+    });
+
+    it('previews a merge without changing tasks, then keeps existing tasks and skips exact duplicates', async () => {
+      const suffix = crypto.randomUUID();
+      const existing = await createJob(`merge-existing-${suffix}`, `echo existing-${suffix}`);
+      const candidate = createCandidate(`merge-${suffix}.db`, [
+        { _id: 'duplicate', name: existing.name, command: existing.command, schedule: existing.schedule },
+        { _id: 'conflict', name: existing.name, command: `echo conflict-${suffix}`, schedule: '* * * * *' },
+        { _id: 'new', name: `merge-new-${suffix}`, command: `echo new-${suffix}`, schedule: '*/5 * * * *' },
+      ]);
+      const before = await new Promise((resolve) => crontab.crontabs(resolve));
+
+      const preview = await request(app).post('/import')
+        .field('mode', 'merge').field('dryRun', 'true')
+        .attach('import_file', candidate, 'candidate.db');
+      expect(preview.status).toBe(200);
+      expect(preview.body).toMatchObject({ preview: true, mode: 'merge', incoming: 3, added: 2, skipped: 1, conflicts: 1 });
+      expect((await new Promise((resolve) => crontab.crontabs(resolve))).length).toBe(before.length);
+
+      const applied = await request(app).post('/import')
+        .field('mode', 'merge').field('dryRun', 'false')
+        .attach('import_file', candidate, 'candidate.db');
+      expect(applied.status).toBe(200);
+      expect(applied.body).toMatchObject({ preview: false, mode: 'merge', added: 2, skipped: 1, conflicts: 1 });
+      const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+      expect(jobs.filter((job) => job.command === existing.command)).toHaveLength(1);
+      expect(jobs.some((job) => job.command === `echo conflict-${suffix}`)).toBe(true);
+      expect(jobs.some((job) => job.command === `echo new-${suffix}`)).toBe(true);
+    });
+
+    it('replaces tasks only when the explicit replace mode is selected', async () => {
+      const suffix = crypto.randomUUID();
+      const existing = await createJob(`replace-existing-${suffix}`, `echo replace-existing-${suffix}`);
+      const candidate = createCandidate(`replace-${suffix}.db`, [{
+        _id: 'replacement', name: `replacement-${suffix}`, command: `echo replacement-${suffix}`,
+        schedule: '* * * * *',
+      }]);
+      const applied = await request(app).post('/import')
+        .field('mode', 'replace').field('dryRun', 'false')
+        .attach('import_file', candidate, 'candidate.db');
+
+      expect(applied.status).toBe(200);
+      expect(applied.body).toMatchObject({ mode: 'replace', incoming: 1, replaced: expect.any(Number) });
+      const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+      expect(jobs.some((job) => job._id === existing._id)).toBe(false);
+      expect(jobs.some((job) => job.command === `echo replacement-${suffix}`)).toBe(true);
     });
   });
 

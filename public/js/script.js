@@ -63,32 +63,79 @@ function initPage() {
   }
   var importInput = document.getElementById('import_file');
   var importForm = document.getElementById('import_form');
+  var importMode = document.getElementById('import_mode');
+  var importConfirm = document.getElementById('import-confirm');
+  var importPreviewSummary = document.getElementById('import-preview-summary');
+  function updateImportModeHint() {
+    var hint = document.getElementById('import-mode-help');
+    if (hint && importMode) hint.textContent = tr(importMode.value === 'replace' ? 'importReplaceHint' : 'importMergeHint');
+  }
+  function renderImportPreview(summary) {
+    if (!importPreviewSummary) return;
+    importPreviewSummary.replaceChildren();
+    var values = [
+      ['existingTasks', summary.existing], ['incomingTasks', summary.incoming],
+      ['importAdditions', summary.added], ['importDuplicates', summary.skipped],
+      ['importConflicts', summary.conflicts],
+    ];
+    if (summary.mode === 'replace') values.push(['importReplaced', summary.replaced]);
+    values.forEach(function(item) {
+      var term = document.createElement('dt');
+      term.className = 'col-8';
+      term.textContent = tr(item[0]);
+      var value = document.createElement('dd');
+      value.className = 'col-4 text-end';
+      value.textContent = String(item[1]);
+      importPreviewSummary.append(term, value);
+    });
+    if (importConfirm) importConfirm.textContent = tr(summary.mode === 'replace' ? 'importConfirmReplace' : 'importConfirmMerge');
+  }
+  function importRequest(preview) {
+    var action = new URL(importForm.getAttribute('action'), window.location.origin);
+    var payload = new FormData(importForm);
+    payload.set('dryRun', preview ? 'true' : 'false');
+    return fetch(action.pathname + action.search, {
+      method: 'POST', body: payload,
+      headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
+    }).then(function(response) {
+      return response.json().catch(function() { return {}; }).then(function(body) {
+        if (!response.ok) {
+          var error = new Error(body.message || tr('importTitle'));
+          error.operationId = body.operationId || response.headers.get('X-Request-ID');
+          throw error;
+        }
+        return body;
+      });
+    });
+  }
+  if (importMode) {
+    importMode.addEventListener('change', updateImportModeHint);
+    updateImportModeHint();
+  }
   if (importForm && importInput) importForm.addEventListener('submit', function(event) {
     event.preventDefault();
     if (!importInput.files.length) return;
-    var action = new URL(importForm.getAttribute('action'), window.location.origin);
     var submitButton = event.submitter;
     if (submitButton) submitButton.disabled = true;
-    fetch(action.pathname + action.search, {
-      method: 'POST', body: new FormData(document.getElementById('import_form')),
-      headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
-    }).then(function(response) {
-      if (response.ok) {
-        closeImportModal(function() {
-          // A fetch follows the server redirect without navigating the document.
-          // Reload explicitly so the imported database is rendered immediately.
-          window.location.reload();
-        });
-      }
-      else return response.json().catch(function() { return {}; }).then(function(body) {
-        closeImportModal(function() {
-          errorMessageBox(body.message || tr('importTitle'), body.operationId || response.headers.get('X-Request-ID'));
-        });
-      });
-    }).catch(function() {
-      closeImportModal(function() { errorMessageBox(tr('importTitle')); });
+    importRequest(true).then(function(summary) {
+      renderImportPreview(summary);
+      closeImportModal(function() { getModal('import-preview-modal').show(); });
+    }).catch(function(error) {
+      closeImportModal(function() { errorMessageBox(error.message, error.operationId); });
     }).finally(function() {
       if (submitButton) submitButton.disabled = false;
+    });
+  });
+  if (importConfirm) importConfirm.addEventListener('click', function() {
+    importConfirm.disabled = true;
+    importRequest(false).then(function() {
+      getModal('import-preview-modal').hide();
+      window.location.reload();
+    }).catch(function(error) {
+      getModal('import-preview-modal').hide();
+      errorMessageBox(error.message, error.operationId);
+    }).finally(function() {
+      importConfirm.disabled = false;
     });
   });
 }

@@ -572,6 +572,96 @@ exports.normalise_database = (temporaryFile, callback) => {
   });
 };
 
+function importFingerprint(job) {
+  return JSON.stringify([
+    String(job.name || '').trim(),
+    String(job.command || '').trim(),
+    String(job.schedule || '').trim(),
+  ]);
+}
+
+function importName(job) {
+  return String(job.name || '').trim().toLocaleLowerCase('en-US');
+}
+
+function buildImportPlan(importedJobs, existingJobs, mode) {
+  if (!['merge', 'replace'].includes(mode)) throw new Error('Invalid import mode');
+
+  if (mode === 'replace') {
+    return {
+      jobs: importedJobs,
+      summary: {
+        mode,
+        existing: existingJobs.length,
+        incoming: importedJobs.length,
+        added: importedJobs.length,
+        skipped: 0,
+        conflicts: 0,
+        replaced: existingJobs.length,
+      },
+    };
+  }
+
+  const existingFingerprints = new Set(existingJobs.map(importFingerprint));
+  const existingNames = new Set(existingJobs.map(importName).filter(Boolean));
+  const incomingFingerprints = new Set();
+  const additions = [];
+  let skipped = 0;
+  let conflicts = 0;
+
+  for (const job of importedJobs) {
+    const fingerprint = importFingerprint(job);
+    if (existingFingerprints.has(fingerprint) || incomingFingerprints.has(fingerprint)) {
+      skipped += 1;
+      continue;
+    }
+    const name = importName(job);
+    if (name && existingNames.has(name)) conflicts += 1;
+    incomingFingerprints.add(fingerprint);
+    additions.push(job);
+  }
+
+  return {
+    jobs: existingJobs.concat(additions),
+    summary: {
+      mode,
+      existing: existingJobs.length,
+      incoming: importedJobs.length,
+      added: additions.length,
+      skipped,
+      conflicts,
+      replaced: 0,
+    },
+  };
+}
+
+function readImportPlan(temporaryFile, mode) {
+  return buildImportPlan(readJobsFromFile(temporaryFile), db.getAllData(), mode);
+}
+
+exports.inspect_import = (temporaryFile, mode, callback = () => {}) => {
+  setImmediate(() => {
+    try {
+      callback(null, readImportPlan(temporaryFile, mode).summary);
+    } catch (error) {
+      callback(error);
+    }
+  });
+};
+
+exports.apply_import = (temporaryFile, mode, callback = () => {}) => withDatabaseLock((done) => {
+  let plan;
+  try {
+    plan = readImportPlan(temporaryFile, mode);
+    if (mode === 'merge') createDatabaseFile(temporaryFile, plan.jobs);
+  } catch (error) {
+    return done(error);
+  }
+  return replaceDatabase(temporaryFile, (error) => done(error, plan.summary));
+}, callback);
+
+exports._build_import_plan = buildImportPlan;
+
 function replaceDatabase(temporaryFile, done) {
   validateDatabaseFile(temporaryFile, (validationError) => {
     if (validationError) {
@@ -616,14 +706,17 @@ function replaceDatabase(temporaryFile, done) {
         } catch (closeError) {
           return reopen(closeError);
         }
-        return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
-          if (replaceError) return restoreRollback(replaceError);
-          try {
-            db.open();
-          } catch (openError) {
-            return restoreRollback(openError);
-          }
-          return fs.rm(rollbackFile, { force: true }, () => done(null));
+        return fs.rename(crontabDbFile, rollbackFile, (snapshotError) => {
+          if (snapshotError) return reopen(snapshotError);
+          return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
+            if (replaceError) return restoreRollback(replaceError);
+            try {
+              db.open();
+            } catch (openError) {
+              return restoreRollback(openError);
+            }
+            return fs.rm(rollbackFile, { force: true }, () => done(null));
+          });
         });
       });
     });

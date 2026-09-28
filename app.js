@@ -388,8 +388,19 @@ app.post(routes.import, requireRole('admin'), auditOperation('import_database'),
   let parsingFinished = false;
   let processing = false;
   let settled = false;
+  let uploadOutput = null;
+  let importMode = 'merge';
+  let dryRun = false;
+  const receivedFields = new Set();
 
-  const cleanupTemporary = (callback = () => {}) => fs.rm(temporaryFile, { force: true }, callback);
+  const cleanupTemporary = (callback = () => {}) => {
+    if (uploadOutput && !uploadOutput.closed && !uploadOutput.destroyed) {
+      uploadOutput.once('close', () => fs.rm(temporaryFile, { force: true }, callback));
+      uploadOutput.destroy();
+      return;
+    }
+    fs.rm(temporaryFile, { force: true }, callback);
+  };
   const fail = (error, statusCode) => {
     if (settled) return;
     settled = true;
@@ -398,19 +409,25 @@ app.post(routes.import, requireRole('admin'), auditOperation('import_database'),
       else next(error);
     });
   };
-  const succeed = () => {
+  const succeed = (summary) => {
     if (settled) return;
     settled = true;
-    res.redirect(routes.root);
+    cleanupTemporary(() => res.status(200).json(summary));
   };
   const processUpload = () => {
     if (settled || processing || !uploaded || !uploadWritten || !parsingFinished) return;
     processing = true;
     crontab.normalise_database(temporaryFile, (normaliseError) => {
       if (normaliseError) return fail(normaliseError);
-      return crontab.replace_database(temporaryFile, (replaceError) => {
-        if (replaceError) return fail(replaceError);
-        return succeed();
+      if (dryRun) {
+        return crontab.inspect_import(temporaryFile, importMode, (inspectError, summary) => {
+          if (inspectError) return fail(inspectError);
+          return succeed({ preview: true, ...summary });
+        });
+      }
+      return crontab.apply_import(temporaryFile, importMode, (applyError, summary) => {
+        if (applyError) return fail(applyError);
+        return succeed({ preview: false, ...summary });
       });
     });
   };
@@ -438,6 +455,7 @@ app.post(routes.import, requireRole('admin'), auditOperation('import_database'),
     }
     uploaded = true;
     const output = fs.createWriteStream(temporaryFile, { flags: 'wx' });
+    uploadOutput = output;
     file.pipe(output);
     file.once('limit', () => {
       output.destroy();
@@ -453,6 +471,20 @@ app.post(routes.import, requireRole('admin'), auditOperation('import_database'),
     parsingFinished = true;
     if (!uploaded) return fail(new Error('A database file is required'), 400);
     return processUpload();
+  });
+  req.busboy.on('field', (fieldName, value) => {
+    if (settled) return;
+    if (receivedFields.has(fieldName)) return fail(new Error('Invalid import options'), 400);
+    receivedFields.add(fieldName);
+    if (fieldName === 'mode' && ['merge', 'replace'].includes(value)) {
+      importMode = value;
+      return;
+    }
+    if (fieldName === 'dryRun' && (value === 'true' || value === 'false')) {
+      dryRun = value === 'true';
+      return;
+    }
+    return fail(new Error('Invalid import options'), 400);
   });
   req.busboy.once('filesLimit', () => fail(new Error('A single .db import file is required'), 400));
   req.busboy.once('error', (error) => fail(error));
