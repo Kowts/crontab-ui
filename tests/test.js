@@ -36,7 +36,7 @@ const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
-const { schedulerEnvironment } = require('../scheduler');
+const { createReloadCoordinator, schedulerEnvironment } = require('../scheduler');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
@@ -991,6 +991,34 @@ describe('Task execution environment isolation', () => {
   });
 });
 
+describe('Docker scheduler reload confirmation', () => {
+  it('does not confirm a newer schedule from a delayed read acknowledgement for the previous schedule', () => {
+    let digest = 'initial';
+    const acknowledgements = [];
+    const signals = [];
+    const coordinator = createReloadCoordinator({
+      cronFile: '/scheduler/node',
+      scheduler: { kill: (signal) => signals.push(signal) },
+      readDigest: () => digest,
+      writeState: (_file, acknowledgedDigest) => acknowledgements.push(acknowledgedDigest),
+    });
+
+    coordinator.confirmCrontabRead();
+    digest = 'schedule-a';
+    coordinator.recordFileChange();
+    digest = 'schedule-b';
+    coordinator.recordFileChange();
+
+    // The first delayed acknowledgement belongs to schedule A, not the current file B.
+    coordinator.confirmCrontabRead();
+    expect(acknowledgements).toEqual(['initial', 'schedule-a']);
+    expect(signals).toEqual(['SIGUSR2', 'SIGUSR2']);
+
+    coordinator.confirmCrontabRead();
+    expect(acknowledgements).toEqual(['initial', 'schedule-a', 'schedule-b']);
+  });
+});
+
 describe('RBAC middleware', () => {
   const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
 
@@ -1313,6 +1341,54 @@ describe('External basic authentication middleware', () => {
     const allowed = await request(protectedApp).get('/protected').auth('reviewer', 'strong-secret');
     expect(allowed.status).toBe(200);
     expect(allowed.body.user).toBe('reviewer');
+  });
+});
+
+describe('Review and publish HTTP flow', () => {
+  const originalEnvironment = process.env.NODE_ENV;
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+
+  afterAll(() => {
+    if (originalEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalEnvironment;
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  it('requires authenticated admin CSRF confirmation before publishing from the review action', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ admin: 'review-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin' });
+    const originalSetCrontab = crontab.set_crontab;
+    let publishedEnvironment;
+    crontab.set_crontab = (environment, callback) => {
+      publishedEnvironment = environment;
+      callback(null);
+    };
+
+    try {
+      const protectedApp = app.createApp();
+      const page = await request(protectedApp).get('/').auth('admin', 'review-secret');
+      const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+      const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+
+      const rejected = await request(protectedApp).post('/crontab')
+        .auth('admin', 'review-secret').send({ env_vars: 'PATH=/usr/bin' });
+      expect(rejected.status).toBe(403);
+
+      const published = await request(protectedApp).post('/crontab')
+        .auth('admin', 'review-secret')
+        .set('Cookie', cookie)
+        .set('X-CSRF-Token', token)
+        .send({ env_vars: 'PATH=/usr/bin' });
+      expect(published.status).toBe(200);
+      expect(publishedEnvironment).toEqual({ PATH: '/usr/bin' });
+    } finally {
+      crontab.set_crontab = originalSetCrontab;
+    }
   });
 });
 
