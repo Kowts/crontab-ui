@@ -166,6 +166,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `CRON_DB_PATH` | Persistent directory for the SQLite database (`crontab.db`), backups, environment, audit log, and execution output. Default: `./crontabs`. |
 | `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. Default: `$CRON_DB_PATH/crontab-staging`. |
 | `CRON_USER` | Scheduler account when `CRON_IN_DOCKER` is enabled. The image fixes this to `node`; do not set it to `root`. |
+| `SCHEDULER_RELOAD_TIMEOUT_MS` | Maximum wait for Supercronic to validate and acknowledge a published Docker schedule. Default: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
@@ -220,6 +221,7 @@ Arbitrary hooks are not supported. For post-processing, use an explicit, reviewe
 3. Run `npm run lint`, `npm test`, `npm run test:coverage`, and `npm audit --omit=dev --audit-level=high`.
 4. Perform a restore test in an isolated instance and confirm backup and log retention.
 5. Build and run the Docker image on the target platform, verifying scheduler execution as `node` and the persistent volume.
+6. Run `npm run test:docker-scheduler` on a Docker-capable runner; it publishes a task through the application, verifies Supercronic reload acknowledgement, and asserts the scheduled task runs as `node`.
 
 ## Resources
 

@@ -166,6 +166,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `CRON_DB_PATH` | Diretório persistente para a base SQLite (`crontab.db`), backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. |
 | `CRON_PATH` | Diretório de staging do crontab. Deve ser acessível apenas ao processo da aplicação e ao mecanismo de agendamento isolado. Predefinição: `$CRON_DB_PATH/crontab-staging`. |
 | `CRON_USER` | Conta do agendador quando `CRON_IN_DOCKER` está ativo. A imagem fixa-a em `node`; não a defina como `root`. |
+| `SCHEDULER_RELOAD_TIMEOUT_MS` | Tempo máximo de espera para o Supercronic validar e confirmar a recarga de uma agenda Docker publicada. Predefinição: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
 | `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
 | `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |
@@ -220,6 +221,7 @@ Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa
 3. Execute `npm run lint`, `npm test`, `npm run test:coverage` e `npm audit --omit=dev --audit-level=high`.
 4. Execute um restauro de teste numa instância isolada e confirme a retenção de backups e logs.
 5. Faça build e execução reais da imagem Docker na plataforma alvo, verificando a execução do agendador como `node` e o volume persistente.
+6. Execute `npm run test:docker-scheduler` num runner com Docker; publica uma tarefa pela aplicação, verifica a confirmação de recarga do Supercronic e comprova que a tarefa agendada corre como `node`.
 
 ## Recursos
 

@@ -75,12 +75,66 @@ function applySystemCrontab(filePath, callback) {
   }, callback);
 }
 
+function isDockerScheduler() {
+  return process.env.CRON_IN_DOCKER !== undefined;
+}
+
+function schedulerReloadStateFile(filePath) {
+  return `${filePath}.reload.json`;
+}
+
+function fileDigest(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function waitForSchedulerReload(filePath, expectedDigest, callback) {
+  const timeoutMs = Number(process.env.SCHEDULER_RELOAD_TIMEOUT_MS || 10000);
+  const startedAt = Date.now();
+  const stateFile = schedulerReloadStateFile(filePath);
+  const poll = () => {
+    try {
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      if (state.digest === expectedDigest) return callback(null);
+    } catch (_error) {
+      // The scheduler writes this state atomically; absence means it has not reloaded yet.
+    }
+    if (Date.now() - startedAt >= timeoutMs) {
+      return callback(new Error(`Scheduler did not confirm reloading ${path.basename(filePath)} within ${timeoutMs}ms`));
+    }
+    return setTimeout(poll, 50);
+  };
+  poll();
+}
+
+function applyDockerCrontab(filePath, callback) {
+  return execFile('supercronic', ['-test', filePath], {
+    timeout: commandTimeoutMs,
+    maxBuffer: commandMaxBuffer,
+    windowsHide: true,
+  }, (validationError) => {
+    if (validationError) return callback(validationError);
+    let digest;
+    try {
+      digest = fileDigest(filePath);
+    } catch (error) {
+      return callback(error);
+    }
+    return waitForSchedulerReload(filePath, digest, callback);
+  });
+}
+
+function applyManagedCrontab(filePath, callback) {
+  return isDockerScheduler() ? applyDockerCrontab(filePath, callback) : applySystemCrontab(filePath, callback);
+}
+
 exports.db_folder = dbFolder;
 exports.log_folder = logFolder;
 exports.output_folder = logFolder;
 exports.audit_file = auditFile;
 exports.env_file = envFile;
 exports.crontab_db_file = crontabDbFile;
+exports.apply_docker_crontab = applyDockerCrontab;
+exports.scheduler_reload_state_file = schedulerReloadStateFile;
 
 exports.create_new = (name, command, schedule, logging, mailing, ownership = {}, callback = () => {}) => {
   const tab = buildCrontab(name, command, schedule, false, logging, mailing, ownership);
@@ -405,7 +459,7 @@ function setCrontab(environment, callback, applyCrontab) {
   });
 }
 
-exports.set_crontab = (environment, callback = () => {}, applyCrontab = applySystemCrontab) => withDatabaseLock(
+exports.set_crontab = (environment, callback = () => {}, applyCrontab = applyManagedCrontab) => withDatabaseLock(
   (done) => setCrontab(environment, done, applyCrontab),
   callback
 );
@@ -432,7 +486,7 @@ exports.get_backup_names = () => {
 };
 
 function writeAtomicFile(destination, contents, callback) {
-  const temporaryFile = path.join(dbFolder, `.${path.basename(destination)}.${crypto.randomUUID()}.tmp`);
+  const temporaryFile = path.join(path.dirname(destination), `.${path.basename(destination)}.${crypto.randomUUID()}.tmp`);
   fs.open(temporaryFile, 'wx', 0o600, (openError, descriptor) => {
     if (openError) return callback(openError);
     return fs.writeFile(descriptor, contents, (writeError) => {
