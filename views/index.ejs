@@ -28,7 +28,7 @@
 <% const isAdmin = currentRole === 'admin'; %>
 <% const jobs = JSON.parse(crontabs); %>
 <% const hasJobs = jobs.length > 0; %>
-<% const hasUnsavedChanges = jobs.some(function(job) { return !job.saved; }); %>
+<% const hasUnsavedChanges = jobs.some(function(job) { return !job.saved || job.needsPublishReview; }); %>
 <% function accessLabel(job) { if (job.permissions.write) return 'manageAndRun'; if (job.permissions.execute) return 'runOnly'; return 'viewOnly'; } %>
 <%- include('navbar.ejs') -%>
 
@@ -102,7 +102,7 @@
                 <strong><%= crontab.name || crontab._id %></strong>
                 <div class="job-meta">
                   <% if (crontab.stopped) { %><span class="job-state job-state-stopped" data-job-schedule-state><i class="bi bi-stop-circle-fill" aria-hidden="true"></i><%= t('disabled') %></span><% } %>
-                  <% if (crontab.saved) { %><span class="job-state job-state-published"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><%= t('publishedToService') %></span><% } else { %><span class="job-state job-state-local"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i><%= t('localOnly') %></span><% } %>
+                  <% if (crontab.saved && !crontab.needsPublishReview) { %><span class="job-state job-state-published"><i class="bi bi-check-circle-fill" aria-hidden="true"></i><%= t('publishedToService') %></span><% } else { %><span class="job-state job-state-local"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i><%= t('localOnly') %></span><% } %>
                 </div>
               </td>
               <td><code><%= crontab.command %></code></td>

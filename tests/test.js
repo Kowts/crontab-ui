@@ -719,6 +719,31 @@ describe('Crontab UI', () => {
       const page = await request(app).get('/');
       expect(page.text).toContain('recovery-job');
     });
+
+    it('preserves task identity and ownership, but requires publication review after restoration', async () => {
+      const suffix = crypto.randomUUID();
+      const created = await new Promise((resolve, reject) => crontab.create_new(
+        `recovery-metadata-${suffix}`, `echo recovery-metadata-${suffix}`, '* * * * *', false, {},
+        { owner: 'restore-owner', createdBy: 'restore-creator' },
+        (error, job) => (error ? reject(error) : resolve(job))
+      ));
+      await new Promise((resolve, reject) => crontab.set_crontab({}, (error) => (error ? reject(error) : resolve()), (_file, callback) => callback(null)));
+      const beforeBackup = await new Promise((resolve) => crontab.get_crontab(created._id, resolve));
+      expect(beforeBackup.saved).toBe(true);
+
+      await new Promise((resolve, reject) => crontab.backup((error) => (error ? reject(error) : resolve())));
+      const backup = fs.readdirSync(testDbPath).filter((file) => file.startsWith('backup-')).sort().at(-1);
+      await new Promise((resolve, reject) => crontab.remove(created._id, (error) => (error ? reject(error) : resolve())));
+      await new Promise((resolve, reject) => crontab.restore(backup, (error) => (error ? reject(error) : resolve())));
+
+      const restored = await new Promise((resolve) => crontab.get_crontab(created._id, resolve));
+      expect(restored).toMatchObject({
+        _id: created._id, owner: 'restore-owner', createdBy: 'restore-creator', saved: true, needsPublishReview: true,
+      });
+      const page = await request(app).get('/');
+      expect(page.text).toContain('"needsPublishReview":true');
+      expect(page.text).toContain('Review and publish');
+    });
   });
 });
 

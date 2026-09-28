@@ -350,7 +350,7 @@ function restoreFile(filePath, contents, existed, callback) {
 
 function markPublished(ids, callback) {
   if (!ids.length) return callback(null);
-  return db.update({ _id: { $in: ids } }, { $set: { saved: true } }, { multi: true }, callback);
+  return db.update({ _id: { $in: ids } }, { $set: { saved: true, needsPublishReview: false } }, { multi: true }, callback);
 }
 
 function setCrontab(environment, callback, applyCrontab) {
@@ -499,7 +499,7 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function validateImportedJob(document) {
+function validateImportedJob(document, { preserveMetadata = false } = {}) {
   if (!isPlainObject(document)) throw new Error('Imported record must be an object');
   for (const key of Object.keys(document)) {
     if (['__proto__', 'constructor', 'prototype'].includes(key)) {
@@ -507,7 +507,7 @@ function validateImportedJob(document) {
     }
   }
 
-  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook', 'owner', 'createdBy']);
+  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook', 'owner', 'createdBy', 'needsPublishReview']);
   for (const key of Object.keys(document)) {
     if (!accepted.has(key)) throw new Error(`Unsupported imported field: ${key}`);
   }
@@ -540,7 +540,7 @@ function validateImportedJob(document) {
     }
   }
 
-  return {
+  const normalised = {
     name: document.name,
     command: document.command,
     schedule: document.schedule,
@@ -551,16 +551,46 @@ function validateImportedJob(document) {
     saved: false,
     timestamp: new Date().toString(),
   };
+
+  if (!preserveMetadata) return normalised;
+  if (typeof document._id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(document._id)) {
+    throw new Error('Restored job has an invalid id');
+  }
+  for (const field of ['owner', 'createdBy']) {
+    if (document[field] !== undefined && (typeof document[field] !== 'string' || document[field].length > 128 || /[\r\n]/.test(document[field]))) {
+      throw new Error(`Restored job has an invalid ${field}`);
+    }
+  }
+  if (document.saved !== undefined && typeof document.saved !== 'boolean') throw new Error('Restored job has an invalid saved state');
+  if (document.created !== undefined && (!Number.isSafeInteger(document.created) || document.created < 0)) {
+    throw new Error('Restored job has an invalid created timestamp');
+  }
+  if (document.timestamp !== undefined && (typeof document.timestamp !== 'string' || document.timestamp.length > 256 || /[\r\n]/.test(document.timestamp))) {
+    throw new Error('Restored job has an invalid timestamp');
+  }
+
+  return {
+    ...normalised,
+    _id: document._id,
+    saved: document.saved === true,
+    // The backup describes a prior publication, not the scheduler currently
+    // installed on this host. Force an explicit review before trusting it.
+    needsPublishReview: true,
+    ...(document.owner ? { owner: document.owner } : {}),
+    ...(document.createdBy ? { createdBy: document.createdBy } : {}),
+    ...(Number.isSafeInteger(document.created) ? { created: document.created } : {}),
+    ...(document.timestamp ? { timestamp: document.timestamp } : {}),
+  };
 }
 
-exports.normalise_database = (temporaryFile, callback) => {
+exports.normalise_database = (temporaryFile, callback, options = {}) => {
   setImmediate(() => {
     const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
     try {
-      const jobs = readJobsFromFile(temporaryFile).map((document) => ({
-        ...validateImportedJob(document),
-        _id: crypto.randomUUID(),
-      }));
+      const jobs = readJobsFromFile(temporaryFile).map((document) => {
+        const job = validateImportedJob(document, options);
+        return options.preserveMetadata ? job : { ...job, _id: crypto.randomUUID() };
+      });
       createDatabaseFile(normalisedFile, jobs);
       fs.rmSync(temporaryFile, { force: true });
       fs.renameSync(normalisedFile, temporaryFile);
@@ -744,7 +774,7 @@ exports.restore = (dbName, callback = () => {}) => withDatabaseLock((done) => {
         if (error) fs.unlink(temporaryFile, () => {});
         done(error);
       });
-    });
+    }, { preserveMetadata: true });
   });
 }, callback);
 
