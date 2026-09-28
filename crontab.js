@@ -484,6 +484,10 @@ function withDatabaseLock(operation, callback) {
   });
 }
 
+function removeTemporaryFile(fileName, callback = () => {}) {
+  fs.rm(fileName, { force: true, maxRetries: 5, retryDelay: 100 }, callback);
+}
+
 exports.backup = (callback = () => {}) => withDatabaseLock(backupDatabase, callback);
 
 function validateDatabaseFile(fileName, callback) {
@@ -714,9 +718,12 @@ function replaceDatabase(temporaryFile, done) {
         if (process.platform === 'win32') {
           try {
             db.replaceDocuments(readJobsFromFile(temporaryFile));
-            return fs.rm(temporaryFile, { force: true }, (cleanupError) => done(cleanupError || null));
+            return removeTemporaryFile(temporaryFile, (cleanupError) => {
+              if (cleanupError) console.warn(`Unable to remove imported temporary database: ${cleanupError.message}`);
+              done(null);
+            });
           } catch (error) {
-            return fs.rm(temporaryFile, { force: true }, () => done(error));
+            return removeTemporaryFile(temporaryFile, () => done(error));
           }
         }
         const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
