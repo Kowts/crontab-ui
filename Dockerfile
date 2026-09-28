@@ -9,10 +9,10 @@ FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18
 
 ENV   CRON_PATH=/etc/crontabs
 RUN   mkdir -p "$CRON_PATH" \
-      && touch "$CRON_PATH/root" \
+      && touch "$CRON_PATH/node" \
       && chown -R node:node "$CRON_PATH" \
       && chmod 0700 "$CRON_PATH" \
-      && chmod 0600 "$CRON_PATH/root"
+      && chmod 0600 "$CRON_PATH/node"
 
 RUN   apk --no-cache add \
       curl \
@@ -32,6 +32,7 @@ RUN mkdir -p /crontab-ui/crontabs/logs && chown -R node:node /crontab-ui/crontab
 ENV   HOST=0.0.0.0
 ENV   PORT=8000
 ENV   CRON_IN_DOCKER=true
+ENV   CRON_USER=node
 ENV   NODE_ENV=production
 
 EXPOSE $PORT

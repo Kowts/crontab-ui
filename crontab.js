@@ -374,7 +374,11 @@ function setCrontab(environment, callback, applyCrontab) {
       }
     }
 
-    const fileName = process.env.CRON_IN_DOCKER !== undefined ? 'root' : 'crontab';
+    const dockerCronUser = process.env.CRON_USER || 'node';
+    if (process.env.CRON_IN_DOCKER !== undefined && !/^[a-z_][a-z0-9_-]{0,31}$/i.test(dockerCronUser)) {
+      return callback(new Error('CRON_USER is invalid'));
+    }
+    const fileName = process.env.CRON_IN_DOCKER !== undefined ? dockerCronUser : 'crontab';
     const crontabFile = path.join(cronPath, fileName);
     const previousCrontabExists = fs.existsSync(crontabFile);
     const previousCrontab = previousCrontabExists ? fs.readFileSync(crontabFile, 'utf8') : '';

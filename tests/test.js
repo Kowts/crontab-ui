@@ -787,6 +787,23 @@ describe('Crontab publication', () => {
     expect(jobs.find((job) => job.command === 'echo publication-concurrent').saved).toBe(false);
   });
 
+  it('writes the Docker scheduler file for the unprivileged configured user', async () => {
+    const previousDocker = process.env.CRON_IN_DOCKER;
+    const previousUser = process.env.CRON_USER;
+    process.env.CRON_IN_DOCKER = 'true';
+    process.env.CRON_USER = 'node';
+    let publishedFile;
+    try {
+      await publish({}, (file, callback) => { publishedFile = file; callback(null); });
+      expect(path.basename(publishedFile)).toBe('node');
+    } finally {
+      if (previousDocker === undefined) delete process.env.CRON_IN_DOCKER;
+      else process.env.CRON_IN_DOCKER = previousDocker;
+      if (previousUser === undefined) delete process.env.CRON_USER;
+      else process.env.CRON_USER = previousUser;
+    }
+  });
+
   it('restores the environment and staged crontab when applying it fails', async () => {
     const stagedCrontab = path.join(testDbPath, 'crontab');
     fs.writeFileSync(crontab.env_file, 'PATH=/before');

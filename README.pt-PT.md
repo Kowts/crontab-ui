@@ -127,6 +127,14 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 
 Não monte o diretório de crontab do anfitrião no contentor. Use exclusivamente o volume gerido `crontab-data`; montar o crontab do anfitrião concede à aplicação controlo sobre o agendamento do anfitrião e elimina o isolamento do contentor.
 
+A imagem executa o processo web, o `crond` e as tarefas agendadas com o utilizador não privilegiado `node`. O Supervisor permanece como PID 1 apenas para gerir esses processos. Depois de atualizar a imagem, valide a identidade efetiva com uma tarefa descartável como `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publique-a, aguarde pelo horário e execute:
+
+```bash
+docker compose --env-file .env.production exec crontab-ui sh -c 'ps -o user,pid,ppid,args; cat /crontab-ui/crontabs/logs/scheduled-identity.txt'
+```
+
+O output da tarefa agendada deve conter `uid=1000(node)` (ou o UID atribuído a `node` na imagem). Um endpoint HTTP saudável não comprova isolamento de privilégios do agendador.
+
 ## Autenticação e autorização
 
 Quando `HOST` não é loopback, a autenticação é obrigatória. Estão disponíveis duas alternativas:
@@ -155,6 +163,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `HOST`, `PORT`, `BASE_URL` | Escuta HTTP e prefixo público. Predefinições: `127.0.0.1`, `8000`, sem prefixo. |
 | `CRON_DB_PATH` | Diretório persistente para a base SQLite (`crontab.db`), backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. |
 | `CRON_PATH` | Diretório de staging do crontab. Deve ser acessível apenas ao processo da aplicação e ao mecanismo de agendamento isolado. Predefinição: `$CRON_DB_PATH/crontab-staging`. |
+| `CRON_USER` | Conta do agendador quando `CRON_IN_DOCKER` está ativo. A imagem fixa-a em `node`; não a defina como `root`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
 | `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
 | `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |

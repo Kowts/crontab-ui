@@ -127,6 +127,14 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 
 Do not mount the host crontab directory into the container. Use only the managed `crontab-data` volume; mounting the host crontab grants the application control over host scheduling and removes container isolation.
 
+The image runs the web process, `crond`, and scheduled tasks as the unprivileged `node` user. Supervisor remains PID 1 solely to manage those processes. After an image upgrade, verify the effective identity with a disposable task such as `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publish it, wait for the schedule, then run:
+
+```bash
+docker compose --env-file .env.production exec crontab-ui sh -c 'ps -o user,pid,ppid,args; cat /crontab-ui/crontabs/logs/scheduled-identity.txt'
+```
+
+The output for the scheduled task must contain `uid=1000(node)` (or the UID assigned to `node` in the image). Do not treat a healthy HTTP endpoint as evidence of scheduler privilege isolation.
+
 ## Authentication and authorization
 
 When `HOST` is not loopback, authentication is mandatory. Two alternatives are available:
@@ -155,6 +163,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `HOST`, `PORT`, `BASE_URL` | HTTP listener and public prefix. Defaults: `127.0.0.1`, `8000`, no prefix. |
 | `CRON_DB_PATH` | Persistent directory for the SQLite database (`crontab.db`), backups, environment, audit log, and execution output. Default: `./crontabs`. |
 | `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. Default: `$CRON_DB_PATH/crontab-staging`. |
+| `CRON_USER` | Scheduler account when `CRON_IN_DOCKER` is enabled. The image fixes this to `node`; do not set it to `root`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
