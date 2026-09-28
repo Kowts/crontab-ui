@@ -35,7 +35,7 @@ const { dictionaries, localeFromRequest, normalizeLocale, translate } = require(
 
 dayjs.extend(relativeTime);
 
-function createApp() {
+function createApp({ setCrontab = crontab.set_crontab } = {}) {
 const app = express();
 app.locals.baseURL = baseUrl;
 app.set('host', process.env.HOST || '127.0.0.1');
@@ -333,7 +333,7 @@ app.post(routes.cancel_run, requireRole('executor'), (req, res) => {
 });
 
 app.post(routes.crontab, requireRole('admin'), validateEnvironmentPayload, auditOperation('apply_crontab'), (req, res, next) => {
-  crontab.set_crontab(req.jobEnvironment, (err) => {
+  setCrontab(req.jobEnvironment, (err) => {
     if (err) next(err);
     else res.end();
   });

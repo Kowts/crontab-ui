@@ -1362,33 +1362,41 @@ describe('Review and publish HTTP flow', () => {
     process.env.NODE_ENV = 'development';
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ admin: 'review-secret' });
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin' });
-    const originalSetCrontab = crontab.set_crontab;
-    let publishedEnvironment;
-    crontab.set_crontab = (environment, callback) => {
-      publishedEnvironment = environment;
-      callback(null);
-    };
+    const suffix = crypto.randomUUID();
+    const job = await new Promise((resolve, reject) => crontab.create_new(
+      `http-publish-${suffix}`, `echo http-publish-${suffix}`, '* * * * *', false, {},
+      { owner: 'admin', createdBy: 'admin' }, (error, created) => (error ? reject(error) : resolve(created))
+    ));
+    let publishedFile;
+    const protectedApp = app.createApp({
+      setCrontab: (environment, callback) => crontab.set_crontab(environment, callback, (file, applied) => {
+        publishedFile = file;
+        applied(null);
+      }),
+    });
+    const page = await request(protectedApp).get('/').auth('admin', 'review-secret');
+    const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+    const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
 
-    try {
-      const protectedApp = app.createApp();
-      const page = await request(protectedApp).get('/').auth('admin', 'review-secret');
-      const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
-      const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+    const rejected = await request(protectedApp).post('/crontab')
+      .auth('admin', 'review-secret').send({ env_vars: 'PATH=/usr/bin' });
+    expect(rejected.status).toBe(403);
 
-      const rejected = await request(protectedApp).post('/crontab')
-        .auth('admin', 'review-secret').send({ env_vars: 'PATH=/usr/bin' });
-      expect(rejected.status).toBe(403);
+    const published = await request(protectedApp).post('/crontab')
+      .auth('admin', 'review-secret')
+      .set('Cookie', cookie)
+      .set('X-CSRF-Token', token)
+      .send({ env_vars: 'PATH=/usr/bin' });
+    expect(published.status).toBe(200);
+    expect(fs.readFileSync(publishedFile, 'utf8')).toContain(job._id);
 
-      const published = await request(protectedApp).post('/crontab')
-        .auth('admin', 'review-secret')
-        .set('Cookie', cookie)
-        .set('X-CSRF-Token', token)
-        .send({ env_vars: 'PATH=/usr/bin' });
-      expect(published.status).toBe(200);
-      expect(publishedEnvironment).toEqual({ PATH: '/usr/bin' });
-    } finally {
-      crontab.set_crontab = originalSetCrontab;
-    }
+    const persisted = await new Promise((resolve) => crontab.get_crontab(job._id, resolve));
+    expect(persisted).toMatchObject({ saved: true, needsPublishReview: false });
+    const operationId = published.headers['x-request-id'];
+    const auditEntries = fs.readFileSync(crontab.audit_file, 'utf8').trim().split('\n').map(JSON.parse);
+    expect(auditEntries).toContainEqual(expect.objectContaining({
+      operationId, operation: 'apply_crontab', actor: 'admin', outcome: 'completed', status: 200,
+    }));
   });
 });
 
