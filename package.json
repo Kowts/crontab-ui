@@ -5,6 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node bootstrap.js",
+    "start:env": "node --env-file=.env bootstrap.js",
+    "start:production": "node --env-file=.env.production bootstrap.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:docker-scheduler": "node scripts/test-docker-scheduler.js",

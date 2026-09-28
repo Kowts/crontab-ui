@@ -1,5 +1,11 @@
 # Crontab UI
 
+## Loading local environment files
+
+`npm start` deliberately does not load an environment file, preventing local development from accidentally using production credentials or transport settings.
+
+Use `npm run start:env` for `.env`, or `npm run start:production` for `.env.production`. `start:env` requires `.env` to exist.
+
 [English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
 <p align="center"><img src="public/images/crontab-ui.svg" width="112" alt="Crontab UI icon"></p>

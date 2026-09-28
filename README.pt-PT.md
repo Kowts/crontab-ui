@@ -1,5 +1,11 @@
 # Crontab UI
 
+## Carregar ficheiros de ambiente locais
+
+O comando `npm start` não carrega deliberadamente um ficheiro de ambiente, evitando que o desenvolvimento local utilize por engano credenciais ou definições de transporte de produção.
+
+Use `npm run start:env` para `.env` ou `npm run start:production` para `.env.production`. O comando `start:env` exige que `.env` exista.
+
 [English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
 <p align="center"><img src="public/images/crontab-ui.svg" width="112" alt="Ícone do Crontab UI"></p>
