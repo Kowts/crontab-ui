@@ -96,7 +96,7 @@
         </thead>
         <tbody>
           <% jobs.forEach(function(crontab, index){ %>
-            <tr data-job-row data-id="<%= crontab._id %>" class="<%= crontab.stopped ? 'table-light' : '' %>">
+            <tr data-job-row data-id="<%= crontab._id %>" class="<%= crontab.stopped ? 'job-row-stopped' : '' %>">
               <td><%= index + 1 %></td>
               <td>
                 <strong><%= crontab.name || crontab._id %></strong>

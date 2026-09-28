@@ -301,7 +301,7 @@ function updateJobStatus(_id, stopped) {
   crontabs.forEach(function(job) { if (job._id === _id) job.stopped = stopped; });
   var row = document.querySelector('[data-job-row][data-id="' + _id + '"]');
   if (!row) return;
-  row.classList.toggle('table-light', stopped);
+  row.classList.toggle('job-row-stopped', stopped);
   var button = row.querySelector('[data-toggle-job]');
   if (!button) return;
   button.dataset.action = stopped ? 'start' : 'stop';

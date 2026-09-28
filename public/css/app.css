@@ -48,7 +48,7 @@ body.app-body {
 .app-nav-icon-button:hover, .app-nav-icon-button:focus-visible { border-color: rgba(255,255,255,.7); color: #fff; background: rgba(255,255,255,.1); outline: 0; }
 .app-user::before { content: ""; display: inline-block; width: .45rem; height: .45rem; margin-right: .55rem; border-radius: 50%; background: #d5e4ff; vertical-align: middle; }
 
-.app-shell { max-width: 1600px; margin: 0 auto; padding: 2.25rem clamp(1.5rem, 3vw, 3rem) 3rem; }
+.app-shell { max-width: 1800px; margin: 0 auto; padding: 2.25rem clamp(1.5rem, 2.5vw, 2.75rem) 3rem; }
 .breadcrumb-lite { margin-bottom: .55rem; color: var(--app-muted); font-size: .85rem; }
 .breadcrumb-lite span { margin: 0 .45rem; opacity: .55; }
 .page-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; margin-bottom: 2.5rem; }
@@ -86,6 +86,9 @@ body.app-body {
 .job-state-published { color: #08775a; background: #e4f8f0; }
 .job-state-local { color: #9b6100; background: #fff3db; }
 .job-state-stopped { color: #5a687b; background: #e8edf4; }
+.job-row-stopped > * { color: #4b5d75; background: #f1f5f9 !important; }
+.job-row-stopped code { color: #526783; }
+.job-row-stopped .text-muted { color: #62748d !important; }
 .job-access { display: inline-flex; align-items: center; gap: .38rem; color: var(--app-ink); font-size: .84rem; font-weight: 650; }
 .btn-run, .btn-schedule-disable, .btn-schedule-enable, .btn-log-stderr, .btn-log-stdout { border-width: 1px; }
 .btn-run { color: #08775a; border-color: #59b99e; background: #f1fcf8; }
@@ -152,7 +155,10 @@ body.app-body {
 :root[data-theme="dark"] .jobs-footer, :root[data-theme="dark"] .app-card table.dataTable, :root[data-theme="dark"] .app-card .table > :not(caption) > * > * { border-color: var(--app-border); }
 :root[data-theme="dark"] .app-card .table { --bs-table-bg: var(--app-surface); --bs-table-color: var(--app-ink); --bs-table-striped-color: var(--app-ink); --bs-table-striped-bg: #1d2a40; --bs-table-hover-color: #fff; --bs-table-hover-bg: #24344d; }
 :root[data-theme="dark"] .app-card .table thead th { color: #bdc9da; }
-:root[data-theme="dark"] .job-state-stopped { color: #c4cfde; background: #2b384c; }
+:root[data-theme="dark"] .job-row-stopped > * { color: #d4deed; background: #1b2a40 !important; }
+:root[data-theme="dark"] .job-row-stopped code { color: #b8c9e5; }
+:root[data-theme="dark"] .job-row-stopped .text-muted { color: #b6c4d8 !important; }
+:root[data-theme="dark"] .job-state-stopped { color: #d6e0ee; background: #31445f; }
 :root[data-theme="dark"] .btn-run { color: #76dfbe; border-color: #327d69; background: #132f2b; }
 :root[data-theme="dark"] .btn-schedule-disable { color: #ffabb4; border-color: #87505a; background: #381f27; }
 :root[data-theme="dark"] .btn-schedule-enable { color: #a9c6ff; border-color: #4d6c9f; background: #182a46; }
