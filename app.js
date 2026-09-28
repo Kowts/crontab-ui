@@ -95,7 +95,7 @@ app.use((req, res, next) => {
   });
   next();
 });
-const authEnabled = setupAuth(app);
+const authEnabled = Boolean(authenticatedUsers());
 app.locals.authEnabled = authEnabled;
 if (authEnabled) validateRoleAssignments(authenticatedUsers(), configuredRoles());
 if (process.env.NODE_ENV === 'production' && !process.env.CSRF_SECRET) {
@@ -160,6 +160,10 @@ app.use(rateLimit({
   legacyHeaders: false,
 }));
 
+// Authentication is installed after static assets and CSRF protection so the
+// sign-in page can load its local styling and safely submit credentials.
+setupAuth(app, { baseUrl });
+
 // --- Routes ---
 
 function commandFingerprint(command) {
@@ -215,6 +219,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       canExecuteTasks: canExecuteTasks(req),
       dayjs,
       messages: serializeForHtml(dictionaries[res.locals.locale]),
+      csrfToken: req.csrfToken || '',
     });
   });
 });

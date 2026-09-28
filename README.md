@@ -139,12 +139,12 @@ Compose drops every Linux capability, then adds only `SETUID` and `SETGID` so Su
 
 ## Authentication and authorization
 
-When `HOST` is not loopback, authentication is mandatory. Two alternatives are available:
+When `HOST` is not loopback, authentication is mandatory. The web interface uses a secure, signed `HttpOnly` session cookie, so users can sign out from the navigation bar. Two credential configuration alternatives are available:
 
 - `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` for a single user;
 - `BASIC_AUTH_USERS_JSON` for a map of multiple users.
 
-When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`.
+When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently.
 
 | Role | Capabilities |
 | --- | --- |
@@ -171,6 +171,8 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
 | `CSRF_SECRET` | Persistent secret required in production. |
+| `AUTH_SESSION_SECRET` | Optional persistent session-signing secret; defaults to `CSRF_SECRET`. |
+| `AUTH_SESSION_TTL_MS` | Session lifetime in milliseconds; defaults to 8 hours (minimum 1 minute, maximum 7 days). |
 | `SSL_CERT`, `SSL_KEY` | Native TLS; both must be defined together. |
 | `TRUSTED_PROXY` | Address, CIDR, or Express proxy alias for the trusted HTTPS proxy. |
 | `CRONTAB_UI_NETWORK` | Name of the Docker network shared with the proxy. Compose default: `crontab-ui-internal`. |

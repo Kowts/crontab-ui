@@ -2,6 +2,7 @@
 
 const dictionaries = {
   en: {
+    logout: 'Sign out', signIn: 'Sign in', signInDescription: 'Enter your account credentials to manage scheduled tasks.', username: 'Username', password: 'Password',
     pageTitle: 'Crontab UI — Scheduled tasks',
     administration: 'Administration',
     scheduledTasks: 'Scheduled tasks',
@@ -24,7 +25,7 @@ const dictionaries = {
     name: 'Name', command: 'Command', schedule: 'Schedule', access: 'Access', lastModified: 'Last modified',
     published: 'Published', unpublishedChanges: 'Unpublished changes', publishedToService: 'Published to service crontab', localOnly: 'Local change — not published',
     owner: 'Owner', adminOnly: 'Administrator only', manageAndRun: 'Can manage and run', runOnly: 'Can run', viewOnly: 'View only', localChangesHint: 'Saving changes locally does not publish them to the service crontab.',
-    run: 'Run', pause: 'Pause', enable: 'Enable', runNow: 'Run now without publishing', disableSchedule: 'Disable scheduled task', enableSchedule: 'Enable scheduled task', stopExecution: 'Stop execution', duplicate: 'Duplicate', delete: 'Delete', viewErrorLog: 'View error log', viewOutputLog: 'View standard output log', reviewAndPublish: 'Review and publish',
+    run: 'Run', pause: 'Disable', enable: 'Enable', runNow: 'Run now without publishing', disableSchedule: 'Disable scheduled task', enableSchedule: 'Enable scheduled task', stopExecution: 'Stop execution', duplicate: 'Duplicate', delete: 'Delete', viewErrorLog: 'View error log', viewOutputLog: 'View standard output log', reviewAndPublish: 'Review and publish',
     noTasks: 'There are no tasks yet',
     noTasksDescription: 'Create the first task or import an existing configuration. You can review changes before publishing them to crontab.',
     createFirstTask: 'Create first task',
@@ -56,6 +57,7 @@ const dictionaries = {
     dataSearch: 'Search tasks', dataPerPage: '_MENU_ per page', dataInfo: 'Showing _START_–_END_ of _TOTAL_ tasks', dataInfoEmpty: 'No tasks', dataZero: 'No tasks found',
   },
   pt: {
+    logout: 'Terminar sessão', signIn: 'Iniciar sessão', signInDescription: 'Introduza as credenciais da sua conta para gerir as tarefas agendadas.', username: 'Utilizador', password: 'Palavra-passe',
     pageTitle: 'Crontab UI — Tarefas agendadas',
     administration: 'Administração', scheduledTasks: 'Tarefas agendadas', manageDescription: 'Gere os comandos, horários e a publicação no crontab.', newTaskDescription: 'Defina o comando e quando deve ser executado.', previewCrontab: 'Pré-visualizar crontab', newTask: 'Nova tarefa',
     environmentVariables: 'Variáveis de ambiente', edit: 'Editar', done: 'Concluído', environmentPlaceholder: '# Defina PATH, MAILTO e outras variáveis necessárias…', environmentEmpty: 'Não existem variáveis de ambiente definidas.',
@@ -75,6 +77,11 @@ const dictionaries = {
     dataSearch: 'Pesquisar tarefas', dataPerPage: '_MENU_ por página', dataInfo: 'A mostrar _START_–_END_ de _TOTAL_ tarefas', dataInfoEmpty: 'Sem tarefas', dataZero: 'Não foram encontradas tarefas',
   },
 };
+
+// Keep the label aligned with the scheduled-task state: this action disables
+// publication of the task rather than merely pausing a running process.
+dictionaries.en.pause = 'Disable';
+dictionaries.pt.pause = 'Desativar';
 
 function normalizeLocale(value) {
   return value === 'pt' || value === 'pt-PT' ? 'pt' : 'en';

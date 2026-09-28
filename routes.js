@@ -24,6 +24,8 @@ const routes = {
   stdout: '/stdout',
   preview_crontab: '/preview_crontab',
   locale: '/locale',
+  login: '/login',
+  logout: '/logout',
 };
 
 exports.base_url = baseUrl;

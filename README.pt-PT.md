@@ -144,7 +144,7 @@ Quando `HOST` não é loopback, a autenticação é obrigatória. Estão dispon�
 - `BASIC_AUTH_USER` e `BASIC_AUTH_PWD`, para um único utilizador;
 - `BASIC_AUTH_USERS_JSON`, para um mapa de vários utilizadores.
 
-Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`.
+Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente.
 
 | Papel | Capacidades |
 | --- | --- |
@@ -171,6 +171,8 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
 | `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |
 | `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
+| `AUTH_SESSION_SECRET` | Segredo persistente opcional para assinar sessões; por omissão usa `CSRF_SECRET`. |
+| `AUTH_SESSION_TTL_MS` | Duração da sessão em milissegundos; por omissão 8 horas (mínimo 1 minuto, máximo 7 dias). |
 | `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
 | `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
 | `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |

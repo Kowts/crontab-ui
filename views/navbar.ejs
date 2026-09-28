@@ -40,6 +40,14 @@
           <option value="pt" <%= locale === 'pt' ? 'selected' : '' %>>Português</option>
         </select>
         <div class="app-user text-capitalize"><%= t(displayRole) %></div>
+        <% if (authEnabled) { %>
+          <form method="post" action="<%= JSON.parse(routes).logout %>" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="app-nav-icon-button" aria-label="<%= t('logout') %>" title="<%= t('logout') %>">
+              <i class="bi bi-box-arrow-right" aria-hidden="true"></i>
+            </button>
+          </form>
+        <% } %>
       </div>
     </div>
   </div>

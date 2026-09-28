@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="<%= locale === 'pt' ? 'pt-PT' : 'en' %>">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= t('signIn') %> · Crontab UI</title>
+<link rel="icon" href="<%= baseURL %>/images/crontab-ui.svg" type="image/svg+xml">
+<script src="<%= baseURL %>/js/theme.js"></script>
+<link href="<%= baseURL %>/css/bootstrap.min.css" rel="stylesheet">
+<link href="<%= baseURL %>/css/bootstrap-icons.min.css" rel="stylesheet">
+<link href="<%= baseURL %>/css/app.css" rel="stylesheet">
+</head>
+<body class="app-body d-flex align-items-center min-vh-100">
+  <main class="container py-5" style="max-width: 28rem;">
+    <section class="app-card p-4">
+      <div class="d-flex align-items-center gap-2 mb-4">
+        <img src="<%= baseURL %>/images/crontab-ui.svg" width="32" height="32" alt="" aria-hidden="true">
+        <h1 class="h3 mb-0">Crontab UI</h1>
+      </div>
+      <h2 class="h5"><%= t('signIn') %></h2>
+      <p class="text-body-secondary"><%= t('signInDescription') %></p>
+      <% if (error) { %><div class="alert alert-danger" role="alert"><%= error %></div><% } %>
+      <form method="post" action="<%= baseURL %>/login">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="returnTo" value="<%= returnTo %>">
+        <div class="mb-3">
+          <label for="username" class="form-label"><%= t('username') %></label>
+          <input id="username" name="username" class="form-control" autocomplete="username" required autofocus>
+        </div>
+        <div class="mb-4">
+          <label for="password" class="form-label"><%= t('password') %></label>
+          <input id="password" name="password" type="password" class="form-control" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary w-100"><%= t('signIn') %></button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

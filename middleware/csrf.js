@@ -34,6 +34,7 @@ function issueToken(req, res) {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   res.append('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secure}`);
   req.csrfToken = token;
+  res.locals.csrfToken = token;
 }
 
 function csrfProtection(req, res, next) {
@@ -41,15 +42,19 @@ function csrfProtection(req, res, next) {
   const cookieToken = cookies(req)[COOKIE_NAME];
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     if (!valid(cookieToken)) issueToken(req, res);
-    else req.csrfToken = cookieToken;
+    else {
+      req.csrfToken = cookieToken;
+      res.locals.csrfToken = cookieToken;
+    }
     return next();
   }
 
-  const headerToken = req.get('X-CSRF-Token');
-  if (!valid(cookieToken) || !headerToken || !valid(headerToken) || headerToken !== cookieToken) {
+  const submittedToken = req.get('X-CSRF-Token') || req.body?._csrf;
+  if (!valid(cookieToken) || !submittedToken || !valid(submittedToken) || submittedToken !== cookieToken) {
     return res.status(403).json({ message: 'Invalid CSRF token' });
   }
   req.csrfToken = cookieToken;
+  res.locals.csrfToken = cookieToken;
   return next();
 }
 

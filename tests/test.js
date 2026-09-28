@@ -1334,13 +1334,19 @@ describe('External basic authentication middleware', () => {
     delete process.env.BASIC_AUTH_USER;
     delete process.env.BASIC_AUTH_PWD;
     const protectedApp = express();
+    protectedApp.use(express.urlencoded({ extended: false }));
     expect(setupAuth(protectedApp)).toBe(true);
     protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
 
     expect((await request(protectedApp).get('/protected')).status).toBe(401);
-    const allowed = await request(protectedApp).get('/protected').auth('reviewer', 'strong-secret');
+    const client = request.agent(protectedApp);
+    await client.post('/login').send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const allowed = await client.get('/protected');
     expect(allowed.status).toBe(200);
     expect(allowed.body.user).toBe('reviewer');
+
+    await client.post('/logout').send({}).expect(302);
+    expect((await client.get('/protected')).status).toBe(401);
   });
 });
 
@@ -1374,16 +1380,17 @@ describe('Review and publish HTTP flow', () => {
         applied(null);
       }),
     });
-    const page = await request(protectedApp).get('/').auth('admin', 'review-secret');
-    const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+    const client = request.agent(protectedApp);
+    const loginPage = await client.get('/login');
+    const cookie = loginPage.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
     const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+    await client.post('/login').set('Cookie', cookie).set('X-CSRF-Token', token)
+      .send({ username: 'admin', password: 'review-secret' }).expect(302);
 
-    const rejected = await request(protectedApp).post('/crontab')
-      .auth('admin', 'review-secret').send({ env_vars: 'PATH=/usr/bin' });
+    const rejected = await client.post('/crontab').send({ env_vars: 'PATH=/usr/bin' });
     expect(rejected.status).toBe(403);
 
-    const published = await request(protectedApp).post('/crontab')
-      .auth('admin', 'review-secret')
+    const published = await client.post('/crontab')
       .set('Cookie', cookie)
       .set('X-CSRF-Token', token)
       .send({ env_vars: 'PATH=/usr/bin' });
@@ -1419,15 +1426,20 @@ describe('Administrative data boundaries', () => {
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ viewer: 'viewer', admin: 'admin' });
     fs.writeFileSync(crontab.env_file, 'ADMIN_ONLY_VALUE=not-for-viewers');
     const protectedApp = app.createApp();
-    const viewer = request(protectedApp);
+    const viewer = request.agent(protectedApp);
 
-    const page = await viewer.get('/').auth('viewer', 'viewer-secret');
+    const loginPage = await viewer.get('/login');
+    const cookie = loginPage.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+    const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+    await viewer.post('/login').set('Cookie', cookie).set('X-CSRF-Token', token)
+      .send({ username: 'viewer', password: 'viewer-secret' }).expect(302);
+    const page = await viewer.get('/');
     expect(page.status).toBe(200);
     expect(page.text).not.toContain('ADMIN_ONLY_VALUE=not-for-viewers');
     expect(page.text).not.toContain('>Backups<');
-    expect((await viewer.get('/export').auth('viewer', 'viewer-secret')).status).toBe(403);
-    expect((await viewer.get('/preview_crontab').auth('viewer', 'viewer-secret')).status).toBe(403);
-    expect((await viewer.get('/restore?db=backup-2026-01-01.db').auth('viewer', 'viewer-secret')).status).toBe(403);
+    expect((await viewer.get('/export')).status).toBe(403);
+    expect((await viewer.get('/preview_crontab')).status).toBe(403);
+    expect((await viewer.get('/restore?db=backup-2026-01-01.db')).status).toBe(403);
   });
 });
 
