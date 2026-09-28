@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const cronstrue = require('cronstrue/i18n');
-const { SqliteDatastore, readJobsFromFile, isSqliteFile } = require('../lib/database');
+const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
 fs.mkdirSync(testDbPath, { recursive: true });
@@ -66,6 +66,15 @@ describe('Crontab UI', () => {
       const res = await request(app).get('/js/theme.js');
       expect(res.status).toBe(200);
       expect(res.headers['ratelimit-limit']).toBeUndefined();
+    });
+
+    it('reloads the task list after a successful configuration import', () => {
+      const clientScript = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'script.js'), 'utf8');
+      expect(clientScript).toContain("getModal('import-modal').hide()");
+      expect(clientScript).toContain('window.location.reload()');
+      expect(clientScript).toContain("new URL(importForm.getAttribute('action'), window.location.origin)");
+      expect(clientScript).toContain('function closeImportModal(callback)');
+      expect(clientScript).toContain('}).catch(function()');
     });
   });
 
@@ -1100,6 +1109,16 @@ describe('Transactional backup operations', () => {
 
     expect(errors.filter(Boolean)).toHaveLength(1);
     expect(errors.find(Boolean).statusCode).toBe(409);
+  });
+
+  it('replaces SQLite documents transactionally without renaming the active database file', () => {
+    const file = path.join(testDbPath, `transactional-replace-${Date.now()}.db`);
+    createDatabaseFile(file, [{ _id: 'old', name: 'old', command: 'echo old', schedule: '* * * * *', created: 1 }]);
+    const datastore = new SqliteDatastore({ filename: file });
+    datastore.replaceDocuments([{ _id: 'new', name: 'new', command: 'echo new', schedule: '0 * * * *', created: 2 }]);
+    expect(datastore.getAllData()).toEqual([expect.objectContaining({ _id: 'new', command: 'echo new' })]);
+    expect(fs.existsSync(file)).toBe(true);
+    datastore.close();
   });
 });
 

@@ -584,30 +584,47 @@ function replaceDatabase(temporaryFile, done) {
         return;
       }
       setImmediate(() => {
+        // Windows does not allow replacing a SQLite file while another connection
+        // has it open. Replace rows inside the active database transactionally
+        // instead of renaming the active file.
+        if (process.platform === 'win32') {
+          try {
+            db.replaceDocuments(readJobsFromFile(temporaryFile));
+            return fs.rm(temporaryFile, { force: true }, (cleanupError) => done(cleanupError || null));
+          } catch (error) {
+            return fs.rm(temporaryFile, { force: true }, () => done(error));
+          }
+        }
         const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
-        let movedCurrent = false;
+        const reopen = (error) => {
+          try {
+            if (!db.database) db.open();
+          } catch (openError) {
+            error.rollbackError = openError.message;
+          }
+          fs.rm(temporaryFile, { force: true }, () => done(error));
+        };
+        const restoreRollback = (error) => {
+          if (!fs.existsSync(rollbackFile) || fs.existsSync(crontabDbFile)) return reopen(error);
+          return fs.rename(rollbackFile, crontabDbFile, (rollbackError) => {
+            if (rollbackError) error.rollbackError = rollbackError.message;
+            reopen(error);
+          });
+        };
         try {
           db.close();
-          if (process.platform === 'win32' && fs.existsSync(crontabDbFile)) {
-            fs.renameSync(crontabDbFile, rollbackFile);
-            movedCurrent = true;
-          }
-          fs.renameSync(temporaryFile, crontabDbFile);
-          db.open();
-          if (movedCurrent) fs.rmSync(rollbackFile, { force: true });
-          done(null);
-        } catch (error) {
-          try {
-            if (movedCurrent && !fs.existsSync(crontabDbFile) && fs.existsSync(rollbackFile)) {
-              fs.renameSync(rollbackFile, crontabDbFile);
-            }
-            if (!db.database) db.open();
-          } catch (rollbackError) {
-            error.rollbackError = rollbackError.message;
-          }
-          fs.rmSync(temporaryFile, { force: true });
-          done(error);
+        } catch (closeError) {
+          return reopen(closeError);
         }
+        return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
+          if (replaceError) return restoreRollback(replaceError);
+          try {
+            db.open();
+          } catch (openError) {
+            return restoreRollback(openError);
+          }
+          return fs.rm(rollbackFile, { force: true }, () => done(null));
+        });
       });
     });
   });

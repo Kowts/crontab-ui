@@ -12,8 +12,15 @@ function tr(key, values) {
 }
 
 function csrfToken() {
-  var match = document.cookie.match(/(?:^|; )crontab_ui_csrf=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+var match = document.cookie.match(/(?:^|; )crontab_ui_csrf=([^;]+)/);
+return match ? decodeURIComponent(match[1]) : '';
+}
+
+function closeImportModal(callback) {
+  var modalElement = document.getElementById('import-modal');
+  if (!modalElement || !modalElement.classList.contains('show')) return callback();
+  modalElement.addEventListener('hidden.bs.modal', callback, { once: true });
+  getModal('import-modal').hide();
 }
 
 function initPage() {
@@ -59,14 +66,29 @@ function initPage() {
   if (importForm && importInput) importForm.addEventListener('submit', function(event) {
     event.preventDefault();
     if (!importInput.files.length) return;
-    fetch(importForm.action, {
+    var action = new URL(importForm.getAttribute('action'), window.location.origin);
+    var submitButton = event.submitter;
+    if (submitButton) submitButton.disabled = true;
+    fetch(action.pathname + action.search, {
       method: 'POST', body: new FormData(document.getElementById('import_form')),
       headers: { 'X-CSRF-Token': csrfToken() }, credentials: 'same-origin'
     }).then(function(response) {
-      if (response.ok) window.location.assign(response.url);
+      if (response.ok) {
+        closeImportModal(function() {
+          // A fetch follows the server redirect without navigating the document.
+          // Reload explicitly so the imported database is rendered immediately.
+          window.location.reload();
+        });
+      }
       else return response.json().catch(function() { return {}; }).then(function(body) {
-        errorMessageBox(body.message || tr('importTitle'), body.operationId || response.headers.get('X-Request-ID'));
+        closeImportModal(function() {
+          errorMessageBox(body.message || tr('importTitle'), body.operationId || response.headers.get('X-Request-ID'));
+        });
       });
+    }).catch(function() {
+      closeImportModal(function() { errorMessageBox(tr('importTitle')); });
+    }).finally(function() {
+      if (submitButton) submitButton.disabled = false;
     });
   });
 }
@@ -472,11 +494,11 @@ function collapsedCommand() {
 }
 
 function job_string() {
-  var cmd = collapsedCommand();
+  var expression = schedule || scheduleFromFields();
   var preview = document.getElementById('job-string');
-  if (preview) preview.textContent = (schedule + ' ' + cmd).trim() || '* * * * *';
-  updateScheduleDescription(schedule || scheduleFromFields());
-  return schedule + ' ' + cmd;
+  if (preview) preview.textContent = expression || '* * * * *';
+  updateScheduleDescription(expression);
+  return expression;
 }
 
 function scheduleFromFields() {
