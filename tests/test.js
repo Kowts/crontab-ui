@@ -61,6 +61,9 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('id="import-modal"');
       expect(res.text).toContain('id="import_file"');
       expect(res.text).toContain('id="import-preview-modal"');
+      const indexTemplate = fs.readFileSync(path.join(__dirname, '..', 'views', 'index.ejs'), 'utf8');
+      expect(indexTemplate).toContain('data-bs-toggle="tooltip"');
+      expect(indexTemplate).toContain('class="action-label"><%= t(\'run\') %></span>');
       expect((res.text.match(/data-action="new-job"/g) || []).length).toBe(2);
     });
 

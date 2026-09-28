@@ -310,17 +310,24 @@ function updateJobStatus(_id, stopped) {
   button.setAttribute('aria-label', label);
   button.classList.toggle('btn-schedule-enable', stopped);
   button.classList.toggle('btn-schedule-disable', !stopped);
-  setButtonIconAndLabel(button, stopped ? 'bi-power' : 'bi-stop-fill', label);
+  setButtonIconAndLabel(button, stopped ? 'bi-power' : 'bi-stop-fill', label, stopped ? tr('enable') : tr('pause'));
   updateScheduleStateBadge(row, stopped);
 }
 
-function setButtonIconAndLabel(button, iconClass, label) {
+function setButtonIconAndLabel(button, iconClass, label, actionLabel) {
   var icon = document.createElement('i');
   icon.className = 'bi ' + iconClass;
   icon.setAttribute('aria-hidden', 'true');
   var hiddenLabel = document.createElement('span');
   hiddenLabel.className = 'visually-hidden';
   hiddenLabel.textContent = label;
+  if (actionLabel) {
+    var visibleLabel = document.createElement('span');
+    visibleLabel.className = 'action-label';
+    visibleLabel.textContent = actionLabel;
+    button.replaceChildren(icon, visibleLabel, hiddenLabel);
+    return;
+  }
   button.replaceChildren(icon, hiddenLabel);
 }
 
@@ -377,7 +384,7 @@ function trackManualRun(jobId, operationId) {
         button.disabled = false;
         button.setAttribute('title', tr('runNow'));
         button.setAttribute('aria-label', tr('runNow'));
-        setButtonIconAndLabel(button, 'bi-play-fill', tr('runNow'));
+        setButtonIconAndLabel(button, 'bi-play-fill', tr('runNow'), tr('run'));
       }
       if (cancelButton) cancelButton.remove();
       try { sessionStorage.removeItem('crontab_ui_manual_run'); } catch (_error) { /* optional persistence */ }

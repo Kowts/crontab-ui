@@ -96,6 +96,7 @@ body.app-body {
 .btn-schedule-enable { color: #1769e0; border-color: #9ebced; background: #f3f7ff; }
 .btn-log-stderr { color: #b63a46; border-color: #e5a2aa; background: #fff7f7; }
 .btn-log-stdout { color: #137b96; border-color: #91cad8; background: #f2fbfd; }
+.action-label { display: none; }
 .btn-run:hover, .btn-run:focus { color: #fff; border-color: #08775a; background: #08775a; }
 .btn-schedule-disable:hover, .btn-schedule-disable:focus { color: #fff; border-color: #b63a46; background: #b63a46; }
 .btn-schedule-enable:hover, .btn-schedule-enable:focus { color: #fff; border-color: #1769e0; background: #1769e0; }
@@ -167,6 +168,10 @@ body.app-body {
 :root[data-theme="dark"] .app-card .dataTables_filter input, :root[data-theme="dark"] .app-card .dataTables_length select { color: var(--app-ink); border-color: var(--app-border); background: #111d30; }
 :root[data-theme="dark"] .dropdown-menu { --bs-dropdown-color: var(--app-ink); --bs-dropdown-bg: var(--app-surface); --bs-dropdown-border-color: var(--app-border); --bs-dropdown-link-color: var(--app-ink); --bs-dropdown-link-hover-color: #fff; --bs-dropdown-link-hover-bg: #24344d; --bs-dropdown-link-active-bg: #294d80; }
 :root[data-theme="dark"] .modal-content { color: var(--app-ink); background: var(--app-surface); }
+
+@media (min-width: 1400px) {
+  .action-label { display: inline; margin-left: .35rem; }
+}
 
 @media (max-width: 767.98px) {
   .app-shell { padding: 1.5rem 1rem 2rem; }
