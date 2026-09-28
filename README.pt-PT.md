@@ -148,7 +148,7 @@ Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individu
 | --- | --- |
 | `viewer` | Consulta tarefas próprias, pré-visualização, exportação e registos. |
 | `executor` | Capacidades de consulta e execução de tarefas próprias. |
-| `operator` | Capacidades de consulta e criação, alteração, pausa, ativação, remoção e execução de tarefas próprias. |
+| `operator` | Capacidades de consulta por predefinição. A criação, alteração, pausa, ativação, remoção e execução das próprias tarefas requerem `ALLOW_OPERATOR_TASK_EXECUTION=true` explícito. |
 | `admin` | Acesso global, ambiente, importação/exportação, cópias de segurança, restauro e importação do crontab do sistema. |
 
 Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas importadas do sistema não têm proprietário e ficam reservadas a administradores até serem recriadas ou atribuídas por um procedimento administrativo. A interface mostra proprietário, capacidades efetivas e se uma tarefa está apenas local ou publicada; o servidor continua a impor as permissões em todos os endpoints.
@@ -178,6 +178,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Número e idade máximos de backups. Predefinições: `30`, `90`. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limites da leitura `crontab -l`. Predefinições: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Variáveis geridas pela interface, revistas e separadas por vírgulas, passadas aos processos de tarefas. Predefinição: `PATH,LANG,LC_ALL,TZ,MAILTO`. Segredos do serviço e variáveis inseguras de carregamento são sempre recusados. |
+| `ALLOW_OPERATOR_TASK_EXECUTION` | Permite aos operadores criar, alterar e executar comandos arbitrários. Predefinição: `false`. Defina apenas após aceitar que um operador é um papel altamente privilegiado sem isolamento de processo/sistema de ficheiros. |
 | `ENABLE_AUTOSAVE` | Ativa publicação automática após alterações; só use quando o risco operacional tiver sido aceite. |
 
 `CRON_IN_DOCKER` é uma variável interna da imagem Docker, não uma configuração de deployment público. `ALLOW_INSECURE_NO_AUTH` não é suportada em produção.

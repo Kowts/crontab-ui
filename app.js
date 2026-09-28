@@ -30,7 +30,7 @@ const {
 } = require('./middleware/validate');
 const { getProfile } = require('./config/mail-profiles');
 const { validateProductionTransport } = require('./config/transport');
-const { canAccessJob, requireJobAccess, requireSaveAccess } = require('./middleware/job-authorization');
+const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
 const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
 
 dayjs.extend(relativeTime);
@@ -211,6 +211,8 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       backups: isAdmin ? crontab.get_backup_names() : [],
       env: serializeForHtml(isAdmin ? crontab.get_env() : ''),
       currentRole,
+      canManageTasks: canManageTasks(req),
+      canExecuteTasks: canExecuteTasks(req),
       dayjs,
       messages: serializeForHtml(dictionaries[res.locals.locale]),
     });

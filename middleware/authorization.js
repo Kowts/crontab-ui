@@ -7,6 +7,10 @@ const ROLE_LEVEL = Object.freeze({
   admin: 3,
 });
 
+function operatorTaskPrivilegesEnabled() {
+  return process.env.ALLOW_OPERATOR_TASK_EXECUTION === 'true';
+}
+
 function configuredRoles() {
   const raw = process.env.AUTHZ_ROLE_MAP_JSON;
   if (!raw) return {};
@@ -57,4 +61,4 @@ function validateRoleAssignments(users, roles) {
   }
 }
 
-module.exports = { configuredRoles, requireRole, validateRoleAssignments };
+module.exports = { configuredRoles, requireRole, validateRoleAssignments, operatorTaskPrivilegesEnabled };

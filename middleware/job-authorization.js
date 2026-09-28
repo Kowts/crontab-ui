@@ -1,7 +1,19 @@
 'use strict';
 
 const crontab = require('../crontab');
-const { configuredRoles } = require('./authorization');
+const { configuredRoles, operatorTaskPrivilegesEnabled } = require('./authorization');
+
+function canManageTasks(req) {
+  if (!req.app.locals.authEnabled) return true;
+  const role = configuredRoles()[req.auth?.user];
+  return role === 'admin' || (role === 'operator' && operatorTaskPrivilegesEnabled());
+}
+
+function canExecuteTasks(req) {
+  if (!req.app.locals.authEnabled) return true;
+  const role = configuredRoles()[req.auth?.user];
+  return role === 'admin' || role === 'executor' || (role === 'operator' && operatorTaskPrivilegesEnabled());
+}
 
 function canAccessJob(req, job, action) {
   if (!req.app.locals.authEnabled) return true;
@@ -10,8 +22,8 @@ function canAccessJob(req, job, action) {
   if (!job.owner) return false;
   if (job.owner !== req.auth?.user) return false;
   if (action === 'read') return ['viewer', 'executor', 'operator'].includes(role);
-  if (action === 'execute') return ['executor', 'operator'].includes(role);
-  return role === 'operator';
+  if (action === 'execute') return canExecuteTasks(req);
+  return canManageTasks(req);
 }
 
 function requireJobAccess(action) {
@@ -29,9 +41,12 @@ function requireJobAccess(action) {
 
 function requireSaveAccess(req, res, next) {
   // Browser form encoding serialises the creation sentinel as a string.
-  if (req.body._id === -1 || req.body._id === '-1') return next();
+  if (req.body._id === -1 || req.body._id === '-1') {
+    if (canManageTasks(req)) return next();
+    return res.status(403).json({ message: 'Operator task execution is disabled' });
+  }
   if (typeof req.body._id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(req.body._id)) return next();
   return requireJobAccess('write')(req, res, next);
 }
 
-module.exports = { canAccessJob, requireJobAccess, requireSaveAccess };
+module.exports = { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks };

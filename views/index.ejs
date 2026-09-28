@@ -23,8 +23,8 @@
 <script id="i18n-state" type="application/json"><%- messages %></script>
 </head>
 <body class="app-body">
-<% const canManageJobs = ['operator', 'admin'].includes(currentRole); %>
-<% const canRunJobs = ['executor', 'operator', 'admin'].includes(currentRole); %>
+<% const canManageJobs = canManageTasks; %>
+<% const canRunJobs = canExecuteTasks; %>
 <% const isAdmin = currentRole === 'admin'; %>
 <% const jobs = JSON.parse(crontabs); %>
 <% const hasJobs = jobs.length > 0; %>

@@ -37,7 +37,7 @@ const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
 const { validateProductionTransport } = require('../config/transport');
-const { canAccessJob, requireSaveAccess } = require('../middleware/job-authorization');
+const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
 describe('Crontab UI', () => {
@@ -1106,19 +1106,31 @@ describe('Production transport configuration', () => {
 
 describe('Job ownership authorization', () => {
   const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const originalOperatorPrivileges = process.env.ALLOW_OPERATOR_TASK_EXECUTION;
   const requestFor = (user) => ({ app: { locals: { authEnabled: true } }, auth: { user } });
 
   beforeAll(() => {
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ alice: 'operator', bob: 'operator', viewer: 'viewer', executor: 'executor', admin: 'admin' });
+    delete process.env.ALLOW_OPERATOR_TASK_EXECUTION;
   });
   afterAll(() => {
     if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
     else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    if (originalOperatorPrivileges === undefined) delete process.env.ALLOW_OPERATOR_TASK_EXECUTION;
+    else process.env.ALLOW_OPERATOR_TASK_EXECUTION = originalOperatorPrivileges;
   });
 
-  it('allows an operator to manage only owned jobs', () => {
+  it('treats an operator as read-only until elevated task privileges are explicitly enabled', () => {
+    expect(canAccessJob(requestFor('alice'), { owner: 'alice' }, 'write')).toBe(false);
+    expect(canAccessJob(requestFor('alice'), { owner: 'alice' }, 'execute')).toBe(false);
+    expect(canManageTasks(requestFor('alice'))).toBe(false);
+  });
+
+  it('allows an explicitly elevated operator to manage only owned jobs', () => {
+    process.env.ALLOW_OPERATOR_TASK_EXECUTION = 'true';
     expect(canAccessJob(requestFor('alice'), { owner: 'alice' }, 'write')).toBe(true);
     expect(canAccessJob(requestFor('bob'), { owner: 'alice' }, 'write')).toBe(false);
+    delete process.env.ALLOW_OPERATOR_TASK_EXECUTION;
   });
 
   it('allows viewers to read their own jobs but not modify them', () => {
@@ -1136,14 +1148,16 @@ describe('Job ownership authorization', () => {
     expect(canAccessJob(requestFor('admin'), {}, 'write')).toBe(true);
   });
 
-  it('allows a URL-encoded creation sentinel before checking task ownership', () => {
+  it('blocks task creation for a non-elevated operator', () => {
     let called = false;
+    const response = { status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; } };
     requireSaveAccess(
       { body: { _id: '-1' }, app: { locals: { authEnabled: true } }, auth: { user: 'alice' } },
-      {},
+      response,
       () => { called = true; }
     );
-    expect(called).toBe(true);
+    expect(called).toBe(false);
+    expect(response.statusCode).toBe(403);
   });
 });
 

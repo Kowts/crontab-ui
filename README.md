@@ -148,7 +148,7 @@ When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-u
 | --- | --- |
 | `viewer` | Read own tasks, previews, exports, and logs. |
 | `executor` | Viewer capabilities and execution of own tasks. |
-| `operator` | Viewer capabilities and creation, editing, pausing, activation, removal, and execution of own tasks. |
+| `operator` | Viewer capabilities by default. Creation, editing, pausing, activation, removal, and execution of own tasks require explicit `ALLOW_OPERATOR_TASK_EXECUTION=true`. |
 | `admin` | Global access, environment management, import/export, backups, restore, and system crontab import. |
 
 Each created task receives `owner` and `createdBy`. Legacy tasks and tasks imported from the system do not have an owner and remain restricted to administrators until they are recreated or assigned through an administrative process. The interface displays the owner, effective capabilities, and whether a task is only local or published; the server continues to enforce permissions on every endpoint.
@@ -178,6 +178,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Maximum backup count and age. Defaults: `30`, `90`. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limits for `crontab -l` reads. Defaults: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Comma-separated, reviewed UI-managed variables passed to task processes. Default: `PATH,LANG,LC_ALL,TZ,MAILTO`. Service secrets and unsafe loader variables are always denied. |
+| `ALLOW_OPERATOR_TASK_EXECUTION` | Enables operators to create, modify, and execute arbitrary commands. Default: `false`. Set only after accepting that an operator is a highly privileged role without process/filesystem isolation. |
 | `ENABLE_AUTOSAVE` | Enables automatic publishing after changes; use only after accepting the operational risk. |
 
 `CRON_IN_DOCKER` is an internal Docker-image variable, not a public deployment setting. `ALLOW_INSECURE_NO_AUTH` is not supported in production.
