@@ -16,6 +16,7 @@ RUN   mkdir -p "$CRON_PATH" \
 
 RUN   apk --no-cache add \
       curl \
+      supercronic \
       supervisor \
       tini \
       tzdata

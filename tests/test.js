@@ -36,6 +36,7 @@ const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
+const { schedulerEnvironment } = require('../scheduler');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
@@ -955,12 +956,15 @@ describe('Routes module', () => {
 describe('Task execution environment isolation', () => {
   const originalAllowlist = process.env.TASK_ENV_ALLOWLIST;
   const originalCsrfSecret = process.env.CSRF_SECRET;
+  const originalSafeValue = process.env.SAFE_VALUE;
 
   afterAll(() => {
     if (originalAllowlist === undefined) delete process.env.TASK_ENV_ALLOWLIST;
     else process.env.TASK_ENV_ALLOWLIST = originalAllowlist;
     if (originalCsrfSecret === undefined) delete process.env.CSRF_SECRET;
     else process.env.CSRF_SECRET = originalCsrfSecret;
+    if (originalSafeValue === undefined) delete process.env.SAFE_VALUE;
+    else process.env.SAFE_VALUE = originalSafeValue;
   });
 
   it('passes only approved task variables and excludes service secrets', () => {
@@ -975,6 +979,15 @@ describe('Task execution environment isolation', () => {
   it('rejects unsafe configuration names in TASK_ENV_ALLOWLIST', () => {
     process.env.TASK_ENV_ALLOWLIST = 'PATH,NODE_OPTIONS';
     expect(() => configuredTaskEnvironmentNames()).toThrow('safe uppercase environment variable names');
+  });
+
+  it('starts the container scheduler with the same restricted task environment', () => {
+    process.env.TASK_ENV_ALLOWLIST = 'SAFE_VALUE';
+    process.env.SAFE_VALUE = 'allowed';
+    process.env.CSRF_SECRET = 'scheduler-secret';
+    const environment = schedulerEnvironment();
+    expect(environment).toMatchObject({ SAFE_VALUE: 'allowed', HOME: '/home/node', USER: 'node', LOGNAME: 'node' });
+    expect(environment.CSRF_SECRET).toBeUndefined();
   });
 });
 

@@ -19,10 +19,10 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    # Supervisor needs only these capabilities to start both managed processes as node.
     cap_add:
       - SETUID
       - SETGID
-      - DAC_OVERRIDE
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:

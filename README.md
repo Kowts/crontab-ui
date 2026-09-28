@@ -127,13 +127,15 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 
 Do not mount the host crontab directory into the container. Use only the managed `crontab-data` volume; mounting the host crontab grants the application control over host scheduling and removes container isolation.
 
-The image runs the web process, `crond`, and scheduled tasks as the unprivileged `node` user. Supervisor remains PID 1 solely to manage those processes. After an image upgrade, verify the effective identity with a disposable task such as `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publish it, wait for the schedule, then run:
+The image runs the web process, the container scheduler, and scheduled tasks as the unprivileged `node` user. The container-specific scheduler is Supercronic, which watches the staged crontab file and reloads it after publication. Supervisor remains PID 1 solely to manage those processes. After an image upgrade, verify the effective identity with a disposable task such as `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publish it, wait for the schedule, then run:
 
 ```bash
 docker compose --env-file .env.production exec crontab-ui sh -c 'ps -o user,pid,ppid,args; cat /crontab-ui/crontabs/logs/scheduled-identity.txt'
 ```
 
 The output for the scheduled task must contain `uid=1000(node)` (or the UID assigned to `node` in the image). Do not treat a healthy HTTP endpoint as evidence of scheduler privilege isolation.
+
+Compose drops every Linux capability, then adds only `SETUID` and `SETGID` so Supervisor can start its fixed web and scheduler commands as `node`. Those capabilities are not retained by the child processes or made available to scheduled tasks.
 
 ## Authentication and authorization
 
@@ -217,7 +219,7 @@ Arbitrary hooks are not supported. For post-processing, use an explicit, reviewe
 2. Configure authentication, RBAC, `CSRF_SECRET`, persistent `CRON_DB_PATH`, and native TLS or `TRUSTED_PROXY`.
 3. Run `npm run lint`, `npm test`, `npm run test:coverage`, and `npm audit --omit=dev --audit-level=high`.
 4. Perform a restore test in an isolated instance and confirm backup and log retention.
-5. Build and run the Docker image on the target platform, verifying `crond` compatibility, capabilities, and the persistent volume.
+5. Build and run the Docker image on the target platform, verifying scheduler execution as `node` and the persistent volume.
 
 ## Resources
 

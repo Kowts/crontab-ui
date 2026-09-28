@@ -127,13 +127,15 @@ docker compose --env-file .env.production -f docker-compose.yml -f docker-compos
 
 Não monte o diretório de crontab do anfitrião no contentor. Use exclusivamente o volume gerido `crontab-data`; montar o crontab do anfitrião concede à aplicação controlo sobre o agendamento do anfitrião e elimina o isolamento do contentor.
 
-A imagem executa o processo web, o `crond` e as tarefas agendadas com o utilizador não privilegiado `node`. O Supervisor permanece como PID 1 apenas para gerir esses processos. Depois de atualizar a imagem, valide a identidade efetiva com uma tarefa descartável como `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publique-a, aguarde pelo horário e execute:
+A imagem executa o processo web, o agendador do contentor e as tarefas agendadas com o utilizador não privilegiado `node`. O agendador específico do contentor é o Supercronic, que vigia o ficheiro de crontab preparado e recarrega-o após a publicação. O Supervisor permanece como PID 1 apenas para gerir esses processos. Depois de atualizar a imagem, valide a identidade efetiva com uma tarefa descartável como `id > /crontab-ui/crontabs/logs/scheduled-identity.txt`, publique-a, aguarde pelo horário e execute:
 
 ```bash
 docker compose --env-file .env.production exec crontab-ui sh -c 'ps -o user,pid,ppid,args; cat /crontab-ui/crontabs/logs/scheduled-identity.txt'
 ```
 
 O output da tarefa agendada deve conter `uid=1000(node)` (ou o UID atribuído a `node` na imagem). Um endpoint HTTP saudável não comprova isolamento de privilégios do agendador.
+
+O Compose remove todas as capacidades Linux e readiciona apenas `SETUID` e `SETGID`, para que o Supervisor possa iniciar os seus comandos fixos de web e agendador como `node`. Essas capacidades não são retidas pelos processos filhos nem disponibilizadas às tarefas agendadas.
 
 ## Autenticação e autorização
 
@@ -217,7 +219,7 @@ Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa
 2. Configure autenticação, RBAC, `CSRF_SECRET`, `CRON_DB_PATH` persistente e TLS nativo ou `TRUSTED_PROXY`.
 3. Execute `npm run lint`, `npm test`, `npm run test:coverage` e `npm audit --omit=dev --audit-level=high`.
 4. Execute um restauro de teste numa instância isolada e confirme a retenção de backups e logs.
-5. Faça build e execução reais da imagem Docker na plataforma alvo, verificando a compatibilidade de `crond`, capacidades e volume persistente.
+5. Faça build e execução reais da imagem Docker na plataforma alvo, verificando a execução do agendador como `node` e o volume persistente.
 
 ## Recursos
 
