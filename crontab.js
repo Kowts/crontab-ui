@@ -9,6 +9,7 @@ const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
+const { buildTaskEnvironment } = require('./config/task-environment');
 const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
@@ -247,9 +248,15 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
   db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
+    let configuredEnvironment;
+    try {
+      configuredEnvironment = parseEnvironment(exports.get_env());
+    } catch (environmentError) {
+      return callback(environmentError);
+    }
     let jobEnvironment;
     try {
-      jobEnvironment = parseEnvironment(exports.get_env());
+      jobEnvironment = buildTaskEnvironment(configuredEnvironment);
     } catch (environmentError) {
       return callback(environmentError);
     }
@@ -258,7 +265,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     const operationId = crypto.randomUUID();
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
-    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: { ...process.env, ...jobEnvironment } }, (error, result) => {
+    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
       const output = recordOutput(res, result, operationId);
       if (output) sendMail(res, operationId);
       else if (res.mailing?.profileId) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
@@ -291,9 +298,15 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
   if (activeManualRunId) return callback(Object.assign(new Error('A manual execution is already active'), { statusCode: 409 }));
   return db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
+    let configuredEnvironment;
+    try {
+      configuredEnvironment = parseEnvironment(exports.get_env());
+    } catch (environmentError) {
+      return callback(environmentError);
+    }
     let jobEnvironment;
     try {
-      jobEnvironment = parseEnvironment(exports.get_env());
+      jobEnvironment = buildTaskEnvironment(configuredEnvironment);
     } catch (environmentError) {
       return callback(environmentError);
     }
@@ -306,7 +319,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     callback(null, exports.getManualRun(operationId));
     run.controller = execute(job.command, {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
-      env: { ...process.env, ...jobEnvironment }, onStart: (controller) => { run.controller = controller; },
+      env: jobEnvironment, onStart: (controller) => { run.controller = controller; },
     }, (error, result) => {
       const output = recordOutput(job, result, operationId);
       if (output) sendMail(job, operationId);

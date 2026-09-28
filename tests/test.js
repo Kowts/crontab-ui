@@ -34,6 +34,7 @@ const { configuredUsers } = setupAuth;
 const { getProfile } = require('../config/mail-profiles');
 const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
+const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
@@ -156,6 +157,33 @@ describe('Crontab UI', () => {
       expect(error).toBeNull();
       expect(fs.readFileSync(path.join(crontab.output_folder, `${job._id}.stdout`), 'utf8')).toBe('managed-output');
       expect(fs.existsSync(path.join(testDbPath, `${job._id}.stdout`))).toBe(false);
+    });
+
+    it('does not expose service secrets to scheduled commands', async () => {
+      const originalSecret = process.env.CRON_UI_EXECUTION_SECRET;
+      const originalAllowlist = process.env.TASK_ENV_ALLOWLIST;
+      const originalEnvironment = fs.existsSync(crontab.env_file) ? fs.readFileSync(crontab.env_file, 'utf8') : null;
+      process.env.CRON_UI_EXECUTION_SECRET = 'must-not-reach-task';
+      process.env.TASK_ENV_ALLOWLIST = 'SAFE_VALUE';
+      fs.writeFileSync(crontab.env_file, 'SAFE_VALUE=allowed\nCRON_UI_EXECUTION_SECRET=must-not-reach-task');
+      try {
+        const job = await new Promise((resolve, reject) => {
+          crontab.create_new('isolated-environment', `"${process.execPath}" -e "process.stdout.write((process.env.SAFE_VALUE || 'missing') + ':' + (process.env.CRON_UI_EXECUTION_SECRET || 'not-exposed'))"`, '* * * * *', false, {}, {}, (error, created) => {
+            if (error) reject(error);
+            else resolve(created);
+          });
+        });
+        const error = await new Promise((resolve) => crontab.runjob(job._id, (runError) => resolve(runError)));
+        expect(error).toBeNull();
+        expect(fs.readFileSync(path.join(crontab.output_folder, `${job._id}.stdout`), 'utf8')).toBe('allowed:not-exposed');
+      } finally {
+        if (originalSecret === undefined) delete process.env.CRON_UI_EXECUTION_SECRET;
+        else process.env.CRON_UI_EXECUTION_SECRET = originalSecret;
+        if (originalAllowlist === undefined) delete process.env.TASK_ENV_ALLOWLIST;
+        else process.env.TASK_ENV_ALLOWLIST = originalAllowlist;
+        if (originalEnvironment === null) fs.rmSync(crontab.env_file, { force: true });
+        else fs.writeFileSync(crontab.env_file, originalEnvironment);
+      }
     });
   });
 
@@ -807,6 +835,32 @@ describe('Routes module', () => {
   });
 });
 
+describe('Task execution environment isolation', () => {
+  const originalAllowlist = process.env.TASK_ENV_ALLOWLIST;
+  const originalCsrfSecret = process.env.CSRF_SECRET;
+
+  afterAll(() => {
+    if (originalAllowlist === undefined) delete process.env.TASK_ENV_ALLOWLIST;
+    else process.env.TASK_ENV_ALLOWLIST = originalAllowlist;
+    if (originalCsrfSecret === undefined) delete process.env.CSRF_SECRET;
+    else process.env.CSRF_SECRET = originalCsrfSecret;
+  });
+
+  it('passes only approved task variables and excludes service secrets', () => {
+    process.env.TASK_ENV_ALLOWLIST = 'SAFE_VALUE';
+    process.env.CSRF_SECRET = 'service-secret';
+    const environment = buildTaskEnvironment({ SAFE_VALUE: 'available', CSRF_SECRET: 'attempted-override', OTHER: 'excluded' });
+    expect(environment.SAFE_VALUE).toBe('available');
+    expect(environment.CSRF_SECRET).toBeUndefined();
+    expect(environment.OTHER).toBeUndefined();
+  });
+
+  it('rejects unsafe configuration names in TASK_ENV_ALLOWLIST', () => {
+    process.env.TASK_ENV_ALLOWLIST = 'PATH,NODE_OPTIONS';
+    expect(() => configuredTaskEnvironmentNames()).toThrow('safe uppercase environment variable names');
+  });
+});
+
 describe('RBAC middleware', () => {
   const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
 
@@ -1105,6 +1159,37 @@ describe('External basic authentication middleware', () => {
     const allowed = await request(protectedApp).get('/protected').auth('reviewer', 'strong-secret');
     expect(allowed.status).toBe(200);
     expect(allowed.body.user).toBe('reviewer');
+  });
+});
+
+describe('Administrative data boundaries', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const originalEnvironment = fs.existsSync(crontab.env_file) ? fs.readFileSync(crontab.env_file, 'utf8') : null;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    if (originalEnvironment === null) fs.rmSync(crontab.env_file, { force: true });
+    else fs.writeFileSync(crontab.env_file, originalEnvironment);
+  });
+
+  it('does not expose global configuration or administrative operations to a viewer', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ viewer: 'viewer-secret', admin: 'admin-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ viewer: 'viewer', admin: 'admin' });
+    fs.writeFileSync(crontab.env_file, 'ADMIN_ONLY_VALUE=not-for-viewers');
+    const protectedApp = app.createApp();
+    const viewer = request(protectedApp);
+
+    const page = await viewer.get('/').auth('viewer', 'viewer-secret');
+    expect(page.status).toBe(200);
+    expect(page.text).not.toContain('ADMIN_ONLY_VALUE=not-for-viewers');
+    expect(page.text).not.toContain('>Backups<');
+    expect((await viewer.get('/export').auth('viewer', 'viewer-secret')).status).toBe(403);
+    expect((await viewer.get('/preview_crontab').auth('viewer', 'viewer-secret')).status).toBe(403);
+    expect((await viewer.get('/restore?db=backup-2026-01-01.db').auth('viewer', 'viewer-secret')).status).toBe(403);
   });
 });
 

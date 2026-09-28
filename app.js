@@ -197,6 +197,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     docs = docs.filter((job) => canAccessJob(req, job, 'read'));
     const currentRole = app.locals.authEnabled ? configuredRoles()[req.auth?.user] : 'admin';
+    const isAdmin = currentRole === 'admin';
     docs = docs.map((job) => ({
       ...job,
       permissions: {
@@ -207,8 +208,8 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
     res.render('index', {
       routes: serializeForHtml(routesRelative),
       crontabs: serializeForHtml(docs),
-      backups: crontab.get_backup_names(),
-      env: serializeForHtml(crontab.get_env()),
+      backups: isAdmin ? crontab.get_backup_names() : [],
+      env: serializeForHtml(isAdmin ? crontab.get_env() : ''),
       currentRole,
       dayjs,
       messages: serializeForHtml(dictionaries[res.locals.locale]),
@@ -343,7 +344,7 @@ app.post(routes.backup, requireRole('admin'), auditOperation('create_backup'), (
   });
 });
 
-app.get(routes.restore, requireRole('viewer'), validateBackupParam, (req, res) => {
+app.get(routes.restore, requireRole('admin'), validateBackupParam, (req, res) => {
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.crontabs(req.dbName, (docs) => {
     res.render('restore', {
@@ -370,7 +371,7 @@ app.post(routes.restore_backup, requireRole('admin'), validateBackupParam, audit
   });
 });
 
-app.get(routes.export, requireRole('viewer'), (req, res) => {
+app.get(routes.export, requireRole('admin'), (req, res) => {
   const file = crontab.crontab_db_file;
   const filename = path.basename(file);
   const mimetype = mime.lookup(file);
@@ -464,7 +465,7 @@ app.post(routes.import_crontab, requireRole('admin'), auditOperation('import_sys
   });
 });
 
-app.get(routes.preview_crontab, requireRole('viewer'), (req, res) => {
+app.get(routes.preview_crontab, requireRole('admin'), (req, res) => {
   const envVars = crontab.get_env();
   crontab.preview_crontab(envVars, (result) => {
     res.type('text/plain').send(result);
