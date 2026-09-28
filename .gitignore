@@ -3,6 +3,7 @@ node_modules
 coverage/
 .env
 .env.*
+.playwright-cli/
 !.env.example
 crontabs/*.db
 crontabs/*.legacy-nedb-*
