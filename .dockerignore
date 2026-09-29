@@ -1,5 +1,13 @@
 .git
 *.swp
 node_modules
+.env
+.env.*
+!.env.example
+coverage/
+tests/
+docs/
+AGENTS.md
+.playwright-cli/
 crontabs/*.db
 crontabs/logs/*.log
