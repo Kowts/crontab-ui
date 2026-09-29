@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
-const { verifyPassword, isValidDigestFormat } = require('../config/passwords');
+const { verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 
 const SESSION_COOKIE = 'crontab_ui_session';
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -26,6 +26,12 @@ function configuredUsers() {
   for (const [user, password] of Object.entries(users)) {
     if (password.startsWith('scrypt:') && !isValidDigestFormat(password)) {
       throw new Error(`BASIC_AUTH_USERS_JSON contains a malformed password digest for user ${user}`);
+    }
+    // A hash from another tool would be compared as literal text, so the account could never sign
+    // in and nothing would say why. Naming the algorithm at startup is the only useful moment.
+    const foreign = identifyForeignDigest(password);
+    if (foreign) {
+      throw new Error(`BASIC_AUTH_USERS_JSON stores a password in an unsupported format for user ${user}: ${foreign} digest. Generate one with npx crontab-ui-hash.`);
     }
   }
   return users;

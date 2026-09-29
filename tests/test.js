@@ -64,7 +64,7 @@ const { collectOutputAttachments } = require('../bin/crontab-ui-mailer');
 const { validateAllProfiles, validateProfileId } = require('../config/mail-profiles');
 const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
-const { hashPassword, verifyPassword, isValidDigestFormat } = require('../config/passwords');
+const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
@@ -1360,6 +1360,19 @@ describe('Basic authentication users configuration', () => {
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: 'scrypt:nothex:alsonothex' });
     expect(() => configuredUsers()).toThrow('malformed password digest for user alice');
   });
+
+  it('refuses a digest from another tool instead of storing it as a password', () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: '$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ' });
+    expect(() => configuredUsers()).toThrow('unsupported format for user alice: bcrypt digest');
+
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$hash' });
+    expect(() => configuredUsers()).toThrow('unsupported format for user alice: Argon2 digest');
+  });
+
+  it('still accepts an ordinary password that merely contains a dollar sign', () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: 'custo$50', bob: 'a$b$c' });
+    expect(configuredUsers()).toEqual({ alice: 'custo$50', bob: 'a$b$c' });
+  });
 });
 
 describe('Password storage', () => {
@@ -1395,6 +1408,20 @@ describe('Password storage', () => {
     expect(await verifyPassword('anything', 'scrypt:zz:zz')).toBe(false);
     expect(await verifyPassword('anything', 'scrypt:only-two-parts')).toBe(false);
     expect(await verifyPassword('anything', 'bcrypt:whatever')).toBe(false);
+  });
+
+  it('recognises a digest from another tool instead of treating it as a password', () => {
+    expect(identifyForeignDigest('$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ')).toBe('bcrypt');
+    expect(identifyForeignDigest('$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$hash')).toBe('Argon2');
+    expect(identifyForeignDigest('pbkdf2_sha256$100000$salt$hash')).toBe('PBKDF2');
+    expect(identifyForeignDigest('sha256:deadbeef')).toBe('SHA or MD5 digest');
+    expect(identifyForeignDigest('django_pbkdf2_sha256$1000$abc')).toBe('framework password hasher');
+  });
+
+  it('does not mistake an ordinary password for a digest', () => {
+    for (const password of ['hunter2', 'Senh@Forte!2026', 'user:pass', 'custo$50', 'a$b$c', 'argonautico', 'md5sum']) {
+      expect(identifyForeignDigest(password)).toBeNull();
+    }
   });
 });
 

@@ -58,6 +58,24 @@ function isValidDigestFormat(value) {
   }
 }
 
+// A digest produced by a different tool is not something this service can verify. Storing it would
+// be worse than rejecting it: the value would be compared as literal text and leave the account
+// unable to sign in, with nothing in the logs to explain why. Only the distinctive markers of
+// well known hash formats are matched, so an ordinary password is never caught by this.
+const FOREIGN_DIGESTS = [
+  { name: 'bcrypt', pattern: /^\$2[abxy]\$\d{2}\$/ },
+  { name: 'Argon2', pattern: /^\$argon2/i },
+  { name: 'PBKDF2', pattern: /^pbkdf2[:_$]/i },
+  { name: 'SHA or MD5 digest', pattern: /^(sha1|sha256|sha384|sha512|md5)[:$]/i },
+  { name: 'framework password hasher', pattern: /^(django|passlib|bcrypt_|argon2_)/i },
+];
+
+function identifyForeignDigest(value) {
+  if (typeof value !== 'string') return null;
+  const match = FOREIGN_DIGESTS.find((entry) => entry.pattern.test(value));
+  return match ? match.name : null;
+}
+
 // Verification is constant time for equal-length digests. A malformed stored value is reported as
 // a failure to verify rather than thrown, so a bad configuration cannot turn a sign-in into a 500.
 async function verifyPassword(password, stored) {
@@ -83,4 +101,6 @@ async function verifyPassword(password, stored) {
   return derived.length === parsed.expected.length && crypto.timingSafeEqual(derived, parsed.expected);
 }
 
-module.exports = { hashPassword, verifyPassword, isDigest, isValidDigestFormat, ALGORITHM };
+module.exports = {
+  hashPassword, verifyPassword, isDigest, isValidDigestFormat, identifyForeignDigest, ALGORITHM,
+};
