@@ -54,7 +54,7 @@ jobs:
         run: docker build --tag crontab-ui:${{ github.sha }} .
 
       - name: Scan container image
-        uses: aquasecurity/trivy-action@v0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: crontab-ui:${{ github.sha }}
           format: table
