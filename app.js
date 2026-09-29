@@ -16,7 +16,7 @@ const rateLimit = require('express-rate-limit');
 const crontab = require('./crontab');
 const restore = require('./restore');
 const packageJson = require('./package.json');
-const { base_url: baseUrl, routes, relative: routesRelative } = require('./routes');
+const { base_url: baseUrl, routes } = require('./routes');
 const setupAuth = require('./middleware/auth');
 const { authenticatedUsers } = require('./middleware/auth');
 const { configuredRoles, requireRole, validateRoleAssignments } = require('./middleware/authorization');
@@ -252,7 +252,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       },
     }));
     res.render('index', {
-      routes: serializeForHtml(routesRelative),
+      routes: serializeForHtml(routes),
       crontabs: serializeForHtml(docs),
       backups: isAdmin ? crontab.get_backup_names() : [],
       env: serializeForHtml(isAdmin ? crontab.get_env() : ''),
@@ -397,7 +397,7 @@ app.get(routes.restore, requireRole('admin'), validateBackupParam, (req, res) =>
   if (!crontab.get_backup_names().includes(req.dbName)) return res.status(404).json({ message: 'Backup not found' });
   restore.crontabs(req.dbName, (docs) => {
     res.render('restore', {
-      routes: serializeForHtml(routesRelative),
+      routes: serializeForHtml(routes),
       crontabs: serializeForHtml(docs),
       backups: crontab.get_backup_names(),
       db: req.dbName,

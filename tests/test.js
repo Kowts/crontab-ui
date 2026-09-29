@@ -76,7 +76,8 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('Create first task');
       expect(res.text).toContain('id="job-schedule-description"');
       expect(res.text).toContain('vendor/cronstrue/cronstrue-i18n.min.js');
-      expect(res.text).toContain('src="js/theme.js"');
+      expect(res.text).toContain('src="/js/theme.js"');
+      expect(res.text).toContain('src="/js/script.js"');
       expect(res.text).toContain('id="theme-toggle"');
       expect(res.text).toContain('https://github.com/Kowts/crontab-ui');
       expect(res.text).toContain('rel="noopener noreferrer"');
@@ -125,6 +126,11 @@ describe('Crontab UI', () => {
       expect(res.status).toBe(204);
       expect(res.headers['set-cookie'].join(';')).toContain('crontab_ui_locale=pt');
       expect(res.headers['set-cookie'].join(';')).toContain('HttpOnly');
+    });
+
+    it('exposes root-relative locale routes to the browser', async () => {
+      const res = await request(app).get('/');
+      expect(res.text).toContain('"locale":"/locale"');
     });
   });
 

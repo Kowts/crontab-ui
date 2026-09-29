@@ -6,13 +6,13 @@
 <title><%= t('pageTitle') %></title>
 <link rel="icon" href="<%= JSON.parse(routes).root %>images/crontab-ui.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="<%= JSON.parse(routes).root %>images/crontab-ui.svg">
-<script src="js/theme.js"></script>
-<link href="css/bootstrap.min.css" rel="stylesheet">
-<link href="css/bootstrap-icons.min.css" rel="stylesheet">
-<link href="css/app.css" rel="stylesheet">
-<script src="js/jquery.min.js"></script>
-<script src="js/bootstrap.bundle.min.js"></script>
-<script src="script.js"></script>
+<script src="<%= JSON.parse(routes).root %>js/theme.js"></script>
+<link href="<%= JSON.parse(routes).root %>css/bootstrap.min.css" rel="stylesheet">
+<link href="<%= JSON.parse(routes).root %>css/bootstrap-icons.min.css" rel="stylesheet">
+<link href="<%= JSON.parse(routes).root %>css/app.css" rel="stylesheet">
+<script src="<%= JSON.parse(routes).root %>js/jquery.min.js"></script>
+<script src="<%= JSON.parse(routes).root %>js/bootstrap.bundle.min.js"></script>
+<script src="<%= JSON.parse(routes).root %>js/script.js"></script>
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
 <script id="i18n-state" type="application/json"><%- messages %></script>
