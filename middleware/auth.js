@@ -123,7 +123,12 @@ function setupAuth(app, { baseUrl = '' } = {}) {
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     const expectedPassword = users[username];
     if (!expectedPassword || !safeEqual(password, expectedPassword)) {
-      return renderLogin(req, res, 401, 'Invalid username or password.');
+      const attemptsExhausted = Number(req.rateLimit?.remaining) === 0;
+      const minutes = res.locals.loginRateLimitMinutes || 1;
+      const error = attemptsExhausted
+        ? (res.locals.t ? res.locals.t('loginRateLimited', { minutes }) : `Too many sign-in attempts. Try again in ${minutes} minutes.`)
+        : (res.locals.t ? res.locals.t('invalidCredentials') : 'Invalid username or password.');
+      return renderLogin(req, res, 401, error);
     }
     issueSession(res, username, secret, ttl);
     const returnTo = isLocalPath(req.body?.returnTo, baseUrl)

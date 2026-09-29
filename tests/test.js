@@ -1315,10 +1315,11 @@ describe('CSRF middleware', () => {
   });
 });
 
-describe('External basic authentication middleware', () => {
+describe('Session authentication middleware', () => {
   const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
   const originalUser = process.env.BASIC_AUTH_USER;
   const originalPassword = process.env.BASIC_AUTH_PWD;
+  const originalSessionTtl = process.env.AUTH_SESSION_TTL_MS;
 
   afterAll(() => {
     if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
@@ -1327,6 +1328,8 @@ describe('External basic authentication middleware', () => {
     else process.env.BASIC_AUTH_USER = originalUser;
     if (originalPassword === undefined) delete process.env.BASIC_AUTH_PWD;
     else process.env.BASIC_AUTH_PWD = originalPassword;
+    if (originalSessionTtl === undefined) delete process.env.AUTH_SESSION_TTL_MS;
+    else process.env.AUTH_SESSION_TTL_MS = originalSessionTtl;
   });
 
   it('rejects unauthenticated access and accepts configured credentials', async () => {
@@ -1334,6 +1337,7 @@ describe('External basic authentication middleware', () => {
     delete process.env.BASIC_AUTH_USER;
     delete process.env.BASIC_AUTH_PWD;
     const protectedApp = express();
+    protectedApp.use(express.json());
     protectedApp.use(express.urlencoded({ extended: false }));
     expect(setupAuth(protectedApp)).toBe(true);
     protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
@@ -1347,6 +1351,83 @@ describe('External basic authentication middleware', () => {
 
     await client.post('/logout').send({}).expect(302);
     expect((await client.get('/protected')).status).toBe(401);
+  });
+
+  it('rejects a tampered session cookie', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const protectedApp = express();
+    protectedApp.use(express.json());
+    protectedApp.use(express.urlencoded({ extended: false }));
+    setupAuth(protectedApp);
+    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+
+    const signedIn = await request(protectedApp).post('/login')
+      .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const sessionCookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session='));
+    const sessionToken = sessionCookie.split(';')[0];
+    const tamperedCookie = `${sessionToken.slice(0, -1)}x`;
+
+    expect((await request(protectedApp).get('/protected').set('Cookie', tamperedCookie)).status).toBe(401);
+  });
+
+  it('rejects an expired session cookie', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    process.env.AUTH_SESSION_TTL_MS = '60000';
+    const protectedApp = express();
+    protectedApp.use(express.json());
+    protectedApp.use(express.urlencoded({ extended: false }));
+    setupAuth(protectedApp);
+    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+
+    const originalNow = Date.now;
+    const issuedAt = originalNow();
+    try {
+      Date.now = () => issuedAt;
+      const signedIn = await request(protectedApp).post('/login')
+        .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+      const sessionCookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session='));
+      Date.now = () => issuedAt + 60_001;
+
+      expect((await request(protectedApp).get('/protected').set('Cookie', sessionCookie)).status).toBe(401);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+});
+
+describe('Login abuse protection', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const originalLimit = process.env.LOGIN_RATE_LIMIT_MAX;
+  const originalWindow = process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    if (originalLimit === undefined) delete process.env.LOGIN_RATE_LIMIT_MAX;
+    else process.env.LOGIN_RATE_LIMIT_MAX = originalLimit;
+    if (originalWindow === undefined) delete process.env.LOGIN_RATE_LIMIT_WINDOW_MS;
+    else process.env.LOGIN_RATE_LIMIT_WINDOW_MS = originalWindow;
+  });
+
+  it('warns on the final failed sign-in attempt and rate-limits the next attempt', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ reviewer: 'viewer' });
+    process.env.LOGIN_RATE_LIMIT_MAX = '3';
+    process.env.LOGIN_RATE_LIMIT_WINDOW_MS = '120000';
+    const protectedApp = app.createApp();
+
+    expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    const finalAttempt = await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' });
+    expect(finalAttempt.status).toBe(401);
+    expect(finalAttempt.text).toContain('Try again in 2 minutes.');
+
+    const blocked = await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.message).toBe('Too many sign-in attempts. Try again in 2 minutes.');
   });
 });
 
@@ -1410,6 +1491,7 @@ describe('Review and publish HTTP flow', () => {
 describe('Administrative data boundaries', () => {
   const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
   const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const originalNodeEnvironment = process.env.NODE_ENV;
   const originalEnvironment = fs.existsSync(crontab.env_file) ? fs.readFileSync(crontab.env_file, 'utf8') : null;
 
   afterAll(() => {
@@ -1417,11 +1499,14 @@ describe('Administrative data boundaries', () => {
     else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
     if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
     else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    if (originalNodeEnvironment === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnvironment;
     if (originalEnvironment === null) fs.rmSync(crontab.env_file, { force: true });
     else fs.writeFileSync(crontab.env_file, originalEnvironment);
   });
 
   it('does not expose global configuration or administrative operations to a viewer', async () => {
+    process.env.NODE_ENV = 'development';
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ viewer: 'viewer-secret', admin: 'admin-secret' });
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ viewer: 'viewer', admin: 'admin' });
     fs.writeFileSync(crontab.env_file, 'ADMIN_ONLY_VALUE=not-for-viewers');

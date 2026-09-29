@@ -150,11 +150,11 @@ Quando `HOST` não é loopback, a autenticação é obrigatória. Estão dispon�
 - `BASIC_AUTH_USER` e `BASIC_AUTH_PWD`, para um único utilizador;
 - `BASIC_AUTH_USERS_JSON`, para um mapa de vários utilizadores.
 
-Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente.
+Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente. As sessões são stateless: terminar sessão remove o cookie do navegador, mas não consegue revogar individualmente uma cópia desse cookie antes de expirar. Uma lista de revogação no servidor é um reforço futuro.
 
 | Papel | Capacidades |
 | --- | --- |
-| `viewer` | Consulta tarefas próprias, pré-visualização, exportação e registos. |
+| `viewer` | Consulta as próprias tarefas e respetivos registos. A pré-visualização global do crontab, exportação da base de dados, backups, restauro e ambiente são exclusivos de `admin`. |
 | `executor` | Capacidades de consulta e execução de tarefas próprias. |
 | `operator` | Capacidades de consulta por predefinição. A criação, alteração, pausa, ativação, remoção e execução das próprias tarefas requerem `ALLOW_OPERATOR_TASK_EXECUTION=true` explícito. |
 | `admin` | Acesso global, ambiente, importação/exportação, cópias de segurança, restauro e importação do crontab do sistema. |
@@ -179,6 +179,8 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
 | `AUTH_SESSION_SECRET` | Segredo persistente opcional para assinar sessões; por omissão usa `CSRF_SECRET`. |
 | `AUTH_SESSION_TTL_MS` | Duração da sessão em milissegundos; por omissão 8 horas (mínimo 1 minuto, máximo 7 dias). |
+| `LOGIN_RATE_LIMIT_MAX` | Tentativas falhadas de `POST /login` permitidas por IP de origem na janela configurada; por omissão 10. Os inícios de sessão bem-sucedidos não contam. |
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | Janela de tentativas de login em milissegundos; por omissão 15 minutos (mínimo 1 minuto, máximo 24 horas). |
 | `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
 | `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
 | `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |

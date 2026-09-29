@@ -60,6 +60,15 @@ validateProductionTransport({
 if (trustedProxy) app.set('trust proxy', trustedProxy);
 
 const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(app.get('host'));
+
+function boundedEnvironmentNumber(name, fallback, minimum, maximum) {
+  const value = Number(process.env[name] || fallback);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
 app.get(`${baseUrl}/healthz`, (req, res) => {
   const address = req.socket.remoteAddress;
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return res.sendStatus(404);
@@ -158,6 +167,34 @@ app.use(rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+}));
+
+// Failed sign-in attempts need a tighter quota than normal application traffic.
+// Successful logins are removed from the counter so legitimate users are not
+// penalised for returning to the application.
+const loginRateLimitWindowMs = boundedEnvironmentNumber('LOGIN_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000, 60_000, 24 * 60 * 60 * 1000);
+const loginRateLimitMax = boundedEnvironmentNumber('LOGIN_RATE_LIMIT_MAX', 10, 1, 1000);
+const loginRateLimitMinutes = Math.ceil(loginRateLimitWindowMs / 60_000);
+
+app.use(routes.login, (req, res, next) => {
+  res.locals.loginRateLimitMinutes = loginRateLimitMinutes;
+  next();
+}, rateLimit({
+  windowMs: loginRateLimitWindowMs,
+  max: loginRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method !== 'POST',
+  skipSuccessfulRequests: true,
+  handler: (req, res) => {
+    const message = res.locals.t
+      ? res.locals.t('loginRateLimited', { minutes: loginRateLimitMinutes })
+      : `Too many sign-in attempts. Try again in ${loginRateLimitMinutes} minutes.`;
+    if (String(req.get('Accept') || '').includes('text/html')) {
+      return res.status(429).render('login', { csrfToken: req.csrfToken || '', error: message, returnTo: baseUrl || '/' });
+    }
+    return res.status(429).json({ message });
+  },
 }));
 
 // Authentication is installed after static assets and CSRF protection so the

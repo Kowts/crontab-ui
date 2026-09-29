@@ -2,6 +2,7 @@
 
 const dictionaries = {
   en: {
+    loginRateLimited: 'Too many sign-in attempts. Try again in {minutes} minutes.', invalidCredentials: 'Invalid username or password.',
     logout: 'Sign out', signIn: 'Sign in', signInDescription: 'Enter your account credentials to manage scheduled tasks.', username: 'Username', password: 'Password',
     pageTitle: 'Crontab UI — Scheduled tasks',
     administration: 'Administration',
@@ -57,6 +58,7 @@ const dictionaries = {
     dataSearch: 'Search tasks', dataPerPage: '_MENU_ per page', dataInfo: 'Showing _START_–_END_ of _TOTAL_ tasks', dataInfoEmpty: 'No tasks', dataZero: 'No tasks found',
   },
   pt: {
+    loginRateLimited: 'Demasiadas tentativas de início de sessão. Tente novamente dentro de {minutes} minutos.', invalidCredentials: 'Utilizador ou palavra-passe inválidos.',
     logout: 'Terminar sessão', signIn: 'Iniciar sessão', signInDescription: 'Introduza as credenciais da sua conta para gerir as tarefas agendadas.', username: 'Utilizador', password: 'Palavra-passe',
     pageTitle: 'Crontab UI — Tarefas agendadas',
     administration: 'Administração', scheduledTasks: 'Tarefas agendadas', manageDescription: 'Gere os comandos, horários e a publicação no crontab.', newTaskDescription: 'Defina o comando e quando deve ser executado.', previewCrontab: 'Pré-visualizar crontab', newTask: 'Nova tarefa',

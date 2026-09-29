@@ -150,11 +150,11 @@ When `HOST` is not loopback, authentication is mandatory. The web interface uses
 - `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` for a single user;
 - `BASIC_AUTH_USERS_JSON` for a map of multiple users.
 
-When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently.
+When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently. Sessions are stateless: sign-out removes the browser cookie but cannot individually revoke a copied cookie before its expiry. A server-side revocation list is a future hardening option.
 
 | Role | Capabilities |
 | --- | --- |
-| `viewer` | Read own tasks, previews, exports, and logs. |
+| `viewer` | Read own tasks and their logs. Global crontab preview, database export, backups, restore, and environment access are admin-only. |
 | `executor` | Viewer capabilities and execution of own tasks. |
 | `operator` | Viewer capabilities by default. Creation, editing, pausing, activation, removal, and execution of own tasks require explicit `ALLOW_OPERATOR_TASK_EXECUTION=true`. |
 | `admin` | Global access, environment management, import/export, backups, restore, and system crontab import. |
@@ -179,6 +179,8 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `CSRF_SECRET` | Persistent secret required in production. |
 | `AUTH_SESSION_SECRET` | Optional persistent session-signing secret; defaults to `CSRF_SECRET`. |
 | `AUTH_SESSION_TTL_MS` | Session lifetime in milliseconds; defaults to 8 hours (minimum 1 minute, maximum 7 days). |
+| `LOGIN_RATE_LIMIT_MAX` | Failed `POST /login` attempts allowed per source IP in the configured window; defaults to 10. Successful sign-ins do not count. |
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | Login attempt window in milliseconds; defaults to 15 minutes (minimum 1 minute, maximum 24 hours). |
 | `SSL_CERT`, `SSL_KEY` | Native TLS; both must be defined together. |
 | `TRUSTED_PROXY` | Address, CIDR, or Express proxy alias for the trusted HTTPS proxy. |
 | `CRONTAB_UI_NETWORK` | Name of the Docker network shared with the proxy. Compose default: `crontab-ui-internal`. |
