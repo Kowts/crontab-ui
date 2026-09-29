@@ -156,9 +156,8 @@ app.use((req, res, next) => {
   next();
 });
 
+// The public root also serves its own css, js, images and fonts subdirectories.
 app.use(baseUrl, express.static(path.join(__dirname, 'public')));
-app.use(baseUrl, express.static(path.join(__dirname, 'public', 'css')));
-app.use(baseUrl, express.static(path.join(__dirname, 'public', 'js')));
 app.use(`${baseUrl}/vendor/cronstrue`, express.static(path.join(__dirname, 'node_modules', 'cronstrue', 'dist')));
 
 // Static assets are cacheable and do not consume the quota reserved for application operations.
