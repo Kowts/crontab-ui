@@ -67,6 +67,28 @@ const csrfProtection = require('../middleware/csrf');
 const app = createApp();
 
 describe('Crontab UI', () => {
+  describe('SQLite primary-key operations', () => {
+    it('finds, updates and removes targeted job ids without changing other documents', async () => {
+      const filename = path.join(testDbPath, `primary-key-${crypto.randomUUID()}.db`);
+      const datastore = new SqliteDatastore({ filename });
+      const jobs = [
+        { _id: 'first', name: 'first', created: 1 },
+        { _id: 'second', name: 'second', created: 2 },
+      ];
+      try {
+        await Promise.all(jobs.map((job) => new Promise((resolve, reject) => datastore.insert(job, (error) => (error ? reject(error) : resolve())))));
+        const found = await new Promise((resolve, reject) => datastore.find({ _id: 'first' }).exec((error, docs) => (error ? reject(error) : resolve(docs))));
+        expect(found).toEqual([jobs[0]]);
+        await new Promise((resolve, reject) => datastore.update({ _id: { $in: ['first'] } }, { $set: { name: 'updated' } }, { multi: true }, (error) => (error ? reject(error) : resolve())));
+        await new Promise((resolve, reject) => datastore.remove({ _id: 'second' }, {}, (error) => (error ? reject(error) : resolve())));
+        expect(datastore.getAllData()).toEqual([{ ...jobs[0], name: 'updated' }]);
+      } finally {
+        datastore.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+  });
+
   describe('GET /', () => {
     it('should return the main page', async () => {
       const res = await request(app).get('/');
