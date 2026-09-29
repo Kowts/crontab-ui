@@ -27,7 +27,7 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
   },
 });
 
-const app = require('../app');
+const { createApp, startServer } = require('../app');
 const crontab = require('../crontab');
 const { requireRole, validateRoleAssignments } = require('../middleware/authorization');
 const setupAuth = require('../middleware/auth');
@@ -40,6 +40,10 @@ const { createReloadCoordinator, schedulerEnvironment } = require('../scheduler'
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
+
+// Requiring app.js must not build an application, so the shared instance used
+// by the HTTP suite is created explicitly here. Every other test builds its own.
+const app = createApp();
 
 describe('Crontab UI', () => {
   describe('GET /', () => {
@@ -1417,7 +1421,7 @@ describe('Login abuse protection', () => {
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ reviewer: 'viewer' });
     process.env.LOGIN_RATE_LIMIT_MAX = '3';
     process.env.LOGIN_RATE_LIMIT_WINDOW_MS = '120000';
-    const protectedApp = app.createApp();
+    const protectedApp = createApp();
 
     expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
     expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
@@ -1458,7 +1462,7 @@ describe('Login client IP trust', () => {
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ reviewer: 'viewer' });
     process.env.LOGIN_RATE_LIMIT_MAX = '1';
     process.env.TRUSTED_PROXY = 'loopback';
-    const protectedApp = app.createApp();
+    const protectedApp = createApp();
 
     const firstClient = '198.51.100.10';
     const otherClient = '198.51.100.11';
@@ -1495,7 +1499,7 @@ describe('Review and publish HTTP flow', () => {
       { owner: 'admin', createdBy: 'admin' }, (error, created) => (error ? reject(error) : resolve(created))
     ));
     let publishedFile;
-    const protectedApp = app.createApp({
+    const protectedApp = createApp({
       setCrontab: (environment, callback) => crontab.set_crontab(environment, callback, (file, applied) => {
         publishedFile = file;
         applied(null);
@@ -1550,7 +1554,7 @@ describe('Administrative data boundaries', () => {
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ viewer: 'viewer-secret', admin: 'admin-secret' });
     process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ viewer: 'viewer', admin: 'admin' });
     fs.writeFileSync(crontab.env_file, 'ADMIN_ONLY_VALUE=not-for-viewers');
-    const protectedApp = app.createApp();
+    const protectedApp = createApp();
     const viewer = request.agent(protectedApp);
 
     const loginPage = await viewer.get('/login');
@@ -1570,13 +1574,21 @@ describe('Administrative data boundaries', () => {
 
 describe('Application bootstrap', () => {
   it('creates isolated applications and exposes a closable HTTP server', async () => {
-    const anotherApp = app.createApp();
+    const anotherApp = createApp();
     expect(anotherApp).not.toBe(app);
     anotherApp.set('port', 0);
-    const server = app.startServer(anotherApp);
+    const server = startServer(anotherApp);
     await new Promise((resolve) => server.once('listening', resolve));
     expect(server.listening).toBe(true);
     await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  });
+
+  it('exports the builders without building an application on require', () => {
+    const exported = require('../app');
+    expect(Object.keys(exported).sort()).toEqual(['createApp', 'startServer']);
+    // A default application would be callable as an Express request handler.
+    expect(typeof exported).toBe('object');
+    expect(exported).not.toBe(app);
   });
 });
 

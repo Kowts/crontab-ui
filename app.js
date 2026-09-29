@@ -624,8 +624,7 @@ function startServer(application = createApp()) {
   return server;
 }
 
-const defaultApp = createApp();
-
-module.exports = defaultApp;
-module.exports.createApp = createApp;
-module.exports.startServer = startServer;
+// Requiring this module must not open the database, create directories, or
+// reject a misconfigured deployment. The application is built explicitly by
+// the entry point (bootstrap.js) or by the caller.
+module.exports = { createApp, startServer };
