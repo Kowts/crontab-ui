@@ -166,7 +166,7 @@ npx crontab-ui-hash
 BASIC_AUTH_USERS_JSON={"admin":"scrypt:5dcf990b...:d3012ee7..."}
 ```
 
-The digest is `scrypt:<salt>:<hash>`, with a per-user random salt. Literal passwords remain supported and are still compared in constant time, which is acceptable only for loopback development. A value beginning with `scrypt:` that is not a well formed digest stops the service from starting, naming the user, rather than silently leaving the account unable to sign in. Sign-in performs the same work for an unknown user as for a wrong password, so response time does not disclose which accounts exist. Changing a user password means storing a new digest; there is no way to recover the password from the stored value.
+The digest is `scrypt:<salt>:<hash>`, with a per-user random salt. Literal passwords remain supported and are still compared in constant time, which is acceptable only for loopback development. A value beginning with `scrypt:` that is not a well formed digest stops the service from starting, naming the user, rather than silently leaving the account unable to sign in. Sign-in performs the same work for an unknown user as for a wrong password, so response time does not disclose which accounts exist. Changing a user password means storing a new digest; there is no way to recover the password from the stored value. See [`docs/passwords.md`](docs/passwords.md) for the full procedure, deployment notes, and troubleshooting.
 
 | Role | Capabilities |
 | --- | --- |
