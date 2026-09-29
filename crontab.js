@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
+const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 const { buildTaskEnvironment } = require('./config/task-environment');
@@ -162,6 +163,9 @@ exports.status = (_id, stopped, callback = () => {}) => {
 
 exports.remove = (_id, callback = () => {}) => {
   db.remove({ _id }, {}, callback);
+  // The alert state belongs to a task that no longer exists; keeping it would leave a row that
+  // nothing can clear, since only a successful run clears it.
+  db.clearAlert(_id);
 };
 
 exports.crontabs = (callback) => {
@@ -303,28 +307,68 @@ function recordExecution({ job, operationId, trigger, actor, startedAt, status, 
   }
 }
 
-function shouldSendMail(mailing, failed) {  if (!mailing?.profileId) return false;
+function shouldSendMail(mailing, failed) {
+  if (!mailing?.profileId) return false;
   const policy = mailing.policy || 'onFailure';
   return policy === 'always' || (failed ? policy === 'onFailure' : policy === 'onSuccess');
 }
 
-function sendMail(tab, operationId, result, failed) {
+let mailerSpawn = defaultMailerSpawn;
+
+// Decides whether a failing run should be announced, and keeps the state that makes the next
+// decision possible. The alert is recorded when the decision to send is taken, not when delivery
+// is confirmed: the mailer runs detached and cannot report back, and a broken SMTP server is
+// exactly the case where repeated attempts should be throttled rather than retried in a loop.
+function deliverMail(tab, operationId, result, failed) {
+  // A successful run ends the incident, whatever the notification policy is. This has to happen
+  // before the policy check: a task configured to notify only on failure returns early there, and
+  // would otherwise keep a stale cooldown that suppresses the next real alert.
+  if (!failed) db.clearAlert(tab._id);
   if (!shouldSendMail(tab.mailing, failed)) {
     if (tab.mailing?.profileId) {
       audit({ operationId, type: 'mail', jobId: tab._id, status: 'skipped', reason: failed ? 'policy_on_success' : 'policy_on_failure' });
     }
     return false;
   }
+  if (failed) {
+    const now = Date.now();
+    const consecutiveFailures = db.countConsecutiveFailures(tab._id);
+    const alertState = db.getAlertState(tab._id);
+    const decision = failureAlertDue(tab.mailing, {
+      consecutiveFailures,
+      lastAlertAt: alertState ? alertState.lastAlertAt : null,
+      now,
+    });
+    if (!decision.send) {
+      audit({
+        operationId, type: 'mail', jobId: tab._id, status: 'skipped', reason: decision.reason, consecutiveFailures,
+      });
+      return false;
+    }
+    db.recordAlert(tab._id, now, consecutiveFailures);
+  }
   const outcome = failed ? 'failed' : 'succeeded';
   const durationMs = Number.isSafeInteger(result.durationMs) && result.durationMs >= 0 ? String(result.durationMs) : '';
   const exitCode = Number.isSafeInteger(result.exitCode) ? String(result.exitCode) : '';
-  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, operationId, outcome, durationMs, exitCode], {
+  const child = mailerSpawn([tab._id, operationId, outcome, durationMs, exitCode]);
+  watchMailerProcess(child, { operationId, jobId: tab._id });
+  if (child.unref) child.unref();
+  return true;
+}
+
+function defaultMailerSpawn(args) {
+  return spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), ...args], {
     detached: false,
     stdio: 'ignore',
   });
-  watchMailerProcess(child, { operationId, jobId: tab._id });
-  child.unref();
-  return true;
+}
+
+// The delivery decision is worth testing without a live SMTP server, and the same seam keeps the
+// spawn itself replaceable. Returns the previous spawn, so a caller can restore it.
+function setMailerSpawn(override) {
+  const previous = mailerSpawn;
+  mailerSpawn = override || defaultMailerSpawn;
+  return previous;
 }
 
 // The mailer owns the audit record for its own delivery outcome, including unexpected exits.
@@ -339,6 +383,7 @@ function watchMailerProcess(child, { operationId, jobId }) {
 
 exports.should_send_mail = shouldSendMail;
 exports.watch_mailer_process = watchMailerProcess;
+exports.set_mailer_spawn = setMailerSpawn;
 
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
@@ -400,12 +445,14 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(res, result, operationId);
-      if (output) sendMail(res, operationId, result, failed);
-      else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
+      // The execution is recorded before the notification decision, because the number of
+      // consecutive failures is what that decision depends on.
       recordExecution({
         job: res, operationId, trigger: 'scheduled', startedAt,
         status: failed ? 'failed' : 'completed', result,
       });
+      if (output) deliverMail(res, operationId, result, failed);
+      else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
@@ -442,6 +489,9 @@ exports.getExecutionPanel = (job) => ({
   stopped: Boolean(job.stopped),
   nextRun: nextScheduledRun(job),
   ...db.summariseExecutions(job._id),
+  // Surfacing the alert state is what makes a deliberate silence legible: an operator can see the
+  // cooldown is holding rather than assume the alert path is broken.
+  alert: db.getAlertState(job._id),
   history: db.listExecutions(job._id, executionHistoryLimit),
 });
 
@@ -480,10 +530,10 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
-      if (output) sendMail(job, operationId, result, failed);
-      else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       const status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
       recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result });
+      if (output) deliverMail(job, operationId, result, failed);
+      else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
@@ -711,22 +761,14 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
   if (document.logging !== undefined && typeof document.logging !== 'boolean' && document.logging !== 'true' && document.logging !== 'false') {
     throw new Error('Imported job has an invalid logging setting');
   }
+  let normalisedMailing = {};
   if (document.mailing !== undefined) {
-    if (!isPlainObject(document.mailing) || Object.keys(document.mailing).some((key) => !['profileId', 'policy'].includes(key))) {
-      throw new Error('Imported job has invalid mail settings');
+    try {
+      normalisedMailing = normaliseMailing(document.mailing);
+    } catch (error) {
+      throw new Error(`Imported job has invalid mail settings: ${error.message}`);
     }
-    if (document.mailing.profileId !== undefined) {
-      if (typeof document.mailing.profileId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(document.mailing.profileId)) {
-        throw new Error('Imported job has an invalid mail profile');
-      }
-      getProfile(document.mailing.profileId);
-    }
-    if (document.mailing.policy !== undefined && !['onFailure', 'onSuccess', 'always'].includes(document.mailing.policy)) {
-      throw new Error('Imported job has an invalid mail policy');
-    }
-    if (!document.mailing.profileId && document.mailing.policy !== undefined) {
-      throw new Error('Imported job has a mail policy without a profile');
-    }
+    if (normalisedMailing.profileId) getProfile(normalisedMailing.profileId);
   }
 
   const normalised = {
@@ -735,7 +777,7 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
     schedule: document.schedule,
     stopped: document.stopped === true,
     logging: document.logging === true || document.logging === 'true',
-    mailing: document.mailing?.profileId ? { profileId: document.mailing.profileId, policy: document.mailing.policy || 'onFailure' } : {},
+    mailing: normalisedMailing,
     created: Date.now(),
     saved: false,
     timestamp: new Date().toString(),

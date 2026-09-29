@@ -1,6 +1,6 @@
 'use strict';
 
-/* global describe, it, expect, beforeAll, afterAll, afterEach */
+/* global describe, it, expect, beforeAll, beforeEach, afterAll, afterEach */
 const rawRequest = require('supertest');
 const express = require('express');
 const path = require('path');
@@ -65,6 +65,7 @@ const { validateAllProfiles, validateProfileId } = require('../config/mail-profi
 const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
+const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
@@ -2036,6 +2037,143 @@ describe('Sign-in with a stored digest', () => {
     const client = rawRequest.agent(digestApp);
     expect((await attempt(client, { username: 'admin', password: 'correct-horse' })).status).toBe(302);
     expect((await client.get('/')).status).toBe(200);
+  });
+});
+
+describe('Failure alert policy', () => {
+  it('keeps a task that never used these settings byte-identical to before', () => {
+    expect(normaliseMailing({ profileId: 'operations' })).toEqual({ profileId: 'operations', policy: 'onFailure' });
+    expect(normaliseMailing({})).toEqual({});
+    expect(normaliseMailing(undefined)).toEqual({});
+  });
+
+  it('stores only the values the operator actually chose', () => {
+    expect(normaliseMailing({ profileId: 'operations', alertAfterFailures: 3 }))
+      .toEqual({ profileId: 'operations', policy: 'onFailure', alertAfterFailures: 3 });
+    expect(normaliseMailing({ profileId: 'operations', alertCooldownMinutes: 0 }).alertCooldownMinutes).toBe(0);
+  });
+
+  it('rejects thresholds outside the supported range', () => {
+    for (const value of [0, -1, 101, 1.5, 'abc', {}]) {
+      expect(() => normaliseMailing({ profileId: 'operations', alertAfterFailures: value })).toThrow(/alertAfterFailures/);
+    }
+    expect(() => normaliseMailing({ profileId: 'operations', alertCooldownMinutes: 10081 })).toThrow(/alertCooldownMinutes/);
+  });
+
+  it('rejects a threshold without a profile to alert through', () => {
+    expect(() => normaliseMailing({ alertAfterFailures: 3 })).toThrow(/requires a profileId/);
+    expect(() => normaliseMailing({ policy: 'onFailure', alertCooldownMinutes: 5 })).toThrow(/requires a profileId/);
+  });
+
+  it('rejects an unknown notification field rather than dropping it', () => {
+    expect(() => normaliseMailing({ profileId: 'operations', retries: 3 })).toThrow('mailing contains unsupported fields');
+  });
+
+  it('stays silent until the failure threshold is reached', () => {
+    const mailing = { alertAfterFailures: 3 };
+    expect(failureAlertDue(mailing, { consecutiveFailures: 1, lastAlertAt: null })).toEqual({ send: false, reason: 'below_failure_threshold' });
+    expect(failureAlertDue(mailing, { consecutiveFailures: 2, lastAlertAt: null })).toEqual({ send: false, reason: 'below_failure_threshold' });
+    expect(failureAlertDue(mailing, { consecutiveFailures: 3, lastAlertAt: null })).toEqual({ send: true, reason: null });
+    expect(failureAlertDue(mailing, { consecutiveFailures: 9, lastAlertAt: null }).send).toBe(true);
+  });
+
+  it('holds further alerts during the cooldown', () => {
+    const mailing = { alertAfterFailures: 2, alertCooldownMinutes: 60 };
+    const now = 1_700_000_000_000;
+    const justAlerted = now - 60_000;
+    expect(failureAlertDue(mailing, { consecutiveFailures: 3, lastAlertAt: justAlerted, now }).send).toBe(false);
+    expect(failureAlertDue(mailing, { consecutiveFailures: 3, lastAlertAt: now - 61 * 60_000, now }).send).toBe(true);
+    expect(failureAlertDue(mailing, { consecutiveFailures: 3, lastAlertAt: now, now: now, }).send).toBe(false);
+  });
+
+  it('treats a zero cooldown as no cooldown at all', () => {
+    const mailing = { alertAfterFailures: 1, alertCooldownMinutes: 0 };
+    const now = 1_700_000_000_000;
+    expect(failureAlertDue(mailing, { consecutiveFailures: 1, lastAlertAt: now, now }).send).toBe(true);
+  });
+
+  it('falls back to alerting on the first failure and hourly when unset', () => {
+    const now = 1_700_000_000_000;
+    expect(failureAlertDue({}, { consecutiveFailures: 1, lastAlertAt: null, now }).send).toBe(true);
+    expect(failureAlertDue({}, { consecutiveFailures: 1, lastAlertAt: now - 59 * 60_000, now }).send).toBe(false);
+    expect(failureAlertDue({}, { consecutiveFailures: 1, lastAlertAt: now - 61 * 60_000, now }).send).toBe(true);
+  });
+});
+
+describe('Alert behaviour across a real run sequence', () => {
+  let spawned;
+
+  beforeEach(() => {
+    spawned = [];
+    crontab.set_mailer_spawn((args) => {
+      spawned.push({ jobId: args[0], operationId: args[1], outcome: args[2] });
+      return new EventEmitter();
+    });
+  });
+
+  afterEach(() => {
+    crontab.set_mailer_spawn(null);
+  });
+
+  function createJob(mailing, command = 'exit 1') {
+    return new Promise((resolve, reject) => {
+      crontab.create_new('alert-seq', command, '* * * * *', false, mailing, {}, (error, job) => (error ? reject(error) : resolve(job)));
+    });
+  }
+
+  function runJob(job) {
+    return new Promise((resolve) => crontab.runjob(job._id, {}, () => resolve()));
+  }
+
+  function setCommand(job, command) {
+    return new Promise((resolve, reject) => crontab.update(job._id, {
+      name: job.name, command, schedule: job.schedule, logging: false, mailing: job.mailing,
+    }, (error) => (error ? reject(error) : resolve())));
+  }
+
+  it('does not alert on the first failure when a threshold of three is set', async () => {
+    const job = await createJob({ profileId: 'operations', policy: 'onFailure', alertAfterFailures: 3, alertCooldownMinutes: 60 });
+    await runJob(job);
+    await runJob(job);
+    expect(spawned).toHaveLength(0);
+    await runJob(job);
+    expect(spawned).toHaveLength(1);
+  });
+
+  it('sends a single alert for a continuing failure inside the cooldown', async () => {
+    const job = await createJob({ profileId: 'operations', policy: 'onFailure', alertAfterFailures: 1, alertCooldownMinutes: 60 });
+    for (let i = 0; i < 6; i += 1) await runJob(job);
+    expect(spawned).toHaveLength(1);
+  });
+
+  it('alerts again after a success, because the cooldown belonged to a finished incident', async () => {
+    const job = await createJob({ profileId: 'operations', policy: 'onFailure', alertAfterFailures: 1, alertCooldownMinutes: 60 });
+    await runJob(job);
+    expect(spawned).toHaveLength(1);
+    await setCommand(job, 'echo recovered');
+    await runJob(job);
+    expect(spawned).toHaveLength(1);
+    await setCommand(job, 'exit 1');
+    await runJob(job);
+    expect(spawned).toHaveLength(2);
+  });
+
+  it('reports the alert state in the panel so a deliberate silence is legible', async () => {
+    const job = await createJob({ profileId: 'operations', policy: 'onFailure', alertAfterFailures: 1, alertCooldownMinutes: 60 });
+    const before = crontab.getExecutionPanel(job);
+    expect(before.alert).toBeNull();
+    await runJob(job);
+    const after = crontab.getExecutionPanel(job);
+    expect(after.alert).toMatchObject({ jobId: job._id });
+    expect(after.alert.alertedAtFailures).toBe(1);
+  });
+
+  it('forgets the alert state when the task is removed', async () => {
+    const job = await createJob({ profileId: 'operations', policy: 'onFailure' });
+    await runJob(job);
+    expect(crontab.getExecutionPanel(job).alert).not.toBeNull();
+    await new Promise((resolve) => crontab.remove(job._id, resolve));
+    expect(crontab.getExecutionPanel(job).alert).toBeNull();
   });
 });
 

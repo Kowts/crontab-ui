@@ -29,6 +29,7 @@ const {
   validateImportMetadata,
 } = require('./middleware/validate');
 const { getProfile, listProfileIds, validateAllProfiles, validateProfileId } = require('./config/mail-profiles');
+const { normaliseMailing } = require('./config/alert-policy');
 const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
@@ -312,18 +313,20 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
   if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
     || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
     || typeof schedule !== 'string' || schedule.length > 128 || /[\r\n]/.test(schedule)
-    || typeof mailing !== 'object' || mailing === null
-    || Object.keys(mailing).some((key) => !['profileId', 'policy'].includes(key))
-    || (mailing.profileId !== undefined && (typeof mailing.profileId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(mailing.profileId)))
-    || (mailing.policy !== undefined && !['onFailure', 'onSuccess', 'always'].includes(mailing.policy))
-    || (!mailing.profileId && mailing.policy !== undefined)) {
+    || typeof mailing !== 'object' || mailing === null) {
+    return res.status(400).json({ message: 'Invalid job payload' });
+  }
+  // The accepted fields, the bounds and the stored shape all come from one place, so a task can
+  // never be saved with a notification setting the run path would not honour.
+  try {
+    mailing = normaliseMailing(mailing);
+  } catch (_error) {
     return res.status(400).json({ message: 'Invalid job payload' });
   }
   try {
     if (schedule !== '@reboot') require('cron-parser').CronExpressionParser.parse(schedule);
     if (mailing.profileId) {
       getProfile(mailing.profileId);
-      mailing = { profileId: mailing.profileId, policy: mailing.policy || 'onFailure' };
     }
   } catch (_error) {
     return res.status(400).json({ message: 'Invalid cron schedule or mail profile' });

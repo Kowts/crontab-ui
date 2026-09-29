@@ -187,6 +187,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   var environmentInput = document.getElementById('env_vars');
   if (environmentInput) environmentInput.addEventListener('input', function() { renderEnvironment(environmentInput.value); });
+  var mailProfile = document.getElementById('job-mail-profile');
+  if (mailProfile) mailProfile.addEventListener('change', toggleAlertFields);
 });
 
 document.addEventListener('click', function(event) {
@@ -443,6 +445,7 @@ function editJob(_id) {
     job_command = job.command;
     $('#job-mail-profile').val(job.mailing && job.mailing.profileId ? job.mailing.profileId : '');
     $('#job-mail-policy').val(job.mailing && job.mailing.policy ? job.mailing.policy : 'onFailure');
+    fillAlertFields(job.mailing || {});
     if (job.logging && job.logging !== 'false')
       $('#job-logging').prop('checked', true);
     job_string();
@@ -454,14 +457,39 @@ function editJob(_id) {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var profileId = $('#job-mail-profile').val();
-    var mailing = profileId ? { profileId: profileId, policy: $('#job-mail-policy').val() } : {};
+    var mailing = mailingFromForm();
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing}, function() {
       location.reload();
     }).fail(handleOperationFailure);
     getModal('job').hide();
   });
+}
+
+// The alert threshold and cooldown only apply to a task that has a profile to alert through.
+// Values that fall outside the range the server accepts are dropped rather than sent, so a
+// half-typed number cannot make the whole save fail.
+function mailingFromForm() {
+  var profileId = $('#job-mail-profile').val();
+  if (!profileId) return {};
+  var mailing = { profileId: profileId, policy: $('#job-mail-policy').val() };
+  var after = parseInt($('#job-alert-after').val(), 10);
+  var cooldown = parseInt($('#job-alert-cooldown').val(), 10);
+  if (!isNaN(after) && after >= 1 && after <= 100) mailing.alertAfterFailures = after;
+  if (!isNaN(cooldown) && cooldown >= 0 && cooldown <= 10080) mailing.alertCooldownMinutes = cooldown;
+  return mailing;
+}
+
+function fillAlertFields(mailing) {
+  $('#job-alert-after').val(mailing && mailing.alertAfterFailures ? mailing.alertAfterFailures : 1);
+  $('#job-alert-cooldown').val(mailing && mailing.alertCooldownMinutes !== undefined ? mailing.alertCooldownMinutes : 60);
+  toggleAlertFields();
+}
+
+function toggleAlertFields() {
+  var hasProfile = Boolean($('#job-mail-profile').val());
+  $('#job-alert-threshold-fields').toggleClass('d-none', !hasProfile);
+  $('#job-alert-help').toggleClass('d-none', !hasProfile);
 }
 
 function newJob() {
@@ -480,6 +508,7 @@ function newJob() {
   $('#job-logging').prop('checked', false);
   $('#job-mail-profile').val('');
   $('#job-mail-policy').val('onFailure');
+  fillAlertFields({});
   job_string();
 
   var saveBtn = document.getElementById('job-save');
@@ -488,8 +517,7 @@ function newJob() {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var profileId = $('#job-mail-profile').val();
-    var mailing = profileId ? { profileId: profileId, policy: $('#job-mail-policy').val() } : {};
+    var mailing = mailingFromForm();
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing}, function() {
       location.reload();
@@ -574,7 +602,8 @@ function renderExecutions(panel) {
     [tr('lastRunResult'), panel.lastRun ? executionStatusLabel(panel.lastRun) : tr('never')],
     [tr('lastSuccess'), panel.lastSuccess ? new Date(panel.lastSuccess.completedAt).toLocaleString() : tr('never')],
     [tr('nextRun'), panel.stopped ? tr('schedulePaused') : (panel.nextRun ? new Date(panel.nextRun).toLocaleString() : tr('unavailable'))],
-    [tr('consecutiveFailures'), String(panel.consecutiveFailures)]
+    [tr('consecutiveFailures'), String(panel.consecutiveFailures)],
+    [tr('lastAlertSent'), panel.alert ? new Date(panel.alert.lastAlertAt).toLocaleString() : tr('never')]
   ];
   rows.forEach(function(entry) {
     var term = document.createElement('dt');
