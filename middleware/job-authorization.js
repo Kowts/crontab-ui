@@ -29,7 +29,12 @@ function canAccessJob(req, job, action) {
 function requireJobAccess(action) {
   return (req, res, next) => {
     if (!req.app.locals.authEnabled) return next();
-    const jobId = req.body._id || req.query.id;
+    const jobId = req.body?._id || req.query?.id;
+    // Without an identifier there is nothing to authorize against. Answering here keeps a
+    // malformed request from reaching the datastore as a lookup for an empty key.
+    if (typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(jobId)) {
+      return res.status(400).json({ message: 'Invalid or missing id parameter' });
+    }
     crontab.get_crontab(jobId, (job) => {
       if (!job) return res.status(404).json({ message: 'Job not found' });
       if (!canAccessJob(req, job, action)) return res.status(403).json({ message: 'Not authorized for this job' });
@@ -40,12 +45,13 @@ function requireJobAccess(action) {
 }
 
 function requireSaveAccess(req, res, next) {
+  const body = req.body || {};
   // Browser form encoding serialises the creation sentinel as a string.
-  if (req.body._id === -1 || req.body._id === '-1') {
+  if (body._id === -1 || body._id === '-1') {
     if (canManageTasks(req)) return next();
     return res.status(403).json({ message: 'Operator task execution is disabled' });
   }
-  if (typeof req.body._id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(req.body._id)) return next();
+  if (typeof body._id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body._id)) return next();
   return requireJobAccess('write')(req, res, next);
 }
 

@@ -2039,6 +2039,57 @@ describe('Sign-in with a stored digest', () => {
   });
 });
 
+describe('Per-task routes with authentication enabled', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  async function signedInAdmin() {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ admin: 'admin-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin' });
+    const authedApp = createApp();
+    const client = request.agent(authedApp);
+    await client.post('/login').send({ username: 'admin', password: 'admin-secret' }).expect(302);
+    return { authedApp, client };
+  }
+
+  // A GET carries no body, and body-parser 2.x leaves req.body undefined in that case. These
+  // routes all read the task id from the body or the query, so they used to raise a TypeError
+  // before their own validation whenever authentication was enabled.
+  it('serves the log and execution routes for a signed-in administrator', async () => {
+    const { client } = await signedInAdmin();
+    const job = await new Promise((resolve, reject) => crontab.create_new(
+      'authed-read', 'echo authed-read', '* * * * *', true, {}, {}, (error, created) => (error ? reject(error) : resolve(created))
+    ));
+
+    for (const route of ['/logger', '/stdout', '/executions']) {
+      const res = await client.get(route).query({ id: job._id });
+      expect(res.status, `${route} answered ${res.status}`).toBe(200);
+    }
+    expect((await client.get('/executions').query({ id: job._id })).body).toMatchObject({ jobId: job._id });
+  });
+
+  it('answers a missing or malformed task id instead of raising an error', async () => {
+    const { client } = await signedInAdmin();
+    expect((await client.get('/executions')).status).toBe(400);
+    expect((await client.get('/logger')).status).toBe(400);
+    expect((await client.get('/executions').query({ id: '../escape' })).status).toBe(400);
+    expect((await client.get('/executions').query({ id: 'inexistente' })).status).toBe(404);
+  });
+
+  it('accepts a state-changing request that carries no body', async () => {
+    const { client } = await signedInAdmin();
+    const res = await client.post('/stop').set('Content-Type', 'application/json');
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('Login client IP trust', () => {
   const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
   const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;

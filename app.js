@@ -150,6 +150,14 @@ app.set('views', path.join(__dirname, 'views'));
 
 app.use(express.json({ limit: '32kb' }));
 app.use(express.urlencoded({ extended: true, limit: '32kb' }));
+// body-parser 2.x leaves req.body undefined for a request with no body or no recognised content
+// type, where earlier versions set it to an empty object. Every handler below reads req.body
+// directly, so a plain GET would otherwise raise a TypeError before reaching its own validation.
+// Normalising once here keeps that assumption true for all routes, including future ones.
+app.use((req, _res, next) => {
+  if (req.body === undefined) req.body = {};
+  return next();
+});
 app.use(busboy({ limits: { files: 1, fileSize: 1024 * 1024, fields: 10 } }));
 app.use(csrfProtection);
 app.use((req, res, next) => {
