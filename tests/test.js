@@ -7,6 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
+const { EventEmitter } = require('events');
 const cronstrue = require('cronstrue/i18n');
 const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
 
@@ -1314,6 +1316,63 @@ describe('Mail output attachments', () => {
     const output = collectOutputAttachments(folder, 'dir', 1024);
     expect(output.attachments).toEqual([]);
     expect(output.notices).toEqual(['stdout is not a regular file and was not attached.', 'stderr is not available and was not attached.']);
+  });
+});
+
+describe('Mail delivery failure audit ownership', () => {
+  function runMailer(operationId) {
+    return new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'crontab-ui-mailer.js'), 'unknown-job', operationId, 'failed', '10', '1'], {
+        stdio: 'ignore',
+      });
+      child.once('exit', resolve);
+    });
+  }
+
+  it('records a single failure event when the mailer reports the error itself', async () => {
+    const operationId = 'operation-mailer-audit-once';
+    const exitCode = await runMailer(operationId);
+    expect(exitCode).toBe(1);
+
+    const records = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.operationId === operationId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ type: 'mail', jobId: 'unknown-job', status: 'failed' });
+  });
+
+  it('does not re-audit a mailer exit that the mailer already reported', () => {
+    const operationId = 'operation-mailer-exit-not-duplicated';
+    const child = new EventEmitter();
+    crontab.watch_mailer_process(child, { operationId, jobId: 'job-exit' });
+    child.emit('exit', 1, null);
+
+    const records = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.operationId === operationId);
+    expect(records).toEqual([]);
+  });
+
+  it('audits a failure the parent alone can observe: the mailer not starting', () => {
+    const operationId = 'operation-mailer-spawn-failure';
+    const child = new EventEmitter();
+    crontab.watch_mailer_process(child, { operationId, jobId: 'job-spawn' });
+    child.emit('error', new Error('spawn ENOENT'));
+
+    const records = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.operationId === operationId);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ type: 'mail', jobId: 'job-spawn', status: 'failed', reason: 'spawn_failed' });
   });
 });
 

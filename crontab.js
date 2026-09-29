@@ -289,15 +289,23 @@ function sendMail(tab, operationId, result, failed) {
     detached: false,
     stdio: 'ignore',
   });
-  child.once('error', (error) => audit({ operationId, type: 'mail', jobId: tab._id, status: 'failed', error: error.message }));
-  child.once('exit', (code, signal) => {
-    if (code !== 0) audit({ operationId, type: 'mail', jobId: tab._id, status: 'failed', exitCode: code, signal });
-  });
+  watchMailerProcess(child, { operationId, jobId: tab._id });
   child.unref();
   return true;
 }
 
+// The mailer owns the audit record for its own delivery outcome, including unexpected exits.
+// The parent only reports the one failure it can observe on its own: the process not starting.
+// An exit code is deliberately ignored, because a non-zero exit is what the mailer itself uses
+// to report a delivery failure it has already audited.
+function watchMailerProcess(child, { operationId, jobId }) {
+  child.once('error', (error) => audit({
+    operationId, type: 'mail', jobId, status: 'failed', reason: 'spawn_failed', error: error.message,
+  }));
+}
+
 exports.should_send_mail = shouldSendMail;
+exports.watch_mailer_process = watchMailerProcess;
 
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
