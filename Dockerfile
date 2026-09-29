@@ -21,6 +21,11 @@ RUN   apk --no-cache add \
       tini \
       tzdata
 
+# npm is only needed in the build stage. Removing it from the runtime image
+# reduces the attack surface and excludes its bundled packages from deployment.
+RUN   rm -rf /usr/local/lib/node_modules/npm \
+      && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 WORKDIR /crontab-ui
 
 LABEL maintainer="@alseambusher"
