@@ -33,6 +33,8 @@ const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
 const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
 const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
+const auditWriteAttempts = 3;
+const auditRetryDelayMs = 25;
 
 const cronPath = process.env.CRON_PATH || path.join(dbFolder, 'crontab-staging');
 let databaseOperationActive = false;
@@ -194,14 +196,18 @@ function audit(event) {
     rotateLog(auditFile);
     const entry = `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`;
     let writeError;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < auditWriteAttempts; attempt += 1) {
       try {
         fs.appendFileSync(auditFile, entry, { encoding: 'utf8', mode: 0o600 });
         return;
       } catch (error) {
         writeError = error;
-        if (error.code !== 'EBUSY' || attempt === 2) throw error;
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+        if (error.code !== 'EBUSY' || attempt === auditWriteAttempts - 1) throw error;
+        // Audit writes deliberately remain synchronous: callers record a lifecycle event before
+        // reporting success, and an asynchronous retry could reorder it or lose it on shutdown.
+        // Windows may briefly retain a rotated log handle as EBUSY. This bounded retry pauses the
+        // event loop only on that rare path, at most two times (50 ms total), before surfacing it.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, auditRetryDelayMs);
       }
     }
     throw writeError;

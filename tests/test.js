@@ -89,6 +89,15 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Audit write retry', () => {
+    it('documents the bounded synchronous retry for transient Windows log locks', () => {
+      const source = fs.readFileSync(path.join(__dirname, '..', 'crontab.js'), 'utf8');
+      expect(source).toContain('const auditWriteAttempts = 3;');
+      expect(source).toContain('const auditRetryDelayMs = 25;');
+      expect(source).toContain('at most two times (50 ms total)');
+    });
+  });
+
   describe('GET /', () => {
     it('should return the main page', async () => {
       const res = await request(app).get('/');
