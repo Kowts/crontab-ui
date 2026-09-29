@@ -1,24 +1,6 @@
 'use strict';
 
-const path = require('path');
 const { parseEnvironment } = require('../config/environment');
-
-function sanitizeFilename(name) {
-  if (!name) return name;
-  return path.basename(name);
-}
-
-function validateDbParam(req, res, next) {
-  const db = req.query.db || req.body.db;
-  if (db) {
-    const sanitized = sanitizeFilename(db);
-    if (sanitized !== db) {
-      return res.status(400).json({ message: 'Invalid db parameter' });
-    }
-    req.dbName = sanitized;
-  }
-  next();
-}
 
 function validateIdParam(req, res, next) {
   const id = req.query.id || req.body._id;
@@ -57,7 +39,6 @@ function validateImportMetadata(fieldName, filename) {
 }
 
 module.exports = {
-  validateDbParam,
   validateBackupParam,
   validateIdParam,
   validateEnvironmentPayload,

@@ -888,7 +888,7 @@ exports.close_db = () => {
 
 exports.get_env = () => {
   if (fs.existsSync(envFile)) {
-    return fs.readFileSync(envFile, 'utf8').replace('\n', '\n');
+    return fs.readFileSync(envFile, 'utf8');
   }
   return '';
 };
