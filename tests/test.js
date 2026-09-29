@@ -58,6 +58,7 @@ const { execute } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
 const { createReloadCoordinator, schedulerEnvironment } = require('../scheduler');
+const { collectOutputAttachments } = require('../bin/crontab-ui-mailer');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
@@ -1270,6 +1271,49 @@ describe('Mail profile hardening', () => {
     });
     expect(() => getProfile('unsafe')).toThrow('smtp or smtps');
     expect(() => getProfile('injected')).toThrow('invalid recipient address');
+  });
+});
+
+describe('Mail output attachments', () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-mailer-'));
+
+  it('attaches both outputs when they fit the limit', () => {
+    fs.writeFileSync(path.join(folder, 'fits.stdout'), 'first');
+    fs.writeFileSync(path.join(folder, 'fits.stderr'), 'second');
+    const output = collectOutputAttachments(folder, 'fits', 1024);
+    expect(output.notices).toEqual([]);
+    expect(output.attachments.map((item) => item.filename)).toEqual(['stdout.txt', 'stderr.txt']);
+    expect(output.attachments.map((item) => item.content.toString('utf8'))).toEqual(['first', 'second']);
+  });
+
+  it('truncates oversized output instead of failing the notification', () => {
+    fs.writeFileSync(path.join(folder, 'big.stdout'), 'abcdefghij');
+    fs.writeFileSync(path.join(folder, 'big.stderr'), '');
+    const output = collectOutputAttachments(folder, 'big', 4);
+    expect(output.attachments.map((item) => item.filename)).toEqual(['stdout-truncated.txt', 'stderr.txt']);
+    expect(output.attachments[0].content.toString('utf8')).toBe('abcd');
+    expect(output.notices).toHaveLength(1);
+    expect(output.notices[0]).toContain('exceeds the 4-byte attachment limit');
+  });
+
+  it('keeps the readable output when the other stream is missing', () => {
+    fs.writeFileSync(path.join(folder, 'partial.stdout'), 'kept');
+    const output = collectOutputAttachments(folder, 'partial', 1024);
+    expect(output.attachments.map((item) => item.filename)).toEqual(['stdout.txt']);
+    expect(output.notices).toEqual(['stderr is not available and was not attached.']);
+  });
+
+  it('omits output that resolves outside the output folder', () => {
+    const output = collectOutputAttachments(folder, `..${path.sep}escape`, 1024);
+    expect(output.attachments).toEqual([]);
+    expect(output.notices[0]).toContain('outside the output folder');
+  });
+
+  it('omits output that is not a regular file', () => {
+    fs.mkdirSync(path.join(folder, 'dir.stdout'), { recursive: true });
+    const output = collectOutputAttachments(folder, 'dir', 1024);
+    expect(output.attachments).toEqual([]);
+    expect(output.notices).toEqual(['stdout is not a regular file and was not attached.', 'stderr is not available and was not attached.']);
   });
 });
 
