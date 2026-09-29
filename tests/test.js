@@ -1421,6 +1421,11 @@ describe('Login abuse protection', () => {
 
     expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
     expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'strong-secret' })).status).toBe(302);
+
+    // The successful login clears the prior two failures for this source IP.
+    expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    expect((await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
     const finalAttempt = await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' });
     expect(finalAttempt.status).toBe(401);
     expect(finalAttempt.text).toContain('Try again in 2 minutes.');
@@ -1428,6 +1433,41 @@ describe('Login abuse protection', () => {
     const blocked = await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' });
     expect(blocked.status).toBe(429);
     expect(blocked.body.message).toBe('Too many sign-in attempts. Try again in 2 minutes.');
+  });
+});
+
+describe('Login client IP trust', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const originalLimit = process.env.LOGIN_RATE_LIMIT_MAX;
+  const originalProxy = process.env.TRUSTED_PROXY;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    if (originalLimit === undefined) delete process.env.LOGIN_RATE_LIMIT_MAX;
+    else process.env.LOGIN_RATE_LIMIT_MAX = originalLimit;
+    if (originalProxy === undefined) delete process.env.TRUSTED_PROXY;
+    else process.env.TRUSTED_PROXY = originalProxy;
+  });
+
+  it('uses the forwarded client IP only when the direct proxy is trusted', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ reviewer: 'viewer' });
+    process.env.LOGIN_RATE_LIMIT_MAX = '1';
+    process.env.TRUSTED_PROXY = 'loopback';
+    const protectedApp = app.createApp();
+
+    const firstClient = '198.51.100.10';
+    const otherClient = '198.51.100.11';
+    expect((await request(protectedApp).post('/login').set('X-Forwarded-For', firstClient)
+      .send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    expect((await request(protectedApp).post('/login').set('X-Forwarded-For', otherClient)
+      .send({ username: 'reviewer', password: 'incorrect' })).status).toBe(401);
+    expect((await request(protectedApp).post('/login').set('X-Forwarded-For', firstClient)
+      .send({ username: 'reviewer', password: 'incorrect' })).status).toBe(429);
   });
 });
 

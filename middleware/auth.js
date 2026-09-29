@@ -94,7 +94,7 @@ function redirectPath(req, baseUrl) {
   return isLocalPath(requestPath, baseUrl) ? requestPath : (baseUrl || '/');
 }
 
-function setupAuth(app, { baseUrl = '' } = {}) {
+function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
   const users = authenticatedUsers();
   if (!users) return false;
 
@@ -131,6 +131,7 @@ function setupAuth(app, { baseUrl = '' } = {}) {
       return renderLogin(req, res, 401, error);
     }
     issueSession(res, username, secret, ttl);
+    resetLoginRateLimit(req);
     const returnTo = isLocalPath(req.body?.returnTo, baseUrl)
       ? req.body.returnTo
       : (baseUrl || '/');

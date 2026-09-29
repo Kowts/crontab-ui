@@ -170,11 +170,13 @@ app.use(rateLimit({
 }));
 
 // Failed sign-in attempts need a tighter quota than normal application traffic.
-// Successful logins are removed from the counter so legitimate users are not
-// penalised for returning to the application.
+// A successful sign-in resets the source-IP counter so a legitimate user is not
+// penalised by earlier typing mistakes.
 const loginRateLimitWindowMs = boundedEnvironmentNumber('LOGIN_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000, 60_000, 24 * 60 * 60 * 1000);
 const loginRateLimitMax = boundedEnvironmentNumber('LOGIN_RATE_LIMIT_MAX', 10, 1, 1000);
 const loginRateLimitMinutes = Math.ceil(loginRateLimitWindowMs / 60_000);
+const loginRateLimitStore = new rateLimit.MemoryStore();
+const loginRateLimitKey = (req) => rateLimit.ipKeyGenerator(req.ip);
 
 app.use(routes.login, (req, res, next) => {
   res.locals.loginRateLimitMinutes = loginRateLimitMinutes;
@@ -182,10 +184,11 @@ app.use(routes.login, (req, res, next) => {
 }, rateLimit({
   windowMs: loginRateLimitWindowMs,
   max: loginRateLimitMax,
+  store: loginRateLimitStore,
+  keyGenerator: loginRateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method !== 'POST',
-  skipSuccessfulRequests: true,
   handler: (req, res) => {
     const message = res.locals.t
       ? res.locals.t('loginRateLimited', { minutes: loginRateLimitMinutes })
@@ -199,7 +202,10 @@ app.use(routes.login, (req, res, next) => {
 
 // Authentication is installed after static assets and CSRF protection so the
 // sign-in page can load its local styling and safely submit credentials.
-setupAuth(app, { baseUrl });
+setupAuth(app, {
+  baseUrl,
+  resetLoginRateLimit: (req) => loginRateLimitStore.resetKey(loginRateLimitKey(req)),
+});
 
 // --- Routes ---
 
