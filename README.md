@@ -20,7 +20,7 @@ This fork extends the original visual crontab management interface with producti
 
 - Role-based access control (RBAC), task ownership, and server-enforced permissions for administrative operations.
 - Strict validation for task payloads, cron expressions, environment variables, imports, and recovery requests.
-- Server-only SMTP profiles: task records store only a `profileId`, never mail credentials.
+- Server-only SMTP profiles: task records store only a `profileId` and delivery policy, never mail credentials.
 - Atomic, mutex-protected import, restore, and backup workflows with count- and age-based retention.
 - Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
 - Persisted manual-run state, with one simultaneous manual execution per actor and clean interruption on service shutdown.
@@ -185,7 +185,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `SSL_CERT`, `SSL_KEY` | Native TLS; both must be defined together. |
 | `TRUSTED_PROXY` | Address, CIDR, or Express proxy alias for the trusted HTTPS proxy. |
 | `CRONTAB_UI_NETWORK` | Name of the Docker network shared with the proxy. Compose default: `crontab-ui-internal`. |
-| `MAIL_PROFILES_JSON` | Server-only SMTP/SMTPS profiles. Tasks retain only `profileId`. |
+| `MAIL_PROFILES_JSON` | Server-only SMTP/SMTPS profiles. Tasks retain only `profileId` and delivery policy. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Maximum output attachment size for email. Default: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limits for task execution and publishing. Defaults: `300000`, `1048576`, `5000`. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Log size, rotation, and retention. Defaults: `10485760`, `5`, `30`. |
@@ -199,7 +199,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 
 ## Email, environment, and command security
 
-Email profiles are defined in `MAIL_PROFILES_JSON` and accept only SMTP/SMTPS `transporter`, `from`, and one to twenty `to` recipients. Credentials never enter the database, tasks, or browser. Transport failures are audited; monitor the operation log.
+Email profiles are defined in `MAIL_PROFILES_JSON` and accept only SMTP/SMTPS `transporter`, `from`, and one to twenty `to` recipients. The task form lists only validated profile IDs and stores only the selected `profileId` and delivery policy; credentials, senders and recipients never enter the database, tasks, or browser. Notifications default to `onFailure`; `onSuccess` and `always` are available when needed. The subject identifies the outcome, duration, and exit code. Transport failures and policy skips are audited; monitor the operation log.
 
 Environment variables entered through the interface accept only `NAME=value` lines, where names match `^[A-Z_][A-Z0-9_]*$`. Shell syntax (`export`, `$()`, backticks, pipes, redirections, and `;`) is rejected. Task processes receive a fresh environment, not `process.env`: only reviewed names in `TASK_ENV_ALLOWLIST` are passed through. Authentication, CSRF, SMTP, Node loader, and dynamic-loader variables are never passed to commands. This does not make task commands safe: those commands remain a privileged capability and must be reviewed before creation.
 

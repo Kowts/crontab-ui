@@ -9,11 +9,19 @@ const path = require('path');
 
 const jobId = process.argv[2];
 const operationId = process.argv[3];
+const outcome = process.argv[4] === 'succeeded' || process.argv[4] === 'failed' ? process.argv[4] : 'unknown';
+const durationMs = /^\d+$/.test(process.argv[5] || '') ? Number(process.argv[5]) : null;
+const exitCode = /^-?\d+$/.test(process.argv[6] || '') ? process.argv[6] : 'unavailable';
 const configuredAttachmentLimit = Number(process.env.MAIL_MAX_ATTACHMENT_BYTES || 512 * 1024);
 const maxAttachmentBytes = Number.isSafeInteger(configuredAttachmentLimit)
   && configuredAttachmentLimit > 0 && configuredAttachmentLimit <= 10 * 1024 * 1024
   ? configuredAttachmentLimit : 512 * 1024;
 const outputFolder = crontab.output_folder;
+
+function formatDuration(milliseconds) {
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 0) return 'unavailable';
+  return `${(milliseconds / 1000).toFixed(1)}s`;
+}
 
 function outputAttachment(name) {
   const file = path.resolve(outputFolder, `${jobId}.${name}`);
@@ -45,8 +53,8 @@ crontab.get_crontab(jobId, (job) => {
     transporter.sendMail({
       from: profile.from,
       to: profile.to,
-      subject: `Crontab UI job ${safeName} executed`,
-      text: 'The job output is attached.',
+      subject: `Crontab UI job ${safeName} ${outcome} (${formatDuration(durationMs)}, exit ${exitCode})`,
+      text: `Execution result: ${outcome}\nDuration: ${formatDuration(durationMs)}\nExit code: ${exitCode}\n\nThe job output is attached.`,
       attachments: [outputAttachment('stdout'), outputAttachment('stderr')],
     }, (error, info) => {
       if (error) return fail(error);

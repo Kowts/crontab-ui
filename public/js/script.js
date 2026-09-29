@@ -438,6 +438,8 @@ function editJob(_id) {
     }
     schedule = job.schedule;
     job_command = job.command;
+    $('#job-mail-profile').val(job.mailing && job.mailing.profileId ? job.mailing.profileId : '');
+    $('#job-mail-policy').val(job.mailing && job.mailing.policy ? job.mailing.policy : 'onFailure');
     if (job.logging && job.logging !== 'false')
       $('#job-logging').prop('checked', true);
     job_string();
@@ -449,7 +451,8 @@ function editJob(_id) {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var mailing = job.mailing && job.mailing.profileId ? { profileId: job.mailing.profileId } : {};
+    var profileId = $('#job-mail-profile').val();
+    var mailing = profileId ? { profileId: profileId, policy: $('#job-mail-policy').val() } : {};
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing}, function() {
       location.reload();
@@ -472,6 +475,8 @@ function newJob() {
   $('#job-name').val('');
   $('#job-command').val('');
   $('#job-logging').prop('checked', false);
+  $('#job-mail-profile').val('');
+  $('#job-mail-policy').val('onFailure');
   job_string();
 
   var saveBtn = document.getElementById('job-save');
@@ -480,7 +485,8 @@ function newJob() {
   newSaveBtn.addEventListener('click', function() {
     if (!schedule) schedule = '* * * * *';
     var name = $('#job-name').val();
-    var mailing = {};
+    var profileId = $('#job-mail-profile').val();
+    var mailing = profileId ? { profileId: profileId, policy: $('#job-mail-policy').val() } : {};
     var logging = $('#job-logging').prop('checked');
     $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing}, function() {
       location.reload();

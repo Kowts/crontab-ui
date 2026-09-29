@@ -20,7 +20,7 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 
 - Controlo de acesso por papéis (RBAC), propriedade das tarefas e permissões impostas pelo servidor para operações administrativas.
 - Validação rigorosa de payloads de tarefas, expressões cron, variáveis de ambiente, importações e pedidos de recuperação.
-- Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId`, nunca credenciais de correio.
+- Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId` e política de envio, nunca credenciais de correio.
 - Fluxos atómicos e protegidos por bloqueio para importação, restauro e backups, com retenção por quantidade e idade.
 - Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
 - Estado persistente das execuções manuais, com uma execução simultânea por actor e interrupção controlada no encerramento do serviço.
@@ -185,7 +185,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
 | `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
 | `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |
-| `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId`. |
+| `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId` e a política de envio. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites de execução de tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Tamanho, rotação e retenção de logs. Predefinições: `10485760`, `5`, `30`. |
@@ -199,7 +199,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 
 ## Segurança do correio, ambiente e comandos
 
-Os perfis de correio são definidos em `MAIL_PROFILES_JSON` e aceitam apenas `transporter` SMTP/SMTPS, `from` e um a vinte destinatários `to`. As credenciais não entram na base de dados, nas tarefas nem no browser. Falhas de transporte são auditadas; monitorize o diário de operações.
+Os perfis de correio são definidos em `MAIL_PROFILES_JSON` e aceitam apenas `transporter` SMTP/SMTPS, `from` e um a vinte destinatários `to`. O formulário de tarefas lista apenas IDs de perfis validados e guarda somente o `profileId` e a política de envio; credenciais, remetentes e destinatários não entram na base de dados, nas tarefas nem no browser. A predefinição é `onFailure`; `onSuccess` e `always` ficam disponíveis quando necessários. O assunto identifica o resultado, a duração e o código de saída. Falhas de transporte e envios ignorados pela política são auditados; monitorize o diário de operações.
 
 As variáveis de ambiente introduzidas na interface aceitam apenas linhas `NOME=valor`, com nomes que respeitem `^[A-Z_][A-Z0-9_]*$`. Sintaxe de shell (`export`, `$()`, backticks, pipes, redirecionamentos e `;`) é rejeitada. Os processos das tarefas recebem um ambiente novo, não `process.env`: apenas nomes revistos em `TASK_ENV_ALLOWLIST` são transmitidos. As variáveis de autenticação, CSRF, SMTP, carregamento Node e carregamento dinâmico nunca são passadas aos comandos. Isto não transforma comandos de tarefas em seguros: esses comandos continuam a ser uma capacidade privilegiada e devem ser revistos antes de serem criados.
 

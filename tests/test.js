@@ -340,6 +340,45 @@ describe('Crontab UI', () => {
       expect(page.text).toContain('"profileId":"operations"');
       expect(page.text).not.toContain('mailer:password');
     });
+
+    it('defaults a selected mail profile to notifications on failure', async () => {
+      const res = await request(app).post('/save').send({
+        _id: -1, name: 'failure-only-profile', command: 'echo hello',
+        schedule: '* * * * *', logging: false, mailing: { profileId: 'operations' },
+      });
+      expect(res.status).toBe(200);
+      const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+      expect(jobs.find((job) => job.name === 'failure-only-profile').mailing).toEqual({ profileId: 'operations', policy: 'onFailure' });
+    });
+
+    it('rejects an invalid mail notification policy', async () => {
+      const res = await request(app).post('/save').send({
+        _id: -1, name: 'invalid-policy', command: 'echo hello',
+        schedule: '* * * * *', logging: false, mailing: { profileId: 'operations', policy: 'sometimes' },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('renders only safe mail profile ids for task notifications', async () => {
+      const page = await request(app).get('/');
+      expect(page.text).toContain('id="job-mail-profile"');
+      expect(page.text).toContain('<option value="operations">operations</option>');
+      expect(page.text).toContain('No email notification');
+      expect(page.text).not.toContain('mailer:password');
+      const clientScript = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'script.js'), 'utf8');
+      expect(clientScript).toContain("$('#job-mail-profile').val(job.mailing && job.mailing.profileId ? job.mailing.profileId : '');");
+      expect(clientScript).toContain("$('#job-mail-policy').val(job.mailing && job.mailing.policy ? job.mailing.policy : 'onFailure');");
+      expect(clientScript).toContain("var profileId = $('#job-mail-profile').val();");
+    });
+
+    it('sends mail only for the configured execution outcome', () => {
+      expect(crontab.should_send_mail({ profileId: 'operations' }, true)).toBe(true);
+      expect(crontab.should_send_mail({ profileId: 'operations' }, false)).toBe(false);
+      expect(crontab.should_send_mail({ profileId: 'operations', policy: 'onSuccess' }, true)).toBe(false);
+      expect(crontab.should_send_mail({ profileId: 'operations', policy: 'onSuccess' }, false)).toBe(true);
+      expect(crontab.should_send_mail({ profileId: 'operations', policy: 'always' }, true)).toBe(true);
+      expect(crontab.should_send_mail({}, true)).toBe(false);
+    });
   });
 
   describe('POST /stop and /start', () => {

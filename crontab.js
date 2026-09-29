@@ -269,9 +269,23 @@ function recordOutput(tab, result, operationId) {
   }
 }
 
-function sendMail(tab, operationId) {
-  if (!tab.mailing?.profileId) return;
-  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, operationId], {
+function shouldSendMail(mailing, failed) {
+  if (!mailing?.profileId) return false;
+  const policy = mailing.policy || 'onFailure';
+  return policy === 'always' || (failed ? policy === 'onFailure' : policy === 'onSuccess');
+}
+
+function sendMail(tab, operationId, result, failed) {
+  if (!shouldSendMail(tab.mailing, failed)) {
+    if (tab.mailing?.profileId) {
+      audit({ operationId, type: 'mail', jobId: tab._id, status: 'skipped', reason: failed ? 'policy_on_success' : 'policy_on_failure' });
+    }
+    return false;
+  }
+  const outcome = failed ? 'failed' : 'succeeded';
+  const durationMs = Number.isSafeInteger(result.durationMs) && result.durationMs >= 0 ? String(result.durationMs) : '';
+  const exitCode = Number.isSafeInteger(result.exitCode) ? String(result.exitCode) : '';
+  const child = spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), tab._id, operationId, outcome, durationMs, exitCode], {
     detached: false,
     stdio: 'ignore',
   });
@@ -280,7 +294,10 @@ function sendMail(tab, operationId) {
     if (code !== 0) audit({ operationId, type: 'mail', jobId: tab._id, status: 'failed', exitCode: code, signal });
   });
   child.unref();
+  return true;
 }
+
+exports.should_send_mail = shouldSendMail;
 
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
@@ -333,9 +350,10 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
+      const failed = Boolean(error);
       const output = recordOutput(res, result, operationId);
-      if (output) sendMail(res, operationId);
-      else if (res.mailing?.profileId) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
+      if (output) sendMail(res, operationId, result, failed);
+      else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
@@ -385,9 +403,10 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
       env: jobEnvironment,
     }, (error, result) => {
+      const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
-      if (output) sendMail(job, operationId);
-      else if (job.mailing?.profileId) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
+      if (output) sendMail(job, operationId, result, failed);
+      else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       const status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
@@ -617,7 +636,7 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
     throw new Error('Imported job has an invalid logging setting');
   }
   if (document.mailing !== undefined) {
-    if (!isPlainObject(document.mailing) || Object.keys(document.mailing).some((key) => key !== 'profileId')) {
+    if (!isPlainObject(document.mailing) || Object.keys(document.mailing).some((key) => !['profileId', 'policy'].includes(key))) {
       throw new Error('Imported job has invalid mail settings');
     }
     if (document.mailing.profileId !== undefined) {
@@ -625,6 +644,12 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
         throw new Error('Imported job has an invalid mail profile');
       }
       getProfile(document.mailing.profileId);
+    }
+    if (document.mailing.policy !== undefined && !['onFailure', 'onSuccess', 'always'].includes(document.mailing.policy)) {
+      throw new Error('Imported job has an invalid mail policy');
+    }
+    if (!document.mailing.profileId && document.mailing.policy !== undefined) {
+      throw new Error('Imported job has a mail policy without a profile');
     }
   }
 
@@ -634,7 +659,7 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
     schedule: document.schedule,
     stopped: document.stopped === true,
     logging: document.logging === true || document.logging === 'true',
-    mailing: document.mailing?.profileId ? { profileId: document.mailing.profileId } : {},
+    mailing: document.mailing?.profileId ? { profileId: document.mailing.profileId, policy: document.mailing.policy || 'onFailure' } : {},
     created: Date.now(),
     saved: false,
     timestamp: new Date().toString(),

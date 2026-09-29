@@ -61,4 +61,11 @@ function getProfile(profileId) {
   };
 }
 
-module.exports = { getProfile, validateAddress, normaliseRecipients, validateTransporter };
+function listProfileIds() {
+  return Object.keys(loadProfiles()).map((profileId) => {
+    getProfile(profileId);
+    return profileId;
+  });
+}
+
+module.exports = { getProfile, listProfileIds, validateAddress, normaliseRecipients, validateTransporter };
