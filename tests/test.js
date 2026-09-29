@@ -1,7 +1,7 @@
 'use strict';
 
 /* global describe, it, expect, beforeAll, afterAll */
-const request = require('supertest');
+const rawRequest = require('supertest');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -19,6 +19,7 @@ process.env.CRON_PATH = testDbPath;
 process.env.PORT = '0';
 process.env.HOST = '127.0.0.1';
 process.env.NODE_ENV = 'test';
+process.env.CSRF_SECRET = 'test-csrf-secret';
 process.env.MAIL_PROFILES_JSON = JSON.stringify({
   operations: {
     transporter: 'smtps://mailer:password@smtp.example.test',
@@ -26,6 +27,26 @@ process.env.MAIL_PROFILES_JSON = JSON.stringify({
     to: 'operations@example.test',
   },
 });
+
+const testCsrfNonce = 'test-csrf-nonce';
+const testCsrfToken = `${testCsrfNonce}.${crypto.createHmac('sha256', process.env.CSRF_SECRET)
+  .update(testCsrfNonce).digest('base64url')}`;
+
+function withCsrf(client) {
+  for (const method of ['post', 'put', 'patch', 'delete']) {
+    const original = client[method].bind(client);
+    client[method] = (...args) => original(...args)
+      .set('Cookie', `crontab_ui_csrf=${encodeURIComponent(testCsrfToken)}`)
+      .set('X-CSRF-Token', testCsrfToken);
+  }
+  return client;
+}
+
+function request(target) {
+  return withCsrf(rawRequest(target));
+}
+
+request.agent = (target) => withCsrf(rawRequest.agent(target));
 
 const { createApp, startServer } = require('../app');
 const crontab = require('../crontab');
@@ -1296,8 +1317,8 @@ describe('CSRF middleware', () => {
     process.env.NODE_ENV = originalEnvironment;
   });
 
-  it('issues a token on a safe request and rejects a state change without it', () => {
-    process.env.NODE_ENV = 'development';
+  it('enforces CSRF even when NODE_ENV is test', () => {
+    process.env.NODE_ENV = 'test';
     let cookie;
     let proceeded = false;
     csrfProtection(
@@ -1347,7 +1368,7 @@ describe('Session authentication middleware', () => {
     protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
 
     expect((await request(protectedApp).get('/protected')).status).toBe(401);
-    const client = request.agent(protectedApp);
+    const client = rawRequest.agent(protectedApp);
     await client.post('/login').send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
     const allowed = await client.get('/protected');
     expect(allowed.status).toBe(200);
@@ -1505,7 +1526,7 @@ describe('Review and publish HTTP flow', () => {
         applied(null);
       }),
     });
-    const client = request.agent(protectedApp);
+    const client = rawRequest.agent(protectedApp);
     const loginPage = await client.get('/login');
     const cookie = loginPage.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
     const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));

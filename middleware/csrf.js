@@ -38,7 +38,6 @@ function issueToken(req, res) {
 }
 
 function csrfProtection(req, res, next) {
-  if (process.env.NODE_ENV === 'test') return next();
   const cookieToken = cookies(req)[COOKIE_NAME];
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
     if (!valid(cookieToken)) issueToken(req, res);
