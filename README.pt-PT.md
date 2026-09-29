@@ -32,6 +32,10 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 
 ![Tema escuro com proprietário da tarefa, estado de publicação local e controlos operacionais](docs/images/task-list-dark.png)
 
+### Painel de execução
+
+Cada linha tem um painel de execução que responde, para uma tarefa, quando foi executada pela última vez, quanto demorou, o que devolveu, quando funcionou pela última vez, quantas falhas se acumularam e quando é a próxima. As execuções recentes são listadas com a sua origem, permitindo encontrar uma falha sem abrir um log por tarefa.
+
 ### Criar uma tarefa
 
 ![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron e campos identificados](docs/images/new-task-dark.png)
@@ -189,6 +193,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites de execução de tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Tamanho, rotação e retenção de logs. Predefinições: `10485760`, `5`, `30`. |
+| `EXECUTION_HISTORY_PER_JOB` | Registos de execução guardados por tarefa, para além de `LOG_RETENTION_DAYS`. Predefinição: `200`. |
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Número e idade máximos de backups. Predefinições: `30`, `90`. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limites da leitura `crontab -l`. Predefinições: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Variáveis geridas pela interface, revistas e separadas por vírgulas, passadas aos processos de tarefas. Predefinição: `PATH,LANG,LC_ALL,TZ,MAILTO`. Segredos do serviço e variáveis inseguras de carregamento são sempre recusados. |
@@ -206,6 +211,8 @@ Todos os perfis são validados no arranque do serviço, pelo que uma configuraç
 As variáveis de ambiente introduzidas na interface aceitam apenas linhas `NOME=valor`, com nomes que respeitem `^[A-Z_][A-Z0-9_]*$`. Sintaxe de shell (`export`, `$()`, backticks, pipes, redirecionamentos e `;`) é rejeitada. Os processos das tarefas recebem um ambiente novo, não `process.env`: apenas nomes revistos em `TASK_ENV_ALLOWLIST` são transmitidos. As variáveis de autenticação, CSRF, SMTP, carregamento Node e carregamento dinâmico nunca são passadas aos comandos. Isto não transforma comandos de tarefas em seguros: esses comandos continuam a ser uma capacidade privilegiada e devem ser revistos antes de serem criados.
 
 Cada execução manual ou agendada tem timeout, limite conjunto de output e encerramento SIGTERM/SIGKILL. A importação e publicação do crontab usam execução sem shell; a importação é limitada, deduplicada, protegida por bloqueio e só responde depois de terminar. Em Linux, o executor termina o grupo de processos; em Windows a terminação completa da árvore depende do sistema operativo.
+
+Cada execução concluída, manual ou agendada, é registada na base de dados com a origem, o resultado, o código de saída, o sinal, a duração e o motivo de terminação. Uma execução que esgotou o tempo, foi cancelada ou foi interrompida pelo limite de output conta como falha, porque o comando não fez o seu trabalho. O histórico é apenas diagnóstico: uma falha ao guardar um registo é auditada e nunca transforma uma execução concluída numa falha, e a leitura do painel exige o mesmo acesso à tarefa que a leitura dos seus logs. O painel nunca devolve o comando nem o seu output.
 
 ## Backups, recuperação e auditoria
 

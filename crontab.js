@@ -33,6 +33,8 @@ const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
 const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
 const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
+const executionHistoryPerJob = Number(process.env.EXECUTION_HISTORY_PER_JOB || 200);
+const executionHistoryLimit = 50;
 const auditWriteAttempts = 3;
 const auditRetryDelayMs = 25;
 
@@ -269,8 +271,31 @@ function recordOutput(tab, result, operationId) {
   }
 }
 
-function shouldSendMail(mailing, failed) {
-  if (!mailing?.profileId) return false;
+// The execution history is diagnostic, never operational: a failure to store it must not turn a
+// completed run into a failed one, so the error is surfaced in the audit log instead of thrown.
+function recordExecution({ job, operationId, trigger, actor, startedAt, status, result }) {
+  try {
+    db.createExecution({
+      operationId,
+      jobId: job._id,
+      trigger,
+      actor,
+      status,
+      startedAt,
+      completedAt: Date.now(),
+      exitCode: result.exitCode,
+      signal: result.signal,
+      durationMs: result.durationMs,
+      terminationReason: result.terminationReason,
+      outputExceeded: result.outputExceeded,
+    });
+  } catch (error) {
+    audit({ operationId, type: 'execution_history', jobId: job._id, status: 'failed', error: error.message });
+    console.error(`Unable to record execution history for ${job._id}: ${error.message}`);
+  }
+}
+
+function shouldSendMail(mailing, failed) {  if (!mailing?.profileId) return false;
   const policy = mailing.policy || 'onFailure';
   return policy === 'always' || (failed ? policy === 'onFailure' : policy === 'onSuccess');
 }
@@ -330,6 +355,12 @@ function applyRetention() {
   } catch (error) {
     audit({ type: 'retention', status: 'failed', scope: 'backups', error: error.message });
   }
+
+  try {
+    db.pruneExecutions(cutoff, executionHistoryPerJob);
+  } catch (error) {
+    audit({ type: 'retention', status: 'failed', scope: 'executions', error: error.message });
+  }
 }
 
 exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
@@ -357,11 +388,16 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     const operationId = crypto.randomUUID();
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
 
+    const startedAt = Date.now();
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(res, result, operationId);
       if (output) sendMail(res, operationId, result, failed);
       else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
+      recordExecution({
+        job: res, operationId, trigger: 'scheduled', startedAt,
+        status: failed ? 'failed' : 'completed', result,
+      });
       applyRetention();
       audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
@@ -378,6 +414,28 @@ exports.getManualRun = (operationId) => {
   pruneManualRuns();
   return db.getManualRun(operationId);
 };
+
+function nextScheduledRun(job) {
+  if (job.stopped) return null;
+  if (job.schedule === '@reboot') return null;
+  try {
+    return CronExpressionParser.parse(job.schedule).next().toISOString();
+  } catch (_error) {
+    return null;
+  }
+}
+
+// The panel reads in one call what would otherwise need a run record, the job document, and a
+// cron calculation per task. Output paths are never included: the history is a health summary.
+exports.getExecutionPanel = (job) => ({
+  jobId: job._id,
+  name: job.name || job._id,
+  schedule: job.schedule,
+  stopped: Boolean(job.stopped),
+  nextRun: nextScheduledRun(job),
+  ...db.summariseExecutions(job._id),
+  history: db.listExecutions(job._id, executionHistoryLimit),
+});
 
 exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
   return db.find({ _id }).exec((err, docs) => {
@@ -407,6 +465,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     }
     audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext });
     callback(null, exports.getManualRun(operationId));
+    const startedAt = Date.now();
     const controller = execute(job.command, {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
       env: jobEnvironment,
@@ -415,8 +474,9 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       const output = recordOutput(job, result, operationId);
       if (output) sendMail(job, operationId, result, failed);
       else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
-      applyRetention();
       const status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
+      recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result });
+      applyRetention();
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
       manualRunControllers.delete(operationId);

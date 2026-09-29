@@ -620,6 +620,19 @@ app.get(routes.stdout, requireRole('viewer'), validateIdParam, requireJobAccess(
   sendLog(path.join(crontab.log_folder, `${req.query.id}.stdout.log`), req, res);
 });
 
+// The execution panel replaces opening one log per task: it answers, in one request, when the task
+// last ran, how long it took, what it returned, and when it last worked. Access follows the same
+// job ownership rules as reading that task's logs, and no command or output is ever included.
+app.get(routes.executions, requireRole('viewer'), validateIdParam, requireJobAccess('read'), (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  // requireJobAccess only attaches the job when authentication is enabled, so the task is loaded
+  // here as well to keep the 404 for an unknown task in either mode.
+  return crontab.get_crontab(req.jobId, (job) => {
+    if (!job) return res.status(404).json({ message: 'Job not found' });
+    return res.json(crontab.getExecutionPanel(job));
+  });
+});
+
 // error handler
 app.use(errorHandler);
   return app;

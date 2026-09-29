@@ -209,6 +209,7 @@ document.addEventListener('click', function(event) {
     case 'start': startJob(id); break;
     case 'duplicate': duplicateJob(id); break;
     case 'delete-job': deleteJob(id); break;
+    case 'executions': showExecutions(id); break;
     case 'restore-backup': restore_backup(target.dataset.db); break;
     case 'delete-backup': delete_backup(target.dataset.db); break;
   }
@@ -544,6 +545,83 @@ function sendMailTest(profileId) {
   }).always(function() {
     if (button) button.disabled = false;
     for (var i = 0; i < buttons.length; i++) buttons[i].disabled = false;
+  });
+}
+
+function executionsCell(value) {
+  var cell = document.createElement('td');
+  cell.textContent = value;
+  return cell;
+}
+
+function formatDuration(milliseconds) {
+  if (typeof milliseconds !== 'number' || !isFinite(milliseconds)) return '—';
+  if (milliseconds < 1000) return milliseconds + ' ms';
+  if (milliseconds < 60000) return (milliseconds / 1000).toFixed(1) + ' s';
+  return Math.floor(milliseconds / 60000) + 'm ' + Math.round((milliseconds % 60000) / 1000) + 's';
+}
+
+function executionStatusLabel(run) {
+  if (run.terminationReason) return tr('terminated_' + run.terminationReason);
+  return run.status === 'completed' ? tr('succeeded') : tr('failed');
+}
+
+function renderExecutions(panel) {
+  var summary = document.getElementById('executions-summary');
+  summary.textContent = '';
+  var rows = [
+    [tr('lastRun'), panel.lastRun ? new Date(panel.lastRun.completedAt).toLocaleString() : tr('never')],
+    [tr('lastRunResult'), panel.lastRun ? executionStatusLabel(panel.lastRun) : tr('never')],
+    [tr('lastSuccess'), panel.lastSuccess ? new Date(panel.lastSuccess.completedAt).toLocaleString() : tr('never')],
+    [tr('nextRun'), panel.stopped ? tr('schedulePaused') : (panel.nextRun ? new Date(panel.nextRun).toLocaleString() : tr('unavailable'))],
+    [tr('consecutiveFailures'), String(panel.consecutiveFailures)]
+  ];
+  rows.forEach(function(entry) {
+    var term = document.createElement('dt');
+    term.className = 'col-6 col-sm-5';
+    term.textContent = entry[0];
+    var value = document.createElement('dd');
+    value.className = 'col-6 col-sm-5 text-end';
+    value.textContent = entry[1];
+    summary.appendChild(term);
+    summary.appendChild(value);
+  });
+
+  var body = document.getElementById('executions-body');
+  body.textContent = '';
+  panel.history.forEach(function(run) {
+    var row = document.createElement('tr');
+    if (run.status !== 'completed') row.className = 'table-danger';
+    var trigger = run.trigger === 'manual' ? tr('manual') : tr('scheduled');
+    if (run.actor) trigger += ' (' + run.actor + ')';
+    row.appendChild(executionsCell(new Date(run.completedAt).toLocaleString()));
+    row.appendChild(executionsCell(trigger));
+    row.appendChild(executionsCell(executionStatusLabel(run)));
+    row.appendChild(executionsCell(formatDuration(run.durationMs)));
+    row.appendChild(executionsCell(run.exitCode === null || run.exitCode === undefined ? (run.signal || '—') : String(run.exitCode)));
+    body.appendChild(row);
+  });
+  document.getElementById('executions-empty').hidden = panel.history.length > 0;
+  document.getElementById('executions-content').classList.remove('d-none');
+}
+
+function showExecutions(jobId) {
+  var loading = document.getElementById('executions-loading');
+  var failure = document.getElementById('executions-error');
+  var content = document.getElementById('executions-content');
+  content.classList.add('d-none');
+  failure.classList.add('d-none');
+  failure.textContent = '';
+  loading.classList.remove('d-none');
+  getModal('executions-modal').show();
+  $.get(routes.executions, { id: jobId }, function(panel) {
+    loading.classList.add('d-none');
+    document.getElementById('executions-task-name').textContent = panel.name;
+    renderExecutions(panel);
+  }).fail(function() {
+    loading.classList.add('d-none');
+    failure.textContent = tr('executionsUnavailable');
+    failure.classList.remove('d-none');
   });
 }
 

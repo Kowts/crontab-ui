@@ -114,6 +114,7 @@
               </td>
               <td><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
               <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-outline-secondary" title="<%= t('executions') %>" aria-label="<%= t('executions') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="executions" data-id="<%= crontab._id %>"><i class="bi bi-activity"></i><span class="visually-hidden"><%= t('executions') %></span></button>
                 <% if (!crontab.stopped && crontab.logging && crontab.logging !== 'false') { %>
                   <a class="btn btn-sm btn-log-stderr" title="<%= t('viewErrorLog') %>" aria-label="<%= t('viewErrorLog') %>" data-bs-toggle="tooltip" data-bs-placement="top" href="<%= JSON.parse(routes).logger + '?id=' + crontab._id %>" target="_blank" rel="noopener noreferrer"><i class="bi bi-journal-text"></i></a>
                   <a class="btn btn-sm btn-log-stdout" title="<%= t('viewOutputLog') %>" aria-label="<%= t('viewOutputLog') %>" data-bs-toggle="tooltip" data-bs-placement="top" href="<%= JSON.parse(routes).stdout + '?id=' + crontab._id %>" target="_blank" rel="noopener noreferrer"><i class="bi bi-terminal"></i></a>

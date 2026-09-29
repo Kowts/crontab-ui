@@ -22,6 +22,7 @@ const routes = {
   import: '/import',
   import_crontab: '/import_crontab',
   logger: '/logger',
+  executions: '/executions',
   stdout: '/stdout',
   preview_crontab: '/preview_crontab',
   locale: '/locale',

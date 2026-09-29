@@ -127,6 +127,11 @@ body.app-body {
 .job-status::before { content: ""; width: .48rem; height: .48rem; margin-right: .55rem; border-radius: 50%; background: var(--app-success); }
 .schedule-section { margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid var(--app-border); }
 .schedule-section h3 { margin-bottom: .9rem; font-size: 1.05rem; font-weight: 730; }
+.executions-history-heading { margin: 1.5rem 0 .9rem; padding-top: 1.3rem; border-top: 1px solid var(--app-border); font-size: 1.05rem; font-weight: 730; }
+.executions-history-heading + .text-muted { margin-bottom: .9rem; }
+#executions-table thead th { font-size: .78rem; font-weight: 650; color: var(--app-muted); text-transform: uppercase; letter-spacing: .04em; }
+#executions-table td, #executions-table th { padding: .5rem .6rem; font-size: .875rem; }
+#executions-summary dt, #executions-summary dd { padding: .35rem 0; font-size: .92rem; }
 .schedule-presets { display: flex; flex-wrap: wrap; gap: .45rem; }
 .schedule-presets .btn { padding: .42rem .65rem; color: #526783; border-color: #d4dfed; background: #fff; font-size: .85rem; font-weight: 550; }
 .schedule-presets .btn:hover, .schedule-presets .btn:focus { color: var(--app-primary); border-color: var(--app-primary); background: #eff6ff; }

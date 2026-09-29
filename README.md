@@ -36,6 +36,10 @@ This fork extends the original visual crontab management interface with producti
 
 ![Dark theme new task dialog with schedule presets, a human-readable cron expression, and labelled cron fields](docs/images/new-task-dark.png)
 
+### Execution panel
+
+Every row has an execution panel that answers, for one task, when it last ran, how long it took, what it returned, when it last worked, how many failures have stacked up, and when it is next due. Recent executions are listed with their trigger, so a failure can be found without opening one log per task.
+
 ## Operational flow
 
 ```mermaid
@@ -189,6 +193,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `MAIL_MAX_ATTACHMENT_BYTES` | Maximum output attachment size for email. Default: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limits for task execution and publishing. Defaults: `300000`, `1048576`, `5000`. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Log size, rotation, and retention. Defaults: `10485760`, `5`, `30`. |
+| `EXECUTION_HISTORY_PER_JOB` | Execution records kept per task, on top of `LOG_RETENTION_DAYS`. Default: `200`. |
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Maximum backup count and age. Defaults: `30`, `90`. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limits for `crontab -l` reads. Defaults: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Comma-separated, reviewed UI-managed variables passed to task processes. Default: `PATH,LANG,LC_ALL,TZ,MAILTO`. Service secrets and unsafe loader variables are always denied. |
@@ -206,6 +211,8 @@ Every profile is validated when the service starts, so a configuration that cann
 Environment variables entered through the interface accept only `NAME=value` lines, where names match `^[A-Z_][A-Z0-9_]*$`. Shell syntax (`export`, `$()`, backticks, pipes, redirections, and `;`) is rejected. Task processes receive a fresh environment, not `process.env`: only reviewed names in `TASK_ENV_ALLOWLIST` are passed through. Authentication, CSRF, SMTP, Node loader, and dynamic-loader variables are never passed to commands. This does not make task commands safe: those commands remain a privileged capability and must be reviewed before creation.
 
 Every manual or scheduled execution has a timeout, a combined output limit, and SIGTERM/SIGKILL shutdown. Crontab import and publishing use execution without a shell; importing is bounded, deduplicated, mutex-protected, and responds only after completion. On Linux, the executor terminates the process group; on Windows, complete process-tree termination depends on the operating system.
+
+Every completed execution, manual or scheduled, is recorded in the database with its trigger, outcome, exit code, signal, duration, and termination reason. A run that timed out, was cancelled, or was stopped by the output limit counts as a failure, because the command did not do its job. The history is diagnostic only: a failure to store a record is audited and never turns a completed run into a failed one, and reading the panel requires the same task access as reading that task's logs. The panel never returns the command or its output.
 
 ## Backups, recovery, and audit
 

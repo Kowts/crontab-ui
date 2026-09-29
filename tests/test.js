@@ -213,6 +213,105 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Execution panel', () => {
+    function createJob(name, command) {
+      return new Promise((resolve, reject) => {
+        crontab.create_new(name, command, '*/5 * * * *', false, {}, {}, (error, job) => {
+          if (error) reject(error);
+          else resolve(job);
+        });
+      });
+    }
+
+    function runJob(job) {
+      return new Promise((resolve) => crontab.runjob(job._id, {}, (error) => resolve(error)));
+    }
+
+    function setCommand(job, command) {
+      return new Promise((resolve, reject) => crontab.update(job._id, {
+        name: job.name, command, schedule: job.schedule, logging: false, mailing: {},
+      }, (error) => (error ? reject(error) : resolve())));
+    }
+
+    it('reports a task that never ran instead of failing the panel', async () => {
+      const job = await createJob('panel-empty', 'echo panel-empty');
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ jobId: job._id, lastRun: null, lastSuccess: null, consecutiveFailures: 0, history: [] });
+      expect(res.body.nextRun).toEqual(expect.any(String));
+    });
+
+    it('records duration and exit code of a successful run', async () => {
+      const job = await createJob('panel-success', 'echo panel-success');
+      expect(await runJob(job)).toBeFalsy();
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.body.lastRun).toMatchObject({ status: 'completed', exitCode: 0, trigger: 'scheduled' });
+      expect(res.body.lastRun.durationMs).toBeGreaterThanOrEqual(0);
+      expect(res.body.lastSuccess).toMatchObject({ status: 'completed', exitCode: 0 });
+      expect(res.body.consecutiveFailures).toBe(0);
+      expect(res.body.history).toHaveLength(1);
+    });
+
+    it('keeps the last successful run and counts failures while it cannot find one', async () => {
+      const job = await createJob('panel-regression', 'echo panel-regression');
+      await runJob(job);
+      await setCommand(job, 'exit 3');
+      await runJob(job);
+      await runJob(job);
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.body.lastRun).toMatchObject({ status: 'failed', exitCode: 3 });
+      expect(res.body.consecutiveFailures).toBe(2);
+      expect(res.body.lastSuccess.exitCode).toBe(0);
+    });
+
+    it('resets the failure count as soon as a task succeeds again', async () => {
+      const job = await createJob('panel-recovered', 'echo panel-recovered');
+      await runJob(job);
+      await setCommand(job, 'exit 1');
+      await runJob(job);
+      await runJob(job);
+      await setCommand(job, 'echo panel-recovered');
+      await runJob(job);
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.body.consecutiveFailures).toBe(0);
+      expect(res.body.lastRun.status).toBe('completed');
+    });
+
+    it('records a cancelled run as a failure of the task, not as a success', async () => {
+      const job = await createJob('panel-cancelled', `"${process.execPath}" -e "setTimeout(() => {}, 30000)"`);
+      const started = await new Promise((resolve) => {
+        crontab.startManualRun(job._id, { actor: 'panel-tester' }, (error, run) => resolve(run));
+      });
+      expect(started.status).toBe('running');
+      await crontab.cancelManualRun(started.operationId, { actor: 'panel-tester' });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.body.lastRun).toMatchObject({ status: 'cancelled', trigger: 'manual', actor: 'panel-tester' });
+      expect(res.body.consecutiveFailures).toBe(1);
+    });
+
+    it('does not expose the command or any output through the panel', async () => {
+      const job = await createJob('panel-secret', 'echo panel-secret-token');
+      await runJob(job);
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.text).not.toContain('panel-secret-token');
+      expect(res.body).not.toHaveProperty('command');
+    });
+
+    it('rejects an unknown task and a malformed identifier', async () => {
+      expect((await request(app).get('/executions').query({ id: 'does-not-exist' })).status).toBe(404);
+      expect((await request(app).get('/executions').query({ id: '../secret' })).status).toBe(400);
+    });
+
+    it('reports no next run for a paused task', async () => {
+      const job = await createJob('panel-paused', 'echo panel-paused');
+      await new Promise((resolve, reject) => crontab.status(job._id, true, (error) => (error ? reject(error) : resolve())));
+      const res = await request(app).get('/executions').query({ id: job._id });
+      expect(res.body.nextRun).toBeNull();
+      expect(res.body.stopped).toBe(true);
+    });
+  });
+
   describe('Asynchronous manual execution', () => {
     it('returns an operation ID immediately and exposes its status', async () => {
       const job = await new Promise((resolve, reject) => {
