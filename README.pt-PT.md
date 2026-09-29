@@ -23,6 +23,7 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 - Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId`, nunca credenciais de correio.
 - Fluxos atómicos e protegidos por bloqueio para importação, restauro e backups, com retenção por quantidade e idade.
 - Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
+- Estado persistente das execuções manuais, com uma execução simultânea por actor e interrupção controlada no encerramento do serviço.
 - Salvaguardas para deployment em produção, incluindo autenticação obrigatória fora de loopback, proteção CSRF, imposição de TLS ou proxy de confiança e orientação para Docker endurecido.
 
 ## Interface

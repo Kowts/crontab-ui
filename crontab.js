@@ -36,8 +36,7 @@ const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MA
 
 const cronPath = process.env.CRON_PATH || path.join(dbFolder, 'crontab-staging');
 let databaseOperationActive = false;
-const manualRuns = new Map();
-let activeManualRunId = null;
+const manualRunControllers = new Map();
 if (process.env.CRON_PATH !== undefined) {
   console.log(`Path to crond files set using env variables ${process.env.CRON_PATH}`);
 }
@@ -214,6 +213,14 @@ function audit(event) {
 
 exports.audit = audit;
 
+exports.recoverManualRuns = () => {
+  const recovered = db.recoverManualRuns(Date.now());
+  if (recovered) audit({ type: 'manual_run', status: 'interrupted', reason: 'service_restart', count: recovered });
+  return recovered;
+};
+
+exports.recoverManualRuns();
+
 function rotateLog(file) {
   if (!fs.existsSync(file) || fs.statSync(file).size < maxLogBytes) return;
   if (logRotationCount < 1) return;
@@ -332,24 +339,15 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
 
 function pruneManualRuns() {
   const cutoff = Date.now() - (24 * 60 * 60 * 1000);
-  for (const [operationId, run] of manualRuns) {
-    if (run.completedAt && run.completedAt < cutoff) manualRuns.delete(operationId);
-  }
-  const completed = [...manualRuns.entries()].filter(([, run]) => run.completedAt).sort((a, b) => b[1].completedAt - a[1].completedAt);
-  completed.slice(10).forEach(([operationId]) => manualRuns.delete(operationId));
+  db.pruneManualRuns(cutoff, 10);
 }
 
 exports.getManualRun = (operationId) => {
   pruneManualRuns();
-  const run = manualRuns.get(operationId);
-  if (!run) return null;
-  const safeRun = { ...run };
-  delete safeRun.controller;
-  return safeRun;
+  return db.getManualRun(operationId);
 };
 
 exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
-  if (activeManualRunId) return callback(Object.assign(new Error('A manual execution is already active'), { statusCode: 409 }));
   return db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     let configuredEnvironment;
@@ -366,35 +364,57 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     }
     const job = docs[0];
     const operationId = crypto.randomUUID();
-    const run = { operationId, jobId: _id, status: 'running', startedAt: Date.now(), controller: null };
-    manualRuns.set(operationId, run);
-    activeManualRunId = operationId;
+    const actor = auditContext.actor || 'local';
+    try {
+      db.createManualRun({ operationId, jobId: _id, actor, status: 'running', startedAt: Date.now() });
+    } catch (error) {
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return callback(Object.assign(new Error('A manual execution is already active for this user'), { statusCode: 409 }));
+      }
+      return callback(error);
+    }
     audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext });
     callback(null, exports.getManualRun(operationId));
-    run.controller = execute(job.command, {
+    const controller = execute(job.command, {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
-      env: jobEnvironment, onStart: (controller) => { run.controller = controller; },
+      env: jobEnvironment,
     }, (error, result) => {
       const output = recordOutput(job, result, operationId);
       if (output) sendMail(job, operationId);
       else if (job.mailing?.profileId) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
-      run.status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
-      run.completedAt = Date.now();
-      run.result = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
-      activeManualRunId = null;
-      audit({ operationId, type: 'manual_run', jobId: _id, status: run.status, error: error?.message, ...run.result, ...auditContext });
+      const status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
+      const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
+      db.completeManualRun(operationId, status, Date.now(), resultSummary);
+      manualRunControllers.delete(operationId);
+      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext });
       pruneManualRuns();
     });
+    manualRunControllers.set(operationId, controller);
   });
 };
 
 exports.cancelManualRun = (operationId, auditContext = {}) => {
-  const run = manualRuns.get(operationId);
-  if (!run || run.status !== 'running' || !run.controller) return null;
-  run.controller.cancel();
+  const run = exports.getManualRun(operationId);
+  const controller = manualRunControllers.get(operationId);
+  if (!run || run.status !== 'running' || !controller) return null;
+  controller.cancel();
   audit({ operationId, type: 'manual_run', jobId: run.jobId, status: 'cancellation_requested', ...auditContext });
   return exports.getManualRun(operationId);
+};
+
+exports.shutdownManualRuns = (callback = () => {}) => {
+  if (!manualRunControllers.size) return callback();
+  for (const [operationId, controller] of manualRunControllers) {
+    controller.cancel();
+    const run = exports.getManualRun(operationId);
+    if (run) audit({ operationId, type: 'manual_run', jobId: run.jobId, status: 'cancellation_requested', reason: 'service_shutdown' });
+  }
+  const waitForCompletion = () => {
+    if (!manualRunControllers.size) return callback();
+    return setTimeout(waitForCompletion, 25);
+  };
+  return waitForCompletion();
 };
 
 function restoreFile(filePath, contents, existed, callback) {

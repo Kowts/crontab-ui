@@ -23,6 +23,7 @@ This fork extends the original visual crontab management interface with producti
 - Server-only SMTP profiles: task records store only a `profileId`, never mail credentials.
 - Atomic, mutex-protected import, restore, and backup workflows with count- and age-based retention.
 - Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
+- Persisted manual-run state, with one simultaneous manual execution per actor and clean interruption on service shutdown.
 - Production deployment safeguards, including mandatory authentication outside loopback, CSRF protection, TLS or trusted-proxy enforcement, and hardened Docker guidance.
 
 ## Interface

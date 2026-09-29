@@ -187,6 +187,62 @@ describe('Crontab UI', () => {
       expect(['running', 'completed']).toContain(status.body.status);
     });
 
+    it('persists manual-run state and limits concurrent runs per actor', async () => {
+      const createJob = (name) => new Promise((resolve, reject) => {
+        crontab.create_new(name, `"${process.execPath}" -e "setTimeout(() => {}, 500)"`, '* * * * *', false, {}, {}, (error, job) => {
+          if (error) reject(error);
+          else resolve(job);
+        });
+      });
+      const start = (job, actor) => new Promise((resolve) => {
+        crontab.startManualRun(job._id, { actor }, (error, run) => resolve({ error, run }));
+      });
+      const firstJob = await createJob('manual-run-alice');
+      const secondJob = await createJob('manual-run-bob');
+      const first = await start(firstJob, 'alice');
+      const second = await start(secondJob, 'bob');
+      const duplicate = await start(firstJob, 'alice');
+
+      expect(first.error).toBeNull();
+      expect(second.error).toBeNull();
+      expect(first.run).toMatchObject({ actor: 'alice', status: 'running' });
+      expect(second.run).toMatchObject({ actor: 'bob', status: 'running' });
+      expect(crontab.getManualRun(first.run.operationId)).toMatchObject({ operationId: first.run.operationId, actor: 'alice' });
+      expect(duplicate.error).toMatchObject({ statusCode: 409 });
+
+      crontab.cancelManualRun(first.run.operationId, { actor: 'alice' });
+      crontab.cancelManualRun(second.run.operationId, { actor: 'bob' });
+      await new Promise((resolve, reject) => {
+        const deadline = Date.now() + 1000;
+        const waitForCompletion = () => {
+          const runs = [first.run.operationId, second.run.operationId].map(crontab.getManualRun);
+          if (runs.every((run) => run.status !== 'running')) return resolve();
+          if (Date.now() >= deadline) return reject(new Error('Manual runs did not stop in time'));
+          return setTimeout(waitForCompletion, 25);
+        };
+        waitForCompletion();
+      });
+    });
+
+    it('marks unfinished persisted manual runs as interrupted during recovery', async () => {
+      const job = await new Promise((resolve, reject) => {
+        crontab.create_new('manual-run-recovery', `"${process.execPath}" -e "setTimeout(() => {}, 1000)"`, '* * * * *', false, {}, {}, (error, created) => {
+          if (error) reject(error);
+          else resolve(created);
+        });
+      });
+      const started = await new Promise((resolve, reject) => {
+        crontab.startManualRun(job._id, { actor: 'recovery-user' }, (error, run) => (error ? reject(error) : resolve(run)));
+      });
+
+      expect(crontab.recoverManualRuns()).toBe(1);
+      expect(crontab.getManualRun(started.operationId)).toMatchObject({
+        status: 'interrupted',
+        result: { terminationReason: 'service_restart' },
+      });
+      crontab.shutdownManualRuns();
+    });
+
     it('stores execution output in the managed log directory instead of CRON_PATH', async () => {
       const job = await new Promise((resolve, reject) => {
         crontab.create_new('managed-output', `"${process.execPath}" -e "process.stdout.write('managed-output')"`, '* * * * *', false, {}, {}, (error, created) => {
