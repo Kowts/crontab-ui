@@ -45,11 +45,18 @@ function loadProfiles() {
   }
 }
 
-function getProfile(profileId) {
-  if (typeof profileId !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(profileId)) {
+const PROFILE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function validateProfileId(value) {
+  if (typeof value !== 'string' || !PROFILE_ID_PATTERN.test(value)) {
     throw new Error('Unknown or invalid mail profile');
   }
-  const profile = loadProfiles()[profileId];
+  return value;
+}
+
+function readProfile(profiles, profileId) {
+  validateProfileId(profileId);
+  const profile = profiles[profileId];
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)
     || Object.keys(profile).some((key) => !['transporter', 'from', 'to'].includes(key))) {
     throw new Error(`Unknown or invalid mail profile: ${profileId}`);
@@ -61,11 +68,36 @@ function getProfile(profileId) {
   };
 }
 
+function getProfile(profileId) {
+  return readProfile(loadProfiles(), profileId);
+}
+
 function listProfileIds() {
   return Object.keys(loadProfiles()).map((profileId) => {
-    getProfile(profileId);
+    readProfile(loadProfiles(), profileId);
     return profileId;
   });
 }
 
-module.exports = { getProfile, listProfileIds, validateAddress, normaliseRecipients, validateTransporter };
+// Validates the whole configuration at once. A profile that is unusable at delivery time must be
+// reported when the service starts, not hours later when the first task that selects it fails.
+// Every problem is reported, so one typo does not hide the rest of the configuration.
+function validateAllProfiles() {
+  const profiles = loadProfiles();
+  const problems = [];
+  for (const profileId of Object.keys(profiles)) {
+    try {
+      readProfile(profiles, profileId);
+    } catch (error) {
+      problems.push(`${profileId}: ${error.message}`);
+    }
+  }
+  if (problems.length) {
+    throw new Error(`Invalid MAIL_PROFILES_JSON configuration: ${problems.join('; ')}`);
+  }
+  return Object.keys(profiles);
+}
+
+module.exports = {
+  getProfile, listProfileIds, validateAllProfiles, validateProfileId, validateAddress, normaliseRecipients, validateTransporter,
+};

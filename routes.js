@@ -18,6 +18,7 @@ const routes = {
   delete_backup: '/delete',
   restore_backup: '/restore_backup',
   export: '/export',
+  test_mail_profile: '/test_mail_profile',
   import: '/import',
   import_crontab: '/import_crontab',
   logger: '/logger',

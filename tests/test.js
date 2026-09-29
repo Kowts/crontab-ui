@@ -1,6 +1,6 @@
 'use strict';
 
-/* global describe, it, expect, beforeAll, afterAll */
+/* global describe, it, expect, beforeAll, afterAll, afterEach */
 const rawRequest = require('supertest');
 const express = require('express');
 const path = require('path');
@@ -61,6 +61,8 @@ const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
 const { createReloadCoordinator, schedulerEnvironment } = require('../scheduler');
 const { collectOutputAttachments } = require('../bin/crontab-ui-mailer');
+const { validateAllProfiles, validateProfileId } = require('../config/mail-profiles');
+const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
@@ -1373,6 +1375,134 @@ describe('Mail delivery failure audit ownership', () => {
       .filter((entry) => entry.operationId === operationId);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ type: 'mail', jobId: 'job-spawn', status: 'failed', reason: 'spawn_failed' });
+  });
+});
+
+describe('Mail profile startup validation', () => {
+  const original = process.env.MAIL_PROFILES_JSON;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.MAIL_PROFILES_JSON;
+    else process.env.MAIL_PROFILES_JSON = original;
+  });
+
+  it('accepts a valid configuration and returns the usable profile ids', () => {
+    process.env.MAIL_PROFILES_JSON = JSON.stringify({
+      alerts: { transporter: 'smtps://smtp.example.test', from: 'cron@example.test', to: 'ops@example.test' },
+    });
+    expect(validateAllProfiles()).toEqual(['alerts']);
+  });
+
+  it('accepts a deployment with no mail profiles at all', () => {
+    delete process.env.MAIL_PROFILES_JSON;
+    expect(validateAllProfiles()).toEqual([]);
+  });
+
+  it('reports every invalid profile and names it, rather than the first one only', () => {
+    process.env.MAIL_PROFILES_JSON = JSON.stringify({
+      bad_transport: { transporter: 'http://smtp.example.test', from: 'cron@example.test', to: 'ops@example.test' },
+      good: { transporter: 'smtps://smtp.example.test', from: 'cron@example.test', to: 'ops@example.test' },
+      bad_recipients: { transporter: 'smtps://smtp.example.test', from: 'cron@example.test', to: [] },
+    });
+    expect(() => validateAllProfiles()).toThrow(/bad_transport:.*bad_recipients:/s);
+  });
+
+  it('rejects malformed configuration instead of silently ignoring it', () => {
+    process.env.MAIL_PROFILES_JSON = 'not json';
+    expect(() => validateAllProfiles()).toThrow('MAIL_PROFILES_JSON must be a JSON object');
+  });
+
+  it('rejects a profile id that no task could ever select', () => {
+    process.env.MAIL_PROFILES_JSON = JSON.stringify({
+      'not selectable': { transporter: 'smtps://smtp.example.test', from: 'cron@example.test', to: 'ops@example.test' },
+    });
+    expect(() => validateAllProfiles()).toThrow(/not selectable/);
+  });
+
+  it('constrains the accepted profile identifier', () => {
+    expect(() => validateProfileId('../escape')).toThrow('Unknown or invalid mail profile');
+    expect(validateProfileId('operations_1-a')).toBe('operations_1-a');
+  });
+});
+
+describe('Mail profile delivery test', () => {
+  function probeApp(result) {
+    return createApp({ probeMailProfile: () => Promise.resolve(result) });
+  }
+
+  it('reports a delivered test without exposing profile configuration', async () => {
+    const res = await request(probeApp({ ok: true, response: '250 Accepted' })).post('/test_mail_profile').send({ profileId: 'operations' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, category: 'delivered' });
+    expect(res.text).not.toContain('mailer:password');
+  });
+
+  it('returns a failure category instead of the raw SMTP error', async () => {
+    const res = await request(probeApp({ ok: false, category: 'auth_failed', error: '535 5.7.8 Error: authentication failed: user mailer' }))
+      .post('/test_mail_profile').send({ profileId: 'operations' });
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ ok: false, category: 'auth_failed' });
+    expect(res.text).not.toContain('mailer');
+  });
+
+  it('rejects an unknown or malformed profile without contacting any server', async () => {
+    let contacted = false;
+    const app2 = createApp({ probeMailProfile: () => { contacted = true; return Promise.resolve({ ok: true }); } });
+    expect((await request(app2).post('/test_mail_profile').send({ profileId: 'nope' })).status).toBe(404);
+    expect((await request(app2).post('/test_mail_profile').send({ profileId: '../escape' })).status).toBe(400);
+    expect((await request(app2).post('/test_mail_profile').send({})).status).toBe(400);
+    expect(contacted).toBe(false);
+  });
+
+  it('rate limits repeated tests of the same profile', async () => {
+    let calls = 0;
+    const app2 = createApp({ probeMailProfile: () => { calls += 1; return Promise.resolve({ ok: true }); } });
+    expect((await request(app2).post('/test_mail_profile').send({ profileId: 'operations' })).status).toBe(200);
+    expect((await request(app2).post('/test_mail_profile').send({ profileId: 'operations' })).status).toBe(429);
+    expect(calls).toBe(1);
+  });
+
+  it('is reserved to administrators and records the outcome in the audit trail', async () => {
+    const res = await request(probeApp({ ok: true })).post('/test_mail_profile').send({ profileId: 'operations' });
+    expect(res.status).toBe(200);
+    const events = fs.readFileSync(crontab.audit_file, 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.requestId === res.headers['x-request-id']);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ operation: 'test_mail_profile', profileId: 'operations', result: 'delivered' });
+  });
+
+  it('classifies transport failures without carrying credentials through', () => {
+    expect(categoriseFailure({ code: 'EAUTH', message: '535 authentication failed' })).toBe('auth_failed');
+    expect(categoriseFailure({ code: 'EDNS', message: 'getaddrinfo ENOTFOUND smtp.example.test' })).toBe('dns');
+    expect(categoriseFailure({ code: 'ETIMEDOUT', message: 'Connection timed out' })).toBe('timeout');
+    expect(categoriseFailure({ code: 'ECONNREFUSED', message: 'connect ECONNREFUSED 10.0.0.1:587' })).toBe('refused');
+    expect(categoriseFailure({ code: 'EPROTO', message: 'SSL routines: wrong version number' })).toBe('tls');
+    expect(categoriseFailure({ code: 'EOTHER', message: 'something unexpected' })).toBe('unavailable');
+  });
+
+  it('denies the test to an authenticated non-administrator', async () => {
+    const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+    const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+    let contacted = false;
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ operator: 'operator-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ operator: 'operator' });
+    const operatorApp = createApp({ probeMailProfile: () => { contacted = true; return Promise.resolve({ ok: true }); } });
+    const agent = request.agent(operatorApp);
+    try {
+      await agent.post('/login').send({ username: 'operator', password: 'operator-secret' }).expect(302);
+      const res = await agent.post('/test_mail_profile').send({ profileId: 'operations' });
+      expect(res.status).toBe(403);
+      expect(contacted).toBe(false);
+    } finally {
+      if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+      else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+      if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+      else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    }
   });
 });
 

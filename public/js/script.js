@@ -200,6 +200,8 @@ document.addEventListener('click', function(event) {
     case 'import-crontab': getCrontab(); break;
     case 'set-crontab': setCrontab(); break;
     case 'preview': previewCrontab(); break;
+    case 'test-mail-profile': openMailProfileTest(); break;
+    case 'send-mail-test': sendMailTest(target.dataset.profile); break;
     case 'toggle-environment': toggleEnvironment(); break;
     case 'run': runJob(id); break;
     case 'edit': editJob(id); break;
@@ -516,6 +518,33 @@ function duplicateJob(_id) {
   }, function() {
     location.reload();
   }).fail(handleOperationFailure);
+}
+
+function openMailProfileTest() {
+  var status = document.getElementById('mail-profile-status');
+  if (status) status.textContent = '';
+  getModal('mail-profile-modal').show();
+}
+
+function sendMailTest(profileId) {
+  var status = document.getElementById('mail-profile-status');
+  var row = document.querySelector('[data-mail-profile="' + profileId + '"]');
+  var button = row ? row.querySelector('[data-action="send-mail-test"]') : null;
+  var buttons = document.querySelectorAll('#mail-profile-list [data-action="send-mail-test"]');
+  if (status) status.textContent = tr('testMailProfileSending');
+  if (button) button.disabled = true;
+  for (var i = 0; i < buttons.length; i++) buttons[i].disabled = true;
+  $.post(routes.test_mail_profile, { profileId: profileId }, function() {
+    if (status) status.textContent = tr('testMailProfileSent');
+  }).fail(function(response) {
+    var category = response && response.responseJSON ? response.responseJSON.category : null;
+    var message = tr('testMailProfileError_' + (category || 'unavailable'));
+    if (response && response.status === 429) message = tr('testMailProfileError_throttled');
+    if (status) status.textContent = tr('testMailProfileFailed') + ' ' + message + ' ' + tr('mailProfileDetail');
+  }).always(function() {
+    if (button) button.disabled = false;
+    for (var i = 0; i < buttons.length; i++) buttons[i].disabled = false;
+  });
 }
 
 function doBackup() {

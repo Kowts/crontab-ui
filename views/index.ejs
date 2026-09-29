@@ -83,6 +83,7 @@
             <ul class="dropdown-menu dropdown-menu-end">
               <li><button type="button" class="dropdown-item" data-action="backup"><i class="bi bi-shield-plus me-2"></i><%= t('createBackup') %></button></li>
               <li><button type="button" class="dropdown-item" data-action="set-crontab"><i class="bi bi-cloud-arrow-up me-2"></i><%= t('publishToCrontab') %></button></li>
+              <% if (mailProfileIds.length > 0) { %><li><button type="button" class="dropdown-item" data-action="test-mail-profile"><i class="bi bi-envelope-check me-2"></i><%= t('testMailProfile') %></button></li><% } %>
             </ul>
           </div>
         <% } %>

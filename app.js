@@ -28,14 +28,15 @@ const {
   validateEnvironmentPayload,
   validateImportMetadata,
 } = require('./middleware/validate');
-const { getProfile, listProfileIds } = require('./config/mail-profiles');
+const { getProfile, listProfileIds, validateAllProfiles, validateProfileId } = require('./config/mail-profiles');
+const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
 const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
 
 dayjs.extend(relativeTime);
 
-function createApp({ setCrontab = crontab.set_crontab } = {}) {
+function createApp({ setCrontab = crontab.set_crontab, probeMailProfile = sendTestMessage } = {}) {
 const app = express();
 app.locals.baseURL = baseUrl;
 app.set('host', process.env.HOST || '127.0.0.1');
@@ -113,6 +114,8 @@ if (process.env.NODE_ENV === 'production' && !process.env.CSRF_SECRET) {
 if (!authEnabled && !isLoopback && process.env.ALLOW_INSECURE_NO_AUTH !== 'true') {
   throw new Error('BASIC_AUTH_USER and BASIC_AUTH_PWD are required when HOST is not loopback');
 }
+// A profile that cannot be delivered must fail the deployment, not the first task that selects it.
+validateAllProfiles();
 
 // Security headers: all browser assets are served locally, including third-party libraries.
 app.use(helmet({
@@ -397,6 +400,46 @@ app.post(routes.backup, requireRole('admin'), auditOperation('create_backup'), (
     if (err) next(err);
     else res.end();
   });
+});
+
+// A profile test performs a real delivery, so it is rate limited per profile to keep the action
+// from being usable as a way to flood the configured recipients.
+const mailTestCooldownMs = 15_000;
+const lastMailTest = new Map();
+
+app.post(routes.test_mail_profile, requireRole('admin'), auditOperation('test_mail_profile', (req) => ({
+  profileId: typeof req.body.profileId === 'string' ? req.body.profileId : null,
+  result: req.mailTestResult || null,
+})), async (req, res) => {
+  const profileId = req.body.profileId;
+  if (typeof profileId !== 'string') return res.status(400).json({ message: 'Invalid mail profile' });
+  try {
+    validateProfileId(profileId);
+  } catch (_error) {
+    return res.status(400).json({ message: 'Invalid mail profile' });
+  }
+  if (!listProfileIds().includes(profileId)) return res.status(404).json({ message: 'Unknown mail profile' });
+  const now = Date.now();
+  const attemptedAt = lastMailTest.get(profileId) || 0;
+  if (now - attemptedAt < mailTestCooldownMs) {
+    return res.status(429).json({ message: 'A test was already sent for this profile. Try again shortly.' });
+  }
+  lastMailTest.set(profileId, now);
+
+  let result;
+  try {
+    result = await probeMailProfile(profileId);
+  } catch (_error) {
+    // getProfile already passed at startup and on the check above, so this is an unexpected
+    // internal failure. Report it without echoing driver detail back to the browser.
+    return res.status(502).json({ message: 'Unable to test the mail profile' });
+  }
+  if (result.ok) {
+    req.mailTestResult = 'delivered';
+    return res.json({ ok: true, category: 'delivered' });
+  }
+  req.mailTestResult = result.category;
+  return res.status(502).json({ ok: false, category: result.category });
 });
 
 app.get(routes.restore, requireRole('admin'), validateBackupParam, (req, res) => {
