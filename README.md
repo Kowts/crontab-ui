@@ -157,6 +157,17 @@ When `HOST` is not loopback, authentication is mandatory. The web interface uses
 
 When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently. Sessions are stateless: sign-out removes the browser cookie but cannot individually revoke a copied cookie before its expiry. A server-side revocation list is a future hardening option.
 
+### Storing passwords
+
+A password value in `BASIC_AUTH_USERS_JSON` is compared as written, so a literal password is readable by anything that can read the process environment, including `docker inspect` and a committed `.env`. For a real deployment, store a digest instead:
+
+```bash
+npx crontab-ui-hash
+BASIC_AUTH_USERS_JSON={"admin":"scrypt:5dcf990b...:d3012ee7..."}
+```
+
+The digest is `scrypt:<salt>:<hash>`, with a per-user random salt. Literal passwords remain supported and are still compared in constant time, which is acceptable only for loopback development. A value beginning with `scrypt:` that is not a well formed digest stops the service from starting, naming the user, rather than silently leaving the account unable to sign in. Sign-in performs the same work for an unknown user as for a wrong password, so response time does not disclose which accounts exist. Changing a user password means storing a new digest; there is no way to recover the password from the stored value.
+
 | Role | Capabilities |
 | --- | --- |
 | `viewer` | Read own tasks and their logs. Global crontab preview, database export, backups, restore, and environment access are admin-only. |
@@ -179,7 +190,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `CRON_USER` | Scheduler account when `CRON_IN_DOCKER` is enabled. The image fixes this to `node`; do not set it to `root`. |
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Maximum wait for Supercronic to validate and acknowledge a published Docker schedule. Default: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
-| `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. |
+| `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. A value may be a scrypt digest, see below. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
 | `CSRF_SECRET` | Persistent secret required in production. |
 | `AUTH_SESSION_SECRET` | Optional persistent session-signing secret; defaults to `CSRF_SECRET`. |

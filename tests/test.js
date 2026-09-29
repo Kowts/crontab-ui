@@ -64,6 +64,7 @@ const { collectOutputAttachments } = require('../bin/crontab-ui-mailer');
 const { validateAllProfiles, validateProfileId } = require('../config/mail-profiles');
 const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
+const { hashPassword, verifyPassword, isValidDigestFormat } = require('../config/passwords');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
@@ -1350,6 +1351,58 @@ describe('Basic authentication users configuration', () => {
     process.env.BASIC_AUTH_USERS_JSON = '{}';
     expect(() => configuredUsers()).toThrow('must contain non-empty');
   });
+
+  it('accepts a stored digest and refuses a malformed one by name', async () => {
+    const digest = await hashPassword('correct horse');
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: digest });
+    expect(configuredUsers()).toEqual({ alice: digest });
+
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ alice: 'scrypt:nothex:alsonothex' });
+    expect(() => configuredUsers()).toThrow('malformed password digest for user alice');
+  });
+});
+
+describe('Password storage', () => {
+  it('never stores the password itself in the digest', async () => {
+    const digest = await hashPassword('correct horse battery staple');
+    expect(digest).toMatch(/^scrypt:[0-9a-f]{32}:[0-9a-f]{128}$/);
+    expect(digest).not.toContain('correct horse');
+    expect(isValidDigestFormat(digest)).toBe(true);
+  });
+
+  it('produces a different digest for the same password every time', async () => {
+    const first = await hashPassword('same-password');
+    const second = await hashPassword('same-password');
+    expect(first).not.toBe(second);
+    expect(await verifyPassword('same-password', first)).toBe(true);
+    expect(await verifyPassword('same-password', second)).toBe(true);
+  });
+
+  it('verifies a digest against the right password only', async () => {
+    const digest = await hashPassword('right-password');
+    expect(await verifyPassword('right-password', digest)).toBe(true);
+    expect(await verifyPassword('wrong-password', digest)).toBe(false);
+    expect(await verifyPassword('', digest)).toBe(false);
+  });
+
+  it('keeps supporting a literal password for loopback development', async () => {
+    expect(await verifyPassword('dev-secret', 'dev-secret')).toBe(true);
+    expect(await verifyPassword('dev-secre', 'dev-secret')).toBe(false);
+    expect(await verifyPassword('anything', undefined)).toBe(false);
+  });
+
+  it('reports a malformed digest as a failed sign-in rather than an error', async () => {
+    expect(await verifyPassword('anything', 'scrypt:zz:zz')).toBe(false);
+    expect(await verifyPassword('anything', 'scrypt:only-two-parts')).toBe(false);
+    expect(await verifyPassword('anything', 'bcrypt:whatever')).toBe(false);
+  });
+});
+
+describe('Task read failures', () => {
+  it('reports a missing task as undefined instead of raising an unhandled error', async () => {
+    const found = await new Promise((resolve) => crontab.get_crontab('no-such-task', resolve));
+    expect(found).toBeUndefined();
+  });
 });
 
 describe('Mail profile hardening', () => {
@@ -1922,6 +1975,40 @@ describe('Login abuse protection', () => {
     const blocked = await request(protectedApp).post('/login').send({ username: 'reviewer', password: 'incorrect' });
     expect(blocked.status).toBe(429);
     expect(blocked.body.message).toBe('Too many sign-in attempts. Try again in 2 minutes.');
+  });
+});
+
+describe('Sign-in with a stored digest', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  it('accepts the password for a stored digest and rejects anything else', async () => {
+    const digest = await hashPassword('correct-horse');
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ admin: digest });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin' });
+    const digestApp = createApp();
+
+    // Each sign-in attempt carries its own CSRF token, exactly as the login form submits it.
+    async function attempt(agent, body) {
+      const page = await agent.get('/login');
+      const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+      const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+      return agent.post('/login').set('Cookie', cookie).set('X-CSRF-Token', token).send(body);
+    }
+
+    expect((await attempt(rawRequest.agent(digestApp), { username: 'admin', password: 'incorrect' })).status).toBe(401);
+    expect((await attempt(rawRequest.agent(digestApp), { username: 'absent', password: 'correct-horse' })).status).toBe(401);
+
+    const client = rawRequest.agent(digestApp);
+    expect((await attempt(client, { username: 'admin', password: 'correct-horse' })).status).toBe(302);
+    expect((await client.get('/')).status).toBe(200);
   });
 });
 

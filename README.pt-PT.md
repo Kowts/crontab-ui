@@ -157,6 +157,17 @@ Quando `HOST` não é loopback, a autenticação é obrigatória. Estão dispon�
 
 Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente. As sessões são stateless: terminar sessão remove o cookie do navegador, mas não consegue revogar individualmente uma cópia desse cookie antes de expirar. Uma lista de revogação no servidor é um reforço futuro.
 
+### Armazenar palavras-passe
+
+Um valor de palavra-passe em `BASIC_AUTH_USERS_JSON` é comparado tal como está escrito, pelo que uma palavra-passe literal é legível por tudo o que consiga ler o ambiente do processo, incluindo `docker inspect` e um `.env` versionado. Numa instalação real, armazene em vez disso um resumo:
+
+```bash
+npx crontab-ui-hash
+BASIC_AUTH_USERS_JSON={"admin":"scrypt:5dcf990b...:d3012ee7..."}
+```
+
+O resumo tem a forma `scrypt:<sal>:<hash>`, com um sal aleatório por utilizador. As palavras-passe literais continuam suportadas e são igualmente comparadas em tempo constante, o que só é aceitável em desenvolvimento por loopback. Um valor que comece por `scrypt:` mas não seja um resumo bem formado impede o arranque do serviço, indicando o utilizador, em vez de deixar silenciosamente a conta sem conseguir iniciar sessão. O início de sessão executa o mesmo trabalho para um utilizador inexistente e para uma palavra-passe errada, pelo que o tempo de resposta não revela que contas existem. Para mudar a palavra-passe de um utilizador, armazene um novo resumo; não há forma de recuperar a palavra-passe a partir do valor guardado.
+
 | Papel | Capacidades |
 | --- | --- |
 | `viewer` | Consulta as próprias tarefas e respetivos registos. A pré-visualização global do crontab, exportação da base de dados, backups, restauro e ambiente são exclusivos de `admin`. |
@@ -179,7 +190,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `CRON_USER` | Conta do agendador quando `CRON_IN_DOCKER` está ativo. A imagem fixa-a em `node`; não a defina como `root`. |
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Tempo máximo de espera para o Supercronic validar e confirmar a recarga de uma agenda Docker publicada. Predefinição: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
-| `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. |
+| `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. Um valor pode ser um resumo scrypt, ver abaixo. |
 | `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |
 | `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
 | `AUTH_SESSION_SECRET` | Segredo persistente opcional para assinar sessões; por omissão usa `CSRF_SECRET`. |

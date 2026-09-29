@@ -187,9 +187,17 @@ exports.crontabs = (callback) => {
   });
 };
 
+// The datastore reports a read failure by calling back with the error alone, so `docs` is
+// undefined and indexing it would raise an unhandled TypeError inside a microtask, far from the
+// cause. Callers already treat a missing task as undefined, so a failed read is surfaced in the
+// log and answered the same way instead of crashing the request.
 exports.get_crontab = (_id, callback) => {
   db.find({ _id }).exec((err, docs) => {
-    callback(docs[0]);
+    if (err) {
+      console.error(`Unable to read task ${_id}: ${err.message}`);
+      return callback(undefined);
+    }
+    return callback(docs[0]);
   });
 };
 

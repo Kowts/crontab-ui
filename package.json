@@ -41,7 +41,8 @@
   },
   "bin": {
     "crontab-ui": "bin/crontab-ui.js",
-    "crontab-ui-mailer": "bin/crontab-ui-mailer.js"
+    "crontab-ui-mailer": "bin/crontab-ui-mailer.js",
+    "crontab-ui-hash": "bin/crontab-ui-hash.js"
   },
   "repository": {
     "type": "git",

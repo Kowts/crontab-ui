@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const { verifyPassword, isValidDigestFormat } = require('../config/passwords');
 
 const SESSION_COOKIE = 'crontab_ui_session';
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -19,6 +20,13 @@ function configuredUsers() {
   if (!users || Array.isArray(users) || typeof users !== 'object' || Object.keys(users).length === 0
     || Object.entries(users).some(([user, password]) => !user || typeof password !== 'string' || !password)) {
     throw new Error('BASIC_AUTH_USERS_JSON must contain non-empty user names and passwords');
+  }
+  // A value that looks like a digest must be a well formed one, otherwise a truncated or
+  // mistyped hash would leave the account permanently unable to sign in with no explanation.
+  for (const [user, password] of Object.entries(users)) {
+    if (password.startsWith('scrypt:') && !isValidDigestFormat(password)) {
+      throw new Error(`BASIC_AUTH_USERS_JSON contains a malformed password digest for user ${user}`);
+    }
   }
   return users;
 }
@@ -118,11 +126,18 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
     return renderLogin(req, res);
   });
 
-  app.post(loginPath, (req, res) => {
+  app.post(loginPath, async (req, res, next) => {
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    const expectedPassword = users[username];
-    if (!expectedPassword || !safeEqual(password, expectedPassword)) {
+    let accepted = false;
+    try {
+      // The verification runs even for an unknown user, so a wrong username and a wrong password
+      // take a comparable amount of time and do not disclose which accounts exist.
+      accepted = await verifyPassword(password, users[username]);
+    } catch (error) {
+      return next(error);
+    }
+    if (!users[username] || !accepted) {
       const attemptsExhausted = Number(req.rateLimit?.remaining) === 0;
       const minutes = res.locals.loginRateLimitMinutes || 1;
       const error = attemptsExhausted
