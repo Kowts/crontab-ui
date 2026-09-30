@@ -72,8 +72,9 @@ function fail(error) {
 }
 
 function sendNotification() {
-  crontab.get_crontab(jobId, (job) => {
+  crontab.get_crontab(jobId, (error, job) => {
     try {
+      if (error) throw error;
       if (!job?.mailing?.profileId) throw new Error('Job has no mail profile');
       const profile = getProfile(job.mailing.profileId);
       const safeName = String(job.name || jobId).replace(/[\r\n]/g, ' ').slice(0, 128);

@@ -66,6 +66,7 @@ const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
+const { useBoundedNumber, requireBoundedNumber } = require('../config/limits');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
@@ -995,7 +996,7 @@ describe('Crontab UI', () => {
         (error, job) => (error ? reject(error) : resolve(job))
       ));
       await new Promise((resolve, reject) => crontab.set_crontab({}, (error) => (error ? reject(error) : resolve()), (_file, callback) => callback(null)));
-      const beforeBackup = await new Promise((resolve) => crontab.get_crontab(created._id, resolve));
+      const beforeBackup = await new Promise((resolve) => crontab.get_crontab(created._id, (error, job) => resolve(job)));
       expect(beforeBackup.saved).toBe(true);
 
       await new Promise((resolve, reject) => crontab.backup((error) => (error ? reject(error) : resolve())));
@@ -1003,7 +1004,7 @@ describe('Crontab UI', () => {
       await new Promise((resolve, reject) => crontab.remove(created._id, (error) => (error ? reject(error) : resolve())));
       await new Promise((resolve, reject) => crontab.restore(backup, (error) => (error ? reject(error) : resolve())));
 
-      const restored = await new Promise((resolve) => crontab.get_crontab(created._id, resolve));
+      const restored = await new Promise((resolve) => crontab.get_crontab(created._id, (error, job) => resolve(job)));
       expect(restored).toMatchObject({
         _id: created._id, owner: 'restore-owner', createdBy: 'restore-creator', saved: true, needsPublishReview: true,
       });
@@ -1120,7 +1121,7 @@ describe('POST /save job identifier validation', () => {
   let jobId;
 
   function findJob(id) {
-    return new Promise((resolve) => crontab.get_crontab(id, resolve));
+    return new Promise((resolve) => crontab.get_crontab(id, (error, job) => resolve(job)));
   }
 
   beforeAll(async () => {
@@ -1426,10 +1427,105 @@ describe('Password storage', () => {
   });
 });
 
+describe('Environment limits', () => {
+  // Every name this block writes must be restored, including the security limit: a mistuned value
+  // left behind stops the next createApp from building, which reads as an unrelated failure.
+  const names = [
+    'EXECUTION_HISTORY_PER_JOB', 'COMMAND_TIMEOUT_MS', 'LOG_RETENTION_DAYS', 'BACKUP_RETENTION_COUNT',
+    'LOGIN_RATE_LIMIT_MAX',
+  ];
+  const saved = {};
+
+  beforeEach(() => { for (const name of names) saved[name] = process.env[name]; });
+  afterEach(() => {
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name];
+      else process.env[name] = saved[name];
+    }
+  });
+
+  it('falls back to the default for a value that is not a usable number', () => {
+    process.env.EXECUTION_HISTORY_PER_JOB = 'abc';
+    expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(200);
+    process.env.EXECUTION_HISTORY_PER_JOB = '0';
+    expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(200);
+    process.env.EXECUTION_HISTORY_PER_JOB = '';
+    expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(200);
+    delete process.env.EXECUTION_HISTORY_PER_JOB;
+    expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(200);
+  });
+
+  it('accepts a value inside the range', () => {
+    process.env.EXECUTION_HISTORY_PER_JOB = '500';
+    expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(500);
+  });
+
+  it('refuses a mistuned security limit instead of silently weakening it', () => {
+    process.env.LOGIN_RATE_LIMIT_MAX = '0';
+    expect(() => requireBoundedNumber('LOGIN_RATE_LIMIT_MAX', 1, 1000)).toThrow('between 1 and 1000');
+    process.env.LOGIN_RATE_LIMIT_MAX = '100000';
+    expect(() => requireBoundedNumber('LOGIN_RATE_LIMIT_MAX', 1, 1000)).toThrow('between 1 and 1000');
+  });
+});
+
+describe('Import and restore run state', () => {
+  it('keeps local run history but drops state for tasks the new set does not contain', async () => {
+    const kept = await new Promise((resolve, reject) => {
+      crontab.create_new('kept-task', 'echo kept', '* * * * *', false, {}, { owner: 'admin', createdBy: 'admin' },
+        (error, job) => (error ? reject(error) : resolve(job)));
+    });
+    const dropped = await new Promise((resolve, reject) => {
+      crontab.create_new('dropped-task', 'echo dropped', '* * * * *', false, {}, { owner: 'admin', createdBy: 'admin' },
+        (error, job) => (error ? reject(error) : resolve(job)));
+    });
+    await new Promise((resolve) => crontab.runjob(kept._id, {}, resolve));
+    await new Promise((resolve) => crontab.runjob(dropped._id, {}, resolve));
+
+    expect(crontab.getExecutionPanel(kept).history).toHaveLength(1);
+    expect(crontab.getExecutionPanel(dropped).history).toHaveLength(1);
+
+    // Replace the task set with one that only contains the first task.
+    const candidate = path.join(testDbPath, `candidate-${crypto.randomUUID()}.db`);
+    createDatabaseFile(candidate, [{ _id: kept._id, name: 'kept', command: 'echo kept', schedule: '* * * * *', created: 1 }]);
+    await new Promise((resolve, reject) => {
+      crontab.replace_database(candidate, (error) => (error ? reject(error) : resolve()));
+    });
+
+    // History for a task that still exists survives the replacement, and the state for the task
+    // that is gone does not linger. A stale alert cooldown would suppress the first alert of a
+    // restored or recreated task, which is why it is not treated as history.
+    expect(crontab.getExecutionPanel(kept).history).toHaveLength(1);
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    expect(jobs.map((job) => job._id)).toEqual([kept._id]);
+  });
+});
+
 describe('Task read failures', () => {
-  it('reports a missing task as undefined instead of raising an unhandled error', async () => {
-    const found = await new Promise((resolve) => crontab.get_crontab('no-such-task', resolve));
-    expect(found).toBeUndefined();
+  it('reports a missing task as no error and no document', async () => {
+    const result = await new Promise((resolve) => crontab.get_crontab('no-such-task', (error, job) => resolve({ error, job })));
+    expect(result.error).toBeNull();
+    expect(result.job).toBeUndefined();
+  });
+
+  it('separates a failed read from a task that does not exist', async () => {
+    // Closing the store is the closest reproducible stand-in for a database that cannot be read.
+    const filename = path.join(testDbPath, `read-failure-${crypto.randomUUID()}.db`);
+    const store = new SqliteDatastore({ filename });
+    await new Promise((resolve, reject) => {
+      store.insert({ _id: 'unreadable', name: 'n', command: 'echo', schedule: '* * * * *', created: Date.now() },
+        (error) => (error ? reject(error) : resolve()));
+    });
+    store.close();
+    let passed = null;
+    try {
+      await new Promise((resolve) => {
+        store.find({ _id: 'unreadable' }).exec((error, docs) => { passed = { error, docs }; resolve(); });
+      });
+    } finally {
+      fs.unlinkSync(filename);
+    }
+    expect(passed.error).toBeInstanceOf(Error);
+    expect(passed.docs).toBeUndefined();
   });
 });
 
@@ -2167,14 +2263,14 @@ describe('Alert behaviour across a real run sequence', () => {
 
   beforeEach(() => {
     spawned = [];
-    crontab.set_mailer_spawn((args) => {
+    crontab.set_mailer_dispatcher((args) => {
       spawned.push({ jobId: args[0], operationId: args[1], outcome: args[2] });
       return new EventEmitter();
     });
   });
 
   afterEach(() => {
-    crontab.set_mailer_spawn(null);
+    crontab.set_mailer_dispatcher(null);
   });
 
   function createJob(mailing, command = 'exit 1') {
@@ -2372,7 +2468,7 @@ describe('Review and publish HTTP flow', () => {
     expect(published.status).toBe(200);
     expect(fs.readFileSync(publishedFile, 'utf8')).toContain(job._id);
 
-    const persisted = await new Promise((resolve) => crontab.get_crontab(job._id, resolve));
+    const persisted = await new Promise((resolve) => crontab.get_crontab(job._id, (error, job) => resolve(job)));
     expect(persisted).toMatchObject({ saved: true, needsPublishReview: false });
     const operationId = published.headers['x-request-id'];
     const auditEntries = fs.readFileSync(crontab.audit_file, 'utf8').trim().split('\n').map(JSON.parse);

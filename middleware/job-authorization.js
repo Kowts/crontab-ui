@@ -35,7 +35,10 @@ function requireJobAccess(action) {
     if (typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(jobId)) {
       return res.status(400).json({ message: 'Invalid or missing id parameter' });
     }
-    crontab.get_crontab(jobId, (job) => {
+    crontab.get_crontab(jobId, (error, job) => {
+      // A database failure is not the same as a task that does not exist, and must not be
+      // answered as "not found": that would tell an operator the task is gone during an outage.
+      if (error) return res.status(500).json({ message: 'Unable to read the task' });
       if (!job) return res.status(404).json({ message: 'Job not found' });
       if (!canAccessJob(req, job, action)) return res.status(403).json({ message: 'Not authorized for this job' });
       req.job = job;

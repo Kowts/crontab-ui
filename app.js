@@ -30,6 +30,7 @@ const {
 } = require('./middleware/validate');
 const { getProfile, listProfileIds, validateAllProfiles, validateProfileId } = require('./config/mail-profiles');
 const { normaliseMailing } = require('./config/alert-policy');
+const { requireBoundedNumber } = require('./config/limits');
 const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
@@ -63,12 +64,11 @@ if (trustedProxy) app.set('trust proxy', trustedProxy);
 
 const isLoopback = ['127.0.0.1', '::1', 'localhost'].includes(app.get('host'));
 
+// Sign-in throttling is a security limit, so a mistyped value must stop the service rather than
+// be silently replaced by a weaker one.
 function boundedEnvironmentNumber(name, fallback, minimum, maximum) {
-  const value = Number(process.env[name] || fallback);
-  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
-    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
-  }
-  return value;
+  const configured = requireBoundedNumber(name, minimum, maximum);
+  return configured === undefined ? fallback : configured;
 }
 
 app.get(`${baseUrl}/healthz`, (req, res) => {
@@ -381,7 +381,8 @@ app.get(routes.run_status, requireRole('viewer'), (req, res) => {
   const operationId = String(req.query.operationId || '');
   const run = crontab.getManualRun(operationId);
   if (!run) return res.status(404).json({ message: 'Execution not found' });
-  return crontab.get_crontab(run.jobId, (job) => {
+  return crontab.get_crontab(run.jobId, (error, job) => {
+    if (error) return res.status(500).json({ message: 'Unable to read the task' });
     if (!job || !canAccessJob(req, job, 'read')) return res.status(403).json({ message: 'Not authorized for this job' });
     return res.json(run);
   });
@@ -391,7 +392,8 @@ app.post(routes.cancel_run, requireRole('executor'), (req, res) => {
   const operationId = String(req.body.operationId || '');
   const run = crontab.getManualRun(operationId);
   if (!run) return res.status(404).json({ message: 'Execution not found' });
-  return crontab.get_crontab(run.jobId, (job) => {
+  return crontab.get_crontab(run.jobId, (error, job) => {
+    if (error) return res.status(500).json({ message: 'Unable to read the task' });
     if (!job || !canAccessJob(req, job, 'execute')) return res.status(403).json({ message: 'Not authorized for this job' });
     const cancelled = crontab.cancelManualRun(operationId, { requestId: req.requestId, actor: req.auth?.user || 'local', sourceIp: req.ip });
     if (!cancelled) return res.status(409).json({ message: 'Execution is no longer active' });
@@ -638,7 +640,8 @@ app.get(routes.executions, requireRole('viewer'), validateIdParam, requireJobAcc
   res.set('Cache-Control', 'no-store');
   // requireJobAccess only attaches the job when authentication is enabled, so the task is loaded
   // here as well to keep the 404 for an unknown task in either mode.
-  return crontab.get_crontab(req.jobId, (job) => {
+  return crontab.get_crontab(req.jobId, (error, job) => {
+    if (error) return res.status(500).json({ message: 'Unable to read the task' });
     if (!job) return res.status(404).json({ message: 'Job not found' });
     return res.json(crontab.getExecutionPanel(job));
   });

@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
+const { useBoundedNumber } = require('./config/limits');
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
@@ -24,26 +25,21 @@ const envFile = path.join(dbFolder, 'env.db');
 const crontabDbFile = path.join(dbFolder, 'crontab.db');
 
 const db = new SqliteDatastore({ filename: crontabDbFile });
-const commandTimeoutMs = Number(process.env.COMMAND_TIMEOUT_MS || 300000);
-const commandMaxBuffer = Number(process.env.COMMAND_MAX_BUFFER || 1024 * 1024);
-const commandKillGraceMs = Number(process.env.COMMAND_KILL_GRACE_MS || 5000);
-const maxLogBytes = Number(process.env.LOG_MAX_BYTES || 10 * 1024 * 1024);
-const logRotationCount = Number(process.env.LOG_ROTATION_COUNT || 5);
-const logRetentionDays = Number(process.env.LOG_RETENTION_DAYS || 30);
-const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
-const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
-const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
-const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
 
-// A configured value that cannot be used is ignored rather than passed on. A cap that reaches the
-// database as NaN would make the retention query match no rows and delete the whole history.
-function boundedNumber(value, fallback, minimum, maximum) {
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) return fallback;
-  return parsed;
-}
-
-const executionHistoryPerJob = boundedNumber(process.env.EXECUTION_HISTORY_PER_JOB, 200, 1, 10_000);
+// Every limit is read through config/limits.js. An unvalidated value was not hypothetical: a
+// non-numeric EXECUTION_HISTORY_PER_JOB reached SQLite as NULL, the retention query matched no
+// rows, and the whole execution history was deleted on the first run.
+const commandTimeoutMs = useBoundedNumber('COMMAND_TIMEOUT_MS', 300000, 1000, 24 * 60 * 60 * 1000);
+const commandMaxBuffer = useBoundedNumber('COMMAND_MAX_BUFFER', 1024 * 1024, 1024, 256 * 1024 * 1024);
+const commandKillGraceMs = useBoundedNumber('COMMAND_KILL_GRACE_MS', 5000, 0, 600000);
+const maxLogBytes = useBoundedNumber('LOG_MAX_BYTES', 10 * 1024 * 1024, 1024, 4 * 1024 * 1024 * 1024);
+const logRotationCount = useBoundedNumber('LOG_ROTATION_COUNT', 5, 0, 100);
+const logRetentionDays = useBoundedNumber('LOG_RETENTION_DAYS', 30, 1, 3650);
+const backupRetentionCount = useBoundedNumber('BACKUP_RETENTION_COUNT', 30, 1, 10_000);
+const backupRetentionDays = useBoundedNumber('BACKUP_RETENTION_DAYS', 90, 1, 3650);
+const systemCrontabImportTimeoutMs = useBoundedNumber('SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS', 30000, 1000, 10 * 60 * 1000);
+const systemCrontabImportMaxBuffer = useBoundedNumber('SYSTEM_CRONTAB_IMPORT_MAX_BUFFER', 256 * 1024, 1024, 64 * 1024 * 1024);
+const executionHistoryPerJob = useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000);
 const executionHistoryLimit = 50;
 const auditWriteAttempts = 3;
 const auditRetryDelayMs = 25;
@@ -200,17 +196,17 @@ exports.crontabs = (callback) => {
   });
 };
 
-// The datastore reports a read failure by calling back with the error alone, so `docs` is
-// undefined and indexing it would raise an unhandled TypeError inside a microtask, far from the
-// cause. Callers already treat a missing task as undefined, so a failed read is surfaced in the
-// log and answered the same way instead of crashing the request.
+// Error first, so a failed read is distinguishable from a task that does not exist. The datastore
+// reports a failure by calling back with the error alone, which previously left `docs` undefined
+// and raised a TypeError inside a microtask with no reference to the cause. Answering both cases
+// differently matters: a database problem must not be reported to the caller as "no such task".
 exports.get_crontab = (_id, callback) => {
   db.find({ _id }).exec((err, docs) => {
     if (err) {
       console.error(`Unable to read task ${_id}: ${err.message}`);
-      return callback(undefined);
+      return callback(err);
     }
-    return callback(docs[0]);
+    return callback(null, docs[0]);
   });
 };
 
@@ -322,7 +318,7 @@ function shouldSendMail(mailing, failed) {
   return policy === 'always' || (failed ? policy === 'onFailure' : policy === 'onSuccess');
 }
 
-let mailerSpawn = defaultMailerSpawn;
+let dispatchMailer = defaultMailerSpawn;
 
 // Decides whether a failing run should be announced, and keeps the state that makes the next
 // decision possible. The alert is recorded when the decision to send is taken, not when delivery
@@ -359,7 +355,7 @@ function deliverMail(tab, operationId, result, failed) {
   const outcome = failed ? 'failed' : 'succeeded';
   const durationMs = Number.isSafeInteger(result.durationMs) && result.durationMs >= 0 ? String(result.durationMs) : '';
   const exitCode = Number.isSafeInteger(result.exitCode) ? String(result.exitCode) : '';
-  const child = mailerSpawn([tab._id, operationId, outcome, durationMs, exitCode]);
+  const child = dispatchMailer([tab._id, operationId, outcome, durationMs, exitCode]);
   watchMailerProcess(child, { operationId, jobId: tab._id });
   if (child.unref) child.unref();
   return true;
@@ -372,11 +368,13 @@ function defaultMailerSpawn(args) {
   });
 }
 
-// The delivery decision is worth testing without a live SMTP server, and the same seam keeps the
-// spawn itself replaceable. Returns the previous spawn, so a caller can restore it.
-function setMailerSpawn(override) {
-  const previous = mailerSpawn;
-  mailerSpawn = override || defaultMailerSpawn;
+// Launching the mailer is a collaborator, not an internal detail: it is what turns a delivery
+// decision into a real attempt, and a substitute makes the decision itself verifiable without a
+// live SMTP server. This is the same injection the application uses for publishing a crontab.
+// Returns the previous dispatcher so a caller can restore it.
+function setMailerDispatcher(override) {
+  const previous = dispatchMailer;
+  dispatchMailer = override || defaultMailerSpawn;
   return previous;
 }
 
@@ -392,7 +390,7 @@ function watchMailerProcess(child, { operationId, jobId }) {
 
 exports.should_send_mail = shouldSendMail;
 exports.watch_mailer_process = watchMailerProcess;
-exports.set_mailer_spawn = setMailerSpawn;
+exports.set_mailer_dispatcher = setMailerDispatcher;
 
 function applyRetention() {
   const cutoff = Date.now() - (logRetentionDays * 24 * 60 * 60 * 1000);
@@ -944,52 +942,22 @@ function replaceDatabase(temporaryFile, done) {
         return;
       }
       setImmediate(() => {
-        // Windows does not allow replacing a SQLite file while another connection
-        // has it open. Replace rows inside the active database transactionally
-        // instead of renaming the active file.
-        if (process.platform === 'win32') {
-          try {
-            db.replaceDocuments(readJobsFromFile(temporaryFile));
-            return removeTemporaryFile(temporaryFile, (cleanupError) => {
-              if (cleanupError) console.warn(`Unable to remove imported temporary database: ${cleanupError.message}`);
-              done(null);
-            });
-          } catch (error) {
-            return removeTemporaryFile(temporaryFile, () => done(error));
-          }
-        }
-        const rollbackFile = path.join(dbFolder, `.rollback-${crypto.randomUUID()}.db`);
-        const reopen = (error) => {
-          try {
-            if (!db.database) db.open();
-          } catch (openError) {
-            error.rollbackError = openError.message;
-          }
-          fs.rm(temporaryFile, { force: true }, () => done(error));
-        };
-        const restoreRollback = (error) => {
-          if (!fs.existsSync(rollbackFile) || fs.existsSync(crontabDbFile)) return reopen(error);
-          return fs.rename(rollbackFile, crontabDbFile, (rollbackError) => {
-            if (rollbackError) error.rollbackError = rollbackError.message;
-            reopen(error);
-          });
-        };
+        // The tasks are replaced inside a transaction in the active database, on every platform.
+        // Windows cannot rename a SQLite file that another connection has open, which used to
+        // force a different path per platform, and the two paths disagreed: renaming the file on
+        // other systems also replaced the execution history and the alert state, so an import or
+        // a restore could resurrect a stale alert cooldown and discard local run history.
+        // replaceDocuments is atomic on its own, so it removes the need for a rollback file and
+        // makes import and restore behave identically everywhere.
         try {
-          db.close();
-        } catch (closeError) {
-          return reopen(closeError);
+          db.replaceDocuments(readJobsFromFile(temporaryFile));
+          db.dropOrphanedRunState();
+        } catch (error) {
+          return removeTemporaryFile(temporaryFile, () => done(error));
         }
-        return fs.rename(crontabDbFile, rollbackFile, (snapshotError) => {
-          if (snapshotError) return reopen(snapshotError);
-          return fs.rename(temporaryFile, crontabDbFile, (replaceError) => {
-            if (replaceError) return restoreRollback(replaceError);
-            try {
-              db.open();
-            } catch (openError) {
-              return restoreRollback(openError);
-            }
-            return fs.rm(rollbackFile, { force: true }, () => done(null));
-          });
+        return removeTemporaryFile(temporaryFile, (cleanupError) => {
+          if (cleanupError) console.warn(`Unable to remove imported temporary database: ${cleanupError.message}`);
+          done(null);
         });
       });
     });
