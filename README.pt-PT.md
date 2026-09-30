@@ -1,11 +1,5 @@
 # Crontab UI
 
-## Carregar ficheiros de ambiente locais
-
-O comando `npm start` não carrega deliberadamente um ficheiro de ambiente, evitando que o desenvolvimento local utilize por engano credenciais ou definições de transporte de produção.
-
-Use `npm run start:env` para `.env` ou `npm run start:production` para `.env.production`. O comando `start:env` exige que `.env` exista.
-
 [English](README.md) | [Português (Portugal)](README.pt-PT.md)
 
 <p align="center"><img src="public/images/crontab-ui.svg" width="112" alt="Ícone do Crontab UI"></p>
@@ -35,15 +29,15 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 
 ![Tema escuro com proprietário da tarefa, estado de publicação local e controlos operacionais](docs/images/task-list-dark.png)
 
+### Criar uma tarefa
+
+![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron, campos identificados e a política de notificação com o limiar de falhas e o intervalo entre alertas](docs/images/new-task-dark.png)
+
 ### Painel de execução
 
 Cada linha tem um painel de execução que responde, para uma tarefa, quando foi executada pela última vez, quanto demorou, o que devolveu, quando funcionou pela última vez, quantas falhas se acumularam e quando é a próxima. As execuções recentes são listadas com a sua origem, permitindo encontrar uma falha sem abrir um log por tarefa.
 
 ![Painel de execução em tema escuro, com a última execução, o resultado, a última execução com sucesso, a próxima execução agendada, as falhas consecutivas, o último alerta enviado e a lista de execuções recentes](docs/images/execution-panel-dark.png)
-
-### Criar uma tarefa
-
-![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron, campos identificados e a política de notificação com o limiar de falhas e o intervalo entre alertas](docs/images/new-task-dark.png)
 
 ## Fluxo operacional
 
@@ -97,7 +91,13 @@ npm run lint
 npm test
 ```
 
-Antes de iniciar, configure as variáveis no gestor de segredos/ambiente do processo. O projeto **não** carrega `.env` automaticamente. Defina sempre um `CRON_DB_PATH` persistente e com acesso exclusivo do utilizador do serviço.
+Antes de iniciar, configure as variáveis no gestor de segredos/ambiente do processo. Defina sempre um `CRON_DB_PATH` persistente e com acesso exclusivo do utilizador do serviço.
+
+### Carregar ficheiros de ambiente locais
+
+O comando `npm start` não carrega deliberadamente um ficheiro de ambiente, evitando que o desenvolvimento local utilize por engano credenciais ou definições de transporte de produção.
+
+Use `npm run start:env` para `.env` ou `npm run start:production` para `.env.production`. O comando `start:env` exige que `.env` exista.
 
 ```bash
 export NODE_ENV=production
