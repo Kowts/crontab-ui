@@ -1998,16 +1998,44 @@ describe('Session authentication middleware', () => {
     else process.env.AUTH_SESSION_TTL_MS = originalSessionTtl;
   });
 
+  // A stand-in for the persisted store, so these tests exercise the middleware contract without
+  // the application database. The production store is covered by the datastore tests.
+  function memorySessions() {
+    const records = new Map();
+    return {
+      records,
+      create: (session) => records.set(session.id, { ...session, revokedAt: null }),
+      get: (id) => records.get(id) || null,
+      revoke: (id, at) => { if (records.has(id)) records.set(id, { ...records.get(id), revokedAt: at }); },
+      revokeUser: (user, at) => {
+        let changed = 0;
+        for (const record of records.values()) if (record.user === user && record.revokedAt === null) { records.set(record.id, { ...record, revokedAt: at }); changed += 1; }
+        return changed;
+      },
+      prune: () => {},
+    };
+  }
+
+  function authedApp(sessions) {
+    const protectedApp = express();
+    protectedApp.use(express.json());
+    protectedApp.use(express.urlencoded({ extended: false }));
+    setupAuth(protectedApp, { sessions });
+    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+    return protectedApp;
+  }
+
+  it('refuses to run without a session store, since cookies could not be withdrawn', () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const unprotected = express();
+    expect(() => setupAuth(unprotected)).toThrow('session store is required');
+  });
+
   it('rejects unauthenticated access and accepts configured credentials', async () => {
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
     delete process.env.BASIC_AUTH_USER;
     delete process.env.BASIC_AUTH_PWD;
-    const protectedApp = express();
-    protectedApp.use(express.json());
-    protectedApp.use(express.urlencoded({ extended: false }));
-    expect(setupAuth(protectedApp)).toBe(true);
-    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
-
+    const protectedApp = authedApp(memorySessions());
     expect((await request(protectedApp).get('/protected')).status).toBe(401);
     const client = rawRequest.agent(protectedApp);
     await client.post('/login').send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
@@ -2019,13 +2047,71 @@ describe('Session authentication middleware', () => {
     expect((await client.get('/protected')).status).toBe(401);
   });
 
+  it('stops accepting a copy of the cookie taken before sign-out', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const sessions = memorySessions();
+    const protectedApp = authedApp(sessions);
+
+    const signedIn = await request(protectedApp).post('/login')
+      .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const cookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session=')).split(';')[0];
+
+    // A stolen copy of the cookie, kept by someone else.
+    const thief = rawRequest.agent(protectedApp);
+    expect((await thief.get('/protected').set('Cookie', cookie)).status).toBe(200);
+
+    await request(protectedApp).post('/logout').set('Cookie', cookie).expect(302);
+    // This is what signing out could not do before: the copy stops working at once.
+    expect((await thief.get('/protected').set('Cookie', cookie)).status).toBe(401);
+  });
+
+  it('keeps other sessions of the same user valid until each one is ended', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const sessions = memorySessions();
+    const protectedApp = authedApp(sessions);
+
+    const first = rawRequest.agent(protectedApp);
+    await first.post('/login').send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const second = rawRequest.agent(protectedApp);
+    const secondLogin = await second.post('/login').send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const secondCookie = secondLogin.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session=')).split(';')[0];
+    expect(sessions.records.size).toBe(2);
+    expect((await first.get('/protected')).status).toBe(200);
+
+    // Ending access for the account withdraws every browser it was open in, which signing out of
+    // one of them cannot do on its own.
+    sessions.revokeUser('reviewer', Date.now());
+    expect((await first.get('/protected')).status).toBe(401);
+    expect((await second.get('/protected').set('Cookie', secondCookie)).status).toBe(401);
+  });
+
+  it('rejects a cookie whose session record was never created', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const sessions = memorySessions();
+    const protectedApp = authedApp(sessions);
+    const signedIn = await request(protectedApp).post('/login')
+      .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const cookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session=')).split(';')[0];
+    sessions.records.clear();
+
+    expect((await request(protectedApp).get('/protected').set('Cookie', cookie)).status).toBe(401);
+  });
+
+  it('treats a store that cannot be read as no session rather than trusting the signature', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
+    const sessions = memorySessions();
+    const protectedApp = authedApp(sessions);
+    const signedIn = await request(protectedApp).post('/login')
+      .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
+    const cookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session=')).split(';')[0];
+
+    sessions.get = () => { throw new Error('database is locked'); };
+    expect((await request(protectedApp).get('/protected').set('Cookie', cookie)).status).toBe(401);
+  });
+
   it('rejects a tampered session cookie', async () => {
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
-    const protectedApp = express();
-    protectedApp.use(express.json());
-    protectedApp.use(express.urlencoded({ extended: false }));
-    setupAuth(protectedApp);
-    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+    const protectedApp = authedApp(memorySessions());
 
     const signedIn = await request(protectedApp).post('/login')
       .send({ username: 'reviewer', password: 'strong-secret' }).expect(302);
@@ -2039,11 +2125,7 @@ describe('Session authentication middleware', () => {
   it('rejects an expired session cookie', async () => {
     process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ reviewer: 'strong-secret' });
     process.env.AUTH_SESSION_TTL_MS = '60000';
-    const protectedApp = express();
-    protectedApp.use(express.json());
-    protectedApp.use(express.urlencoded({ extended: false }));
-    setupAuth(protectedApp);
-    protectedApp.get('/protected', (req, res) => res.json({ user: req.auth.user }));
+    const protectedApp = authedApp(memorySessions());
 
     const originalNow = Date.now;
     const issuedAt = originalNow();

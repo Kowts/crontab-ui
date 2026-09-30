@@ -215,6 +215,8 @@ app.use(routes.login, (req, res, next) => {
 // sign-in page can load its local styling and safely submit credentials.
 setupAuth(app, {
   baseUrl,
+  sessions: crontab.sessions,
+  audit: (event) => crontab.audit(event),
   resetLoginRateLimit: (req) => loginRateLimitStore.resetKey(loginRateLimitKey(req)),
 });
 

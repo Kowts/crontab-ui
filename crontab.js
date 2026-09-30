@@ -388,6 +388,16 @@ function watchMailerProcess(child, { operationId, jobId }) {
   }));
 }
 
+// Session records back the revocable sign-in cookie. A signed cookie alone cannot be withdrawn
+// before it expires, which is what this exists to change.
+exports.sessions = {
+  create: (session) => db.createSession(session),
+  get: (id) => db.getSession(id),
+  revoke: (id, at) => db.revokeSession(id, at),
+  revokeUser: (user, at) => db.revokeUserSessions(user, at),
+  prune: (now) => db.pruneSessions(now),
+};
+
 exports.should_send_mail = shouldSendMail;
 exports.watch_mailer_process = watchMailerProcess;
 exports.set_mailer_dispatcher = setMailerDispatcher;
@@ -420,6 +430,12 @@ function applyRetention() {
     db.pruneExecutions(cutoff, executionHistoryPerJob);
   } catch (error) {
     audit({ type: 'retention', status: 'failed', scope: 'executions', error: error.message });
+  }
+
+  try {
+    db.pruneSessions(Date.now());
+  } catch (error) {
+    audit({ type: 'retention', status: 'failed', scope: 'sessions', error: error.message });
   }
 }
 

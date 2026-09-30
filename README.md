@@ -33,17 +33,17 @@ This fork extends the original visual crontab management interface with producti
 
 ### Task overview
 
-![Dark theme task overview showing task ownership, local publication state, and operation controls](docs/images/task-list-dark.png)
+![Dark theme task overview in Portuguese, showing task ownership, local publication state, and operation controls](docs/images/task-list-dark.png)
 
 ### Create a task
 
-![Dark theme new task dialog with schedule presets, a human-readable cron expression, labelled cron fields, and the email notification policy with its alert threshold and cooldown](docs/images/new-task-dark.png)
+![Dark theme new task dialog in Portuguese, with schedule presets, a human-readable cron expression, labelled cron fields, and the email notification policy](docs/images/new-task-dark.png)
 
 ### Execution panel
 
 Every row has an execution panel that answers, for one task, when it last ran, how long it took, what it returned, when it last worked, how many failures have stacked up, and when it is next due. Recent executions are listed with their trigger, so a failure can be found without opening one log per task.
 
-![Dark theme execution panel showing last run, outcome, last successful run, next scheduled run, consecutive failures, last alert sent, and the recent execution list](docs/images/execution-panel-dark.png)
+![Dark theme execution panel in Portuguese, showing last run, outcome, last successful run, next scheduled run, consecutive failures, last alert sent, and the recent execution list](docs/images/execution-panel-dark.png)
 
 ## Operational flow
 
@@ -160,7 +160,9 @@ When `HOST` is not loopback, authentication is mandatory. The web interface uses
 - `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` for a single user;
 - `BASIC_AUTH_USERS_JSON` for a map of multiple users.
 
-When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently. Sessions are stateless: sign-out removes the browser cookie but cannot individually revoke a copied cookie before its expiry. A server-side revocation list is a future hardening option.
+When both are defined, `BASIC_AUTH_USERS_JSON` takes precedence and the single-user pair is ignored. In deployments with authentication, every user must be present in `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` is optional; when omitted, `CSRF_SECRET` signs the session cookie. Set a dedicated `AUTH_SESSION_SECRET` to rotate session signing independently.
+
+The session cookie is signed and backed by a server-side record, so it can be withdrawn. Signing out removes the record: a copy of the cookie taken beforehand stops being accepted immediately rather than working until it expires. A request whose session record cannot be read is refused rather than falling back to trusting the signature alone. Because the record is the authority, a service restarted with a fresh `AUTH_SESSION_SECRET` also invalidates everything outstanding, and changing an account's password should be accompanied by revoking that account's sessions. Sign-in and sign-out are recorded in the operation log.
 
 ### Storing passwords
 

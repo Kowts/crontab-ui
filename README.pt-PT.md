@@ -160,7 +160,9 @@ Quando `HOST` não é loopback, a autenticação é obrigatória. Estão dispon�
 - `BASIC_AUTH_USER` e `BASIC_AUTH_PWD`, para um único utilizador;
 - `BASIC_AUTH_USERS_JSON`, para um mapa de vários utilizadores.
 
-Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente. As sessões são stateless: terminar sessão remove o cookie do navegador, mas não consegue revogar individualmente uma cópia desse cookie antes de expirar. Uma lista de revogação no servidor é um reforço futuro.
+Se ambas estiverem definidas, `BASIC_AUTH_USERS_JSON` prevalece e o par individual é ignorado. A interface web usa uma sessão assinada e `HttpOnly`, pelo que o utilizador pode terminar sessão através da barra de navegação. Em instalações com autenticação, todos os utilizadores têm de constar em `AUTHZ_ROLE_MAP_JSON`. `AUTH_SESSION_SECRET` é opcional; se estiver ausente, `CSRF_SECRET` assina o cookie de sessão. Defina um `AUTH_SESSION_SECRET` dedicado para rodar a assinatura de sessão de forma independente.
+
+O cookie de sessão é assinado e apoiado por um registo no servidor, o que o torna revogável. Terminar sessão remove o registo: uma cópia do cookie feita antes deixa de ser aceite de imediato, em vez de continuar a funcionar até expirar. Um pedido cujo registo de sessão não possa ser lido é recusado, em vez de recorrer à confiança na assinatura. Como o registo é a autoridade, um serviço arrancado com um `AUTH_SESSION_SECRET` novo também invalida tudo o que estiver pendente, e mudar a palavra-passe de uma conta deve ser acompanhado da revogação das sessões dessa conta. Entradas e saídas de sessão são registadas no diário de operações.
 
 ### Armazenar palavras-passe
 

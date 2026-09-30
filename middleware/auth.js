@@ -76,26 +76,40 @@ function sign(value, secret) {
   return crypto.createHmac('sha256', secret).update(value).digest('base64url');
 }
 
-function issueSession(res, user, secret, ttl) {
-  const payload = Buffer.from(JSON.stringify({ user, expiresAt: Date.now() + ttl })).toString('base64url');
+function issueSession(res, user, secret, ttl, sessionId) {
+  const payload = Buffer.from(JSON.stringify({ sid: sessionId, user, expiresAt: Date.now() + ttl })).toString('base64url');
   const token = `${payload}.${sign(payload, secret)}`;
   res.append('Set-Cookie', `${SESSION_COOKIE}=${token}; ${cookieOptions({ maxAge: ttl })}`);
 }
 
-function readSession(req, secret) {
+// The signature proves the cookie was issued by this service; the stored record proves it has not
+// been withdrawn. A store that cannot be read is treated as no session at all, because accepting
+// the request would mean falling back to trusting the signature alone.
+function readSession(req, secret, sessions) {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token || !token.includes('.')) return null;
   const separator = token.lastIndexOf('.');
   const payload = token.slice(0, separator);
   const signature = token.slice(separator + 1);
   if (!safeEqual(signature, sign(payload, secret))) return null;
+  let claimed;
   try {
-    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!session || typeof session.user !== 'string' || !Number.isSafeInteger(session.expiresAt) || session.expiresAt <= Date.now()) return null;
-    return session;
+    claimed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
   } catch (_error) {
     return null;
   }
+  if (!claimed || typeof claimed.user !== 'string' || !Number.isSafeInteger(claimed.expiresAt) || claimed.expiresAt <= Date.now()) return null;
+  if (typeof claimed.sid !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(claimed.sid)) return null;
+  let record;
+  try {
+    record = sessions.get(claimed.sid);
+  } catch (error) {
+    console.error(`Unable to read the session record: ${error.message}`);
+    return null;
+  }
+  if (!record || record.revokedAt !== null) return null;
+  if (record.user !== claimed.user || record.expiresAt <= Date.now()) return null;
+  return { user: record.user, sid: record.id, expiresAt: record.expiresAt };
 }
 
 function isLocalPath(value, baseUrl) {
@@ -108,14 +122,20 @@ function redirectPath(req, baseUrl) {
   return isLocalPath(requestPath, baseUrl) ? requestPath : (baseUrl || '/');
 }
 
-function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
+function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions, audit = () => {} } = {}) {
   const users = authenticatedUsers();
   if (!users) return false;
+  if (!sessions || typeof sessions.create !== 'function' || typeof sessions.get !== 'function') {
+    // Without a store the cookie could not be withdrawn, which is exactly the property that was
+    // missing. Refusing to start is better than silently serving sessions that cannot be revoked.
+    throw new Error('A session store is required when authentication is enabled');
+  }
 
   const secret = process.env.AUTH_SESSION_SECRET || process.env.CSRF_SECRET || crypto.randomBytes(32).toString('base64url');
   const ttl = sessionTtl();
   const loginPath = `${baseUrl}/login`;
   const logoutPath = `${baseUrl}/logout`;
+  const currentSession = (req) => readSession(req, secret, sessions);
 
   function renderLogin(req, res, status = 200, error = null) {
     return res.status(status).render('login', {
@@ -128,7 +148,7 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
   }
 
   app.get(loginPath, (req, res) => {
-    if (readSession(req, secret)) return res.redirect(baseUrl || '/');
+    if (currentSession(req)) return res.redirect(baseUrl || '/');
     return renderLogin(req, res);
   });
 
@@ -151,7 +171,19 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
         : (res.locals.t ? res.locals.t('invalidCredentials') : 'Invalid username or password.');
       return renderLogin(req, res, 401, error);
     }
-    issueSession(res, username, secret, ttl);
+    const now = Date.now();
+    const sessionId = crypto.randomBytes(24).toString('base64url');
+    try {
+      sessions.prune(now);
+      sessions.create({ id: sessionId, user: username, issuedAt: now, expiresAt: now + ttl });
+    } catch (error) {
+      // Refusing to issue a session the store does not know about is the only safe outcome: a
+      // cookie without a record would be permanently unrevocable.
+      console.error(`Unable to create a session record: ${error.message}`);
+      return next(error);
+    }
+    issueSession(res, username, secret, ttl, sessionId);
+    audit({ type: 'auth', action: 'sign_in', user: username, sourceIp: req.ip });
     resetLoginRateLimit(req);
     const returnTo = isLocalPath(req.body?.returnTo, baseUrl)
       ? req.body.returnTo
@@ -160,14 +192,25 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {} } = {}) {
   });
 
   app.post(logoutPath, (req, res) => {
+    // Withdrawing the record is what makes signing out mean something. Clearing the cookie alone
+    // left any copy of it working until it expired.
+    const session = currentSession(req);
+    if (session) {
+      try {
+        sessions.revoke(session.sid, Date.now());
+        audit({ type: 'auth', action: 'sign_out', user: session.user, sourceIp: req.ip });
+      } catch (error) {
+        console.error(`Unable to revoke the session record: ${error.message}`);
+      }
+    }
     res.append('Set-Cookie', `${SESSION_COOKIE}=; ${cookieOptions({ maxAge: 0 })}`);
     return res.redirect(loginPath);
   });
 
   app.use((req, res, next) => {
-    const session = readSession(req, secret);
+    const session = currentSession(req);
     if (session && Object.hasOwn(users, session.user)) {
-      req.auth = { user: session.user };
+      req.auth = { user: session.user, sessionId: session.sid };
       return next();
     }
     if (req.method === 'GET' && String(req.get('Accept') || '').includes('text/html')) {
