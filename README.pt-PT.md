@@ -21,9 +21,12 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 - Controlo de acesso por papéis (RBAC), propriedade das tarefas e permissões impostas pelo servidor para operações administrativas.
 - Validação rigorosa de payloads de tarefas, expressões cron, variáveis de ambiente, importações e pedidos de recuperação.
 - Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId` e política de envio, nunca credenciais de correio.
+- Alerta de falha por tarefa após N falhas consecutivas, com intervalo entre alertas e reinício quando uma execução tem sucesso, para que uma má tarde não se torne cem emails nem uma falha transitória se torne um alerta.
+- Painel de execução por tarefa com histórico retido: última execução, duração, código de saída, última execução com sucesso, próxima execução agendada e falhas consecutivas, sem abrir um log por tarefa.
 - Fluxos atómicos e protegidos por bloqueio para importação, restauro e backups, com retenção por quantidade e idade.
 - Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
 - Estado persistente das execuções manuais, com uma execução simultânea por actor e interrupção controlada no encerramento do serviço.
+- Armazenamento de palavras-passe como resumos scrypt, com gerador, validação no arranque e sem enumeração de utilizadores pelo tempo de resposta.
 - Salvaguardas para deployment em produção, incluindo autenticação obrigatória fora de loopback, proteção CSRF, imposição de TLS ou proxy de confiança e orientação para Docker endurecido.
 
 ## Interface
@@ -36,9 +39,11 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 
 Cada linha tem um painel de execução que responde, para uma tarefa, quando foi executada pela última vez, quanto demorou, o que devolveu, quando funcionou pela última vez, quantas falhas se acumularam e quando é a próxima. As execuções recentes são listadas com a sua origem, permitindo encontrar uma falha sem abrir um log por tarefa.
 
+![Painel de execução em tema escuro, com a última execução, o resultado, a última execução com sucesso, a próxima execução agendada, as falhas consecutivas, o último alerta enviado e a lista de execuções recentes](docs/images/execution-panel-dark.png)
+
 ### Criar uma tarefa
 
-![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron e campos identificados](docs/images/new-task-dark.png)
+![Diálogo em tema escuro para criar uma tarefa, com atalhos de agendamento, descrição legível da expressão cron, campos identificados e a política de notificação com o limiar de falhas e o intervalo entre alertas](docs/images/new-task-dark.png)
 
 ## Fluxo operacional
 

@@ -120,6 +120,11 @@ body.app-body {
 .modal-subtitle { margin: .25rem 0 0; color: var(--app-muted); font-size: .94rem; }
 .modal-body { padding: 1.35rem 1.8rem; }
 .modal-footer { padding: 1rem 1.8rem; border-top-color: var(--app-border); }
+/* The task dialog grew past the viewport once the notification fields were added. Without a bound
+   the body cannot scroll, because it is not the element that overflows, and the controls at the end
+   of the form become unreachable on a short screen. */
+.modal-dialog-scrollable .modal-content { max-height: calc(100vh - 3rem); }
+.modal-dialog-scrollable .modal-body { overflow-y: auto; }
 .form-label { color: var(--app-ink); font-weight: 680; font-size: .88rem; }
 .form-control { border-color: #cfdced; border-radius: 9px; padding: .68rem .8rem; }
 .form-control:focus { border-color: #8cb7f7; box-shadow: 0 0 0 .2rem rgba(23,105,224,.12); }

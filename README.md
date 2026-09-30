@@ -21,9 +21,12 @@ This fork extends the original visual crontab management interface with producti
 - Role-based access control (RBAC), task ownership, and server-enforced permissions for administrative operations.
 - Strict validation for task payloads, cron expressions, environment variables, imports, and recovery requests.
 - Server-only SMTP profiles: task records store only a `profileId` and delivery policy, never mail credentials.
+- Per-task failure alerting after N consecutive failures, with a cooldown and a clear-on-success reset, so one bad afternoon does not become a hundred emails and a transient failure does not become an alert.
+- A per-task execution panel with retained run history: last run, duration, exit code, last successful run, next scheduled run, and consecutive failures, without opening one log per task.
 - Atomic, mutex-protected import, restore, and backup workflows with count- and age-based retention.
 - Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
 - Persisted manual-run state, with one simultaneous manual execution per actor and clean interruption on service shutdown.
+- Password storage as scrypt digests, with a generator, startup validation, and no user enumeration through response timing.
 - Production deployment safeguards, including mandatory authentication outside loopback, CSRF protection, TLS or trusted-proxy enforcement, and hardened Docker guidance.
 
 ## Interface
@@ -34,11 +37,13 @@ This fork extends the original visual crontab management interface with producti
 
 ### Create a task
 
-![Dark theme new task dialog with schedule presets, a human-readable cron expression, and labelled cron fields](docs/images/new-task-dark.png)
+![Dark theme new task dialog with schedule presets, a human-readable cron expression, labelled cron fields, and the email notification policy with its alert threshold and cooldown](docs/images/new-task-dark.png)
 
 ### Execution panel
 
 Every row has an execution panel that answers, for one task, when it last ran, how long it took, what it returned, when it last worked, how many failures have stacked up, and when it is next due. Recent executions are listed with their trigger, so a failure can be found without opening one log per task.
+
+![Dark theme execution panel showing last run, outcome, last successful run, next scheduled run, consecutive failures, last alert sent, and the recent execution list](docs/images/execution-panel-dark.png)
 
 ## Operational flow
 

@@ -34,7 +34,16 @@ const backupRetentionCount = Number(process.env.BACKUP_RETENTION_COUNT || 30);
 const backupRetentionDays = Number(process.env.BACKUP_RETENTION_DAYS || 90);
 const systemCrontabImportTimeoutMs = Number(process.env.SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS || 30000);
 const systemCrontabImportMaxBuffer = Number(process.env.SYSTEM_CRONTAB_IMPORT_MAX_BUFFER || 256 * 1024);
-const executionHistoryPerJob = Number(process.env.EXECUTION_HISTORY_PER_JOB || 200);
+
+// A configured value that cannot be used is ignored rather than passed on. A cap that reaches the
+// database as NaN would make the retention query match no rows and delete the whole history.
+function boundedNumber(value, fallback, minimum, maximum) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) return fallback;
+  return parsed;
+}
+
+const executionHistoryPerJob = boundedNumber(process.env.EXECUTION_HISTORY_PER_JOB, 200, 1, 10_000);
 const executionHistoryLimit = 50;
 const auditWriteAttempts = 3;
 const auditRetryDelayMs = 25;

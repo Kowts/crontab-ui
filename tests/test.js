@@ -2040,6 +2040,68 @@ describe('Sign-in with a stored digest', () => {
   });
 });
 
+describe('Execution history retention', () => {
+  // Task inserts are asynchronous while the retention queries are synchronous, so the job has to
+  // be committed before pruning or the orphan sweep would see no tasks at all.
+  async function withStore(fn) {
+    const filename = path.join(testDbPath, `retention-${crypto.randomUUID()}.db`);
+    const store = new SqliteDatastore({ filename });
+    const now = Date.now();
+    await new Promise((resolve, reject) => {
+      store.insert({ _id: 'j1', name: 'retained', command: 'echo', schedule: '* * * * *', created: now }, (error) => (error ? reject(error) : resolve()));
+    });
+    for (let i = 0; i < 5; i += 1) {
+      store.createExecution({
+        operationId: `op-${i}`, jobId: 'j1', trigger: 'scheduled', status: 'completed',
+        exitCode: 0, durationMs: 5, startedAt: now - i, completedAt: now - i,
+      });
+    }
+    try {
+      return await fn(store, now);
+    } finally {
+      store.close();
+      fs.unlinkSync(filename);
+    }
+  }
+
+  it('keeps the most recent records for a task and drops the rest', async () => {
+    await withStore((store, now) => {
+      store.pruneExecutions(now - 86_400_000, 2);
+      expect(store.listExecutions('j1', 50).map((row) => row.operationId)).toEqual(['op-0', 'op-1']);
+    });
+  });
+
+  it('lets the age window take precedence over the per-task cap', async () => {
+    await withStore((store, now) => {
+      store.pruneExecutions(now + 86_400_000, 10);
+      expect(store.listExecutions('j1', 50)).toHaveLength(0);
+    });
+  });
+
+  // A cap that reaches SQLite as NaN binds as NULL, the row-number comparison matches nothing,
+  // and the NOT IN would then select every record. This is the shape that silently wiped the
+  // history when EXECUTION_HISTORY_PER_JOB was set to a value that is not a number.
+  it('refuses an unusable per-task cap instead of deleting the history', async () => {
+    for (const cap of [Number('abc'), 0, -1, null, undefined, 1.5, Number.NaN]) {
+      await withStore((store, now) => {
+        store.pruneExecutions(now - 86_400_000, cap);
+        expect(store.listExecutions('j1', 50), `cap ${String(cap)}`).toHaveLength(5);
+      });
+    }
+  });
+
+  it('drops alert state for a task that no longer exists', async () => {
+    await withStore((store, now) => {
+      store.recordAlert('ghost', now, 3);
+      store.recordAlert('j1', now, 1);
+      expect(store.getAlertState('ghost')).not.toBeNull();
+      store.pruneExecutions(now - 86_400_000, 10);
+      expect(store.getAlertState('ghost')).toBeNull();
+      expect(store.getAlertState('j1')).not.toBeNull();
+    });
+  });
+});
+
 describe('Failure alert policy', () => {
   it('keeps a task that never used these settings byte-identical to before', () => {
     expect(normaliseMailing({ profileId: 'operations' })).toEqual({ profileId: 'operations', policy: 'onFailure' });
