@@ -31,7 +31,7 @@ function valid(value) {
 
 function issueToken(req, res) {
   const token = sign(crypto.randomBytes(24).toString('base64url'));
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const secure = process.env.NODE_ENV === 'production' && process.env.ALLOW_HTTP !== 'true' ? '; Secure' : '';
   res.append('Set-Cookie', `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; SameSite=Strict${secure}`);
   req.csrfToken = token;
   if (res.locals) res.locals.csrfToken = token;

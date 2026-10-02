@@ -61,7 +61,7 @@ function sessionTtl() {
 }
 
 function cookieOptions({ maxAge = null } = {}) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  const secure = process.env.NODE_ENV === 'production' && process.env.ALLOW_HTTP !== 'true' ? '; Secure' : '';
   const maxAgePart = maxAge === null ? '' : `; Max-Age=${Math.floor(maxAge / 1000)}`;
   return `Path=/; HttpOnly; SameSite=Strict${secure}${maxAgePart}`;
 }

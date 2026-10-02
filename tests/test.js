@@ -1799,6 +1799,26 @@ describe('Production authentication configuration', () => {
 });
 
 describe('Production transport configuration', () => {
+  const environmentNames = ['NODE_ENV', 'ALLOW_HTTP', 'TRUSTED_PROXY', 'SSL_CERT', 'SSL_KEY',
+    'ALLOW_INSECURE_NO_AUTH', 'BASIC_AUTH_USERS_JSON', 'AUTHZ_ROLE_MAP_JSON', 'CSRF_SECRET'];
+  let originalEnvironment;
+
+  beforeEach(() => {
+    originalEnvironment = Object.fromEntries(environmentNames.map((name) => [name, process.env[name]]));
+    for (const name of environmentNames) delete process.env[name];
+    process.env.NODE_ENV = 'production';
+    process.env.CSRF_SECRET = 'test-csrf-secret';
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ admin: 'transport-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ admin: 'admin' });
+  });
+
+  afterEach(() => {
+    for (const [name, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
   it('requires TLS or an explicitly trusted proxy in production', () => {
     expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false })).toThrow('requires SSL_CERT');
   });
@@ -1811,6 +1831,60 @@ describe('Production transport configuration', () => {
   it('accepts native TLS or a known proxy range', () => {
     expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: true })).not.toThrow();
     expect(() => validateProductionTransport({ nodeEnv: 'production', nativeTls: false, trustedProxy: '172.20.0.0/16' })).not.toThrow();
+  });
+
+  it('accepts only the exact HTTP opt-in without relaxing other production checks', () => {
+    expect(() => validateProductionTransport({ nodeEnv: 'production', allowHttp: 'true' })).not.toThrow();
+    for (const allowHttp of ['false', 'TRUE', '1', true]) {
+      expect(() => validateProductionTransport({ nodeEnv: 'production', allowHttp })).toThrow('requires SSL_CERT');
+    }
+    expect(() => validateProductionTransport({ nodeEnv: 'production', allowHttp: 'true', insecureBypass: true })).toThrow('not allowed');
+    expect(() => validateProductionTransport({ nodeEnv: 'production', allowHttp: 'true', trustedProxy: 'anything' })).toThrow('TRUSTED_PROXY');
+    process.env.ALLOW_HTTP = 'true';
+    delete process.env.CSRF_SECRET;
+    expect(() => createApp()).toThrow('CSRF_SECRET is required');
+  });
+
+  it('keeps HTTPS enforcement, secure cookies and transport headers by default', async () => {
+    expect(() => createApp()).toThrow('requires SSL_CERT');
+    process.env.TRUSTED_PROXY = 'loopback';
+    const protectedApp = createApp();
+    await rawRequest(protectedApp).get('/login').expect(426);
+    process.env.ALLOW_HTTP = 'TRUE';
+    await rawRequest(createApp()).get('/login').expect(426);
+    delete process.env.ALLOW_HTTP;
+    const page = await rawRequest(protectedApp).get('/login').set('X-Forwarded-Proto', 'https').expect(200);
+    expect(page.headers['strict-transport-security']).toBeDefined();
+    expect(page.headers['content-security-policy']).toContain('upgrade-insecure-requests');
+    expect(page.headers['set-cookie'].find((cookie) => cookie.startsWith('crontab_ui_csrf='))).toContain('; Secure');
+    const signedIn = await request(protectedApp).post('/login').set('X-Forwarded-Proto', 'https')
+      .send({ username: 'admin', password: 'transport-secret' }).expect(302);
+    expect(signedIn.headers['set-cookie'].find((cookie) => cookie.startsWith('crontab_ui_session='))).toContain('; Secure');
+  });
+
+  it('supports HTTP login and CSRF in production without trusting forwarded headers', async () => {
+    process.env.ALLOW_HTTP = 'true';
+    const protectedApp = createApp();
+    expect(protectedApp.get('trust proxy')).toBe(false);
+    const client = rawRequest.agent(protectedApp);
+    const page = await client.get('/login').expect(200);
+    expect(page.headers['strict-transport-security']).toBeUndefined();
+    expect(page.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
+    const cookie = page.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_csrf='));
+    expect(cookie).not.toContain('; Secure');
+    expect(cookie).toContain('SameSite=Strict');
+    const token = decodeURIComponent(cookie.split(';')[0].split('=').slice(1).join('='));
+    await client.post('/login').send({ username: 'admin', password: 'transport-secret' }).expect(403);
+    const signedIn = await client.post('/login').set('X-CSRF-Token', token)
+      .send({ username: 'admin', password: 'transport-secret' }).expect(302);
+    const sessionCookie = signedIn.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session='));
+    expect(sessionCookie).not.toContain('; Secure');
+    expect(sessionCookie).toContain('HttpOnly; SameSite=Strict');
+    await client.get('/').expect(200);
+    await rawRequest(protectedApp).get('/').expect(401);
+    await client.post('/stop').send({}).expect(403);
+    await client.post('/logout').set('X-CSRF-Token', token).expect(302);
+    await client.get('/').expect(401);
   });
 });
 

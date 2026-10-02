@@ -54,11 +54,13 @@ if ((credentials.key && !credentials.cert) || (credentials.cert && !credentials.
 const startHttpsServer = credentials.key && credentials.cert;
 app.locals.tlsCredentials = startHttpsServer ? credentials : null;
 const trustedProxy = process.env.TRUSTED_PROXY;
+const allowHttp = process.env.ALLOW_HTTP === 'true';
 validateProductionTransport({
   nodeEnv: process.env.NODE_ENV,
   nativeTls: startHttpsServer,
   trustedProxy,
   insecureBypass: process.env.ALLOW_INSECURE_NO_AUTH === 'true',
+  allowHttp: process.env.ALLOW_HTTP,
 });
 if (trustedProxy) app.set('trust proxy', trustedProxy);
 
@@ -77,7 +79,7 @@ app.get(`${baseUrl}/healthz`, (req, res) => {
   return res.json({ status: 'ok' });
 });
 app.use((req, res, next) => {
-  if (process.env.NODE_ENV === 'production' && !req.secure) {
+  if (process.env.NODE_ENV === 'production' && !allowHttp && !req.secure) {
     return res.status(426).json({ message: 'HTTPS is required' });
   }
   return next();
@@ -128,13 +130,14 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:'],
+      upgradeInsecureRequests: allowHttp ? null : [],
     },
   },
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   crossOriginEmbedderPolicy: false,
   crossOriginOpenerPolicy: false,
   originAgentCluster: false,
-  strictTransportSecurity: process.env.NODE_ENV !== 'production' ? false : undefined,
+  strictTransportSecurity: process.env.NODE_ENV !== 'production' || allowHttp ? false : undefined,
 }));
 
 function serializeForHtml(value) {

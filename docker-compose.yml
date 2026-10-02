@@ -13,6 +13,7 @@ services:
       AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:?Configure user roles}
       CSRF_SECRET: ${CSRF_SECRET:?Configure CSRF secret}
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
+      ALLOW_HTTP: ${ALLOW_HTTP:-false}
     volumes:
       - crontab-data:/crontab-ui/crontabs
     security_opt:

@@ -113,6 +113,21 @@ npm start
 
 O exemplo pressupõe que um proxy HTTPS local termina TLS e é a única origem que acede ao serviço. Consulte [a configuração Nginx](README/nginx.md) para o cabeçalho `X-Forwarded-Proto` e o valor de `TRUSTED_PROXY`.
 
+### Excepção explícita de HTTP em produção
+
+Para uma instalação interna isolada e aprovada, mantenha o modo de produção e active explicitamente HTTP em `.env.production`:
+
+```dotenv
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=8509
+ALLOW_HTTP=true
+```
+
+Deixe `TRUSTED_PROXY`, `SSL_CERT` e `SSL_KEY` por definir para HTTP directo; não simule a existência de um proxy HTTPS. Inicie com `npm run start:production`. Com este host, o serviço só é acessível no próprio computador em `http://127.0.0.1:8509`.
+
+Apenas o valor exacto `true` activa esta excepção. Permite HTTP no arranque e em cada pedido, retira a exigência de `Secure` dos cookies de sessão e CSRF e desactiva HSTS e a promoção de HTTP para HTTPS pela CSP. Autenticação, RBAC, validação CSRF e a obrigatoriedade de `CSRF_SECRET` em produção permanecem inalterados. **HTTP não cifra o tráfego: credenciais, cookies de sessão e dados das tarefas podem ser interceptados ou alterados em trânsito.** Não exponha este modo a redes públicas ou não confiáveis. HSTS anteriormente guardado pode continuar a forçar HTTPS no browser até expirar ou ser limpo. Remova a excepção e reinicie quando TLS estiver disponível.
+
 ## Deployment com Docker Compose
 
 O `docker-compose.yml` não publica a porta da aplicação e passa `NODE_ENV=production`, `HOST=0.0.0.0`, `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET` e `TRUSTED_PROXY` para o contentor. A imagem é etiquetada localmente como `kowts/crontab-ui`. Declara a rede partilhada `crontab-ui-internal`, cujo nome pode ser alterado com `CRONTAB_UI_NETWORK`; o Compose do proxy deve referenciá-la como rede externa. O repositório não inclui um serviço Nginx, pelo que o proxy continua a ser gerido separadamente. Copie os valores abaixo para um ficheiro secreto, por exemplo `.env.production`, que **não** deve ser versionado:
@@ -206,6 +221,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `LOGIN_RATE_LIMIT_WINDOW_MS` | Janela de tentativas de login em milissegundos; por omissão 15 minutos (mínimo 1 minuto, máximo 24 horas). |
 | `SSL_CERT`, `SSL_KEY` | TLS nativo; devem ser definidos em conjunto. |
 | `TRUSTED_PROXY` | Endereço, CIDR ou alias Express do proxy HTTPS de confiança. |
+| `ALLOW_HTTP` | Excepção explícita de HTTP em produção; apenas `true` a activa. Por omissão: desactivada. Também desactiva cookies Secure, HSTS e promoção para HTTPS pela CSP; utilizar apenas numa rede isolada e aprovada. O Compose transmite-a com predefinição `false`. |
 | `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |
 | `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId` e a política de envio. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
@@ -259,7 +275,7 @@ Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa
 ## Checklist de lançamento
 
 1. Fixe uma release/tag de `Kowts/crontab-ui` e execute `npm ci`.
-2. Configure autenticação, RBAC, `CSRF_SECRET`, `CRON_DB_PATH` persistente e TLS nativo ou `TRUSTED_PROXY`.
+2. Configure autenticação, RBAC, `CSRF_SECRET`, `CRON_DB_PATH` persistente e TLS nativo ou `TRUSTED_PROXY`; utilize `ALLOW_HTTP=true` apenas para a excepção interna aprovada descrita acima.
 3. Execute `npm run lint`, `npm test`, `npm run test:coverage` e `npm audit --omit=dev --audit-level=high`.
 4. Execute um restauro de teste numa instância isolada e confirme a retenção de backups e logs.
 5. Faça build e execução reais da imagem Docker na plataforma alvo, verificando a execução do agendador como `node` e o volume persistente.
