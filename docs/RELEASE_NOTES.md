@@ -1,5 +1,42 @@
 # Release notes
 
+## 0.5.1
+
+### Destaques
+
+- Excepção explícita de HTTP em produção através de `ALLOW_HTTP=true`, sem mudar
+  `NODE_ENV` nem simular um proxy HTTPS. Apenas o valor exacto `true` activa a opção;
+  HTTPS continua obrigatório por omissão.
+- A opção é aplicada na validação de arranque e em cada pedido. Os cookies de sessão
+  e CSRF deixam de exigir Secure, e HSTS e a promoção para HTTPS pela CSP são
+  desactivados, permitindo o login e a operação por HTTP.
+- Autenticação, RBAC, validação CSRF e a obrigatoriedade de `CSRF_SECRET` em produção
+  permanecem inalterados. Configurações de proxy inválidas e o bypass de autenticação
+  em produção continuam a ser rejeitados.
+- Docker Compose transmite `ALLOW_HTTP` com predefinição `false`. Os exemplos e os
+  READMEs bilingues documentam a configuração, os limites de acesso e o risco.
+
+### Segurança e actualização
+
+- **HTTP não cifra o tráfego.** Credenciais, cookies de sessão e dados das tarefas
+  podem ser interceptados ou alterados. Esta opção destina-se exclusivamente a
+  instalações internas isoladas e aprovadas, nunca a redes públicas ou não confiáveis.
+- Para HTTP directo, deixe `TRUSTED_PROXY`, `SSL_CERT` e `SSL_KEY` por definir.
+  Remova `ALLOW_HTTP=true` e reinicie quando TLS estiver disponível.
+- Não existem migrações de dados nem alterações de comportamento para instalações
+  que não activem esta opção. HSTS anteriormente guardado pelo browser pode continuar
+  a exigir HTTPS até expirar ou ser limpo.
+
+### Verificação
+
+- 209 testes aprovados, incluindo regressões de transporte por omissão, login HTTP,
+  cookies e protecção CSRF; lint sem erros.
+- Cobertura de linhas de 85,81%, acima dos limiares do projecto; auditoria de
+  dependências de produção sem vulnerabilidades.
+- Configuração Compose validada com valores de exemplo, sem usar segredos de produção.
+- Integração Docker e verificações Linux/Node 20 e 22 sujeitas ao CI remoto antes da
+  publicação; o Docker Desktop local não esteve disponível para executar a integração.
+
 ## 0.5.0
 
 The first published release of this fork. Nothing had been tagged on the remote before this
