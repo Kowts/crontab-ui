@@ -595,6 +595,9 @@ function executionStatusLabel(run) {
 }
 
 function renderExecutions(panel) {
+  if ($.fn.dataTable.isDataTable('#executions-table')) {
+    $('#executions-table').DataTable().destroy();
+  }
   var summary = document.getElementById('executions-summary');
   summary.textContent = '';
   var rows = [
@@ -632,6 +635,27 @@ function renderExecutions(panel) {
   });
   document.getElementById('executions-empty').hidden = panel.history.length > 0;
   document.getElementById('executions-content').classList.remove('d-none');
+  if (panel.history.length > 0) {
+    $('#executions-table').DataTable({
+      pageLength: 5,
+      lengthMenu: [5, 10, 25, 50],
+      searching: false,
+      ordering: false,
+      autoWidth: false,
+      language: {
+        lengthMenu: tr('dataPerPage'),
+        info: tr('executionPageInfo'),
+        infoEmpty: tr('executionsEmpty'),
+        emptyTable: tr('executionsEmpty'),
+        paginate: { first: '\u00ab', last: '\u00bb', next: '\u203a', previous: '\u2039' }
+      },
+      drawCallback: function() {
+        var api = this.api();
+        var pager = api.table().container().querySelector('.dt-paging');
+        if (pager) pager.classList.toggle('d-none', api.page.info().pages <= 1);
+      }
+    });
+  }
 }
 
 function showExecutions(jobId) {

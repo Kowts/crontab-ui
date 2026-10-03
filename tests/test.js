@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const vm = require('vm');
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const cronstrue = require('cronstrue/i18n');
@@ -75,6 +76,81 @@ const csrfProtection = require('../middleware/csrf');
 const app = createApp();
 
 describe('Crontab UI', () => {
+  describe('Execution history pagination', () => {
+    function createPanel() {
+      const elements = {};
+      const createElement = () => ({
+        children: [],
+        classList: { remove() {} },
+        appendChild(child) { this.children.push(child); },
+        set textContent(value) { this.children = []; this.text = value; },
+        get textContent() { return this.text; },
+      });
+      const state = { options: [], initialized: false, destroyed: 0 };
+      const jquery = () => ({
+        DataTable(options) {
+          if (options) { state.options.push(options); state.initialized = true; }
+          return { destroy() { state.initialized = false; state.destroyed += 1; } };
+        },
+      });
+      jquery.fn = { dataTable: { isDataTable: () => state.initialized } };
+      const context = {
+        $: jquery,
+        document: {
+          addEventListener() {},
+          createElement,
+          getElementById(id) { elements[id] ||= createElement(); return elements[id]; },
+        },
+      };
+      vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/script.js'), 'utf8'), context);
+      context.i18n = require('../config/i18n').dictionaries.en;
+      return { context, elements, state };
+    }
+
+    function history(count) {
+      return Array.from({ length: count }, (_, index) => ({
+        completedAt: 1_700_000_000_000 - index * 60_000,
+        trigger: 'scheduled', status: 'completed', durationMs: index + 1, exitCode: 0,
+      }));
+    }
+
+    it('paginates recent executions with translated counts and preserves server order', () => {
+      const { context, elements, state } = createPanel();
+      context.renderExecutions({ history: history(11), consecutiveFailures: 0 });
+      const options = state.options[0];
+      expect(options).toMatchObject({ pageLength: 5, lengthMenu: [5, 10, 25, 50], searching: false, ordering: false });
+      expect(options.language.info).toBe('Showing _START_ to _END_ of _TOTAL_ executions');
+      expect(elements['executions-body'].children.map((row) => row.children[3].textContent))
+        .toEqual(Array.from({ length: 11 }, (_, index) => `${index + 1} ms`));
+      let hidden;
+      let pages = 3;
+      const pager = { classList: { toggle(_name, value) { hidden = value; } } };
+      const api = { table: () => ({ container: () => ({ querySelector: () => pager }) }), page: { info: () => ({ pages }) } };
+      options.drawCallback.call({ api: () => api });
+      expect(hidden).toBe(false);
+      pages = 1;
+      options.drawCallback.call({ api: () => api });
+      expect(hidden).toBe(true);
+      expect(elements['executions-empty'].hidden).toBe(true);
+    });
+
+    it('resets the table between tasks and removes pagination for empty history', () => {
+      const { context, elements, state } = createPanel();
+      context.renderExecutions({ history: history(11), consecutiveFailures: 0 });
+      context.i18n = require('../config/i18n').dictionaries.pt;
+      context.renderExecutions({ history: history(1), consecutiveFailures: 0 });
+      expect(state.destroyed).toBe(1);
+      expect(state.options[1].language.info).toBe('A mostrar _START_ a _END_ de _TOTAL_ execuções');
+      expect(elements['executions-body'].children).toHaveLength(1);
+      context.renderExecutions({ history: [], consecutiveFailures: 0 });
+      expect(state.destroyed).toBe(2);
+      expect(state.initialized).toBe(false);
+      expect(state.options).toHaveLength(2);
+      expect(elements['executions-body'].children).toHaveLength(0);
+      expect(elements['executions-empty'].hidden).toBe(false);
+    });
+  });
+
   describe('SQLite primary-key operations', () => {
     it('finds, updates and removes targeted job ids without changing other documents', async () => {
       const filename = path.join(testDbPath, `primary-key-${crypto.randomUUID()}.db`);
