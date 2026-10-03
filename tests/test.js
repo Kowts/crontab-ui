@@ -1936,6 +1936,11 @@ describe('Production transport configuration', () => {
     const signedIn = await request(protectedApp).post('/login').set('X-Forwarded-Proto', 'https')
       .send({ username: 'admin', password: 'transport-secret' }).expect(302);
     expect(signedIn.headers['set-cookie'].find((cookie) => cookie.startsWith('crontab_ui_session='))).toContain('; Secure');
+    const sessionCookie = signedIn.headers['set-cookie'].find((cookie) => cookie.startsWith('crontab_ui_session='));
+    const locale = await request(protectedApp).post('/locale').set('X-Forwarded-Proto', 'https')
+      .set('Cookie', `${sessionCookie.split(';')[0]}; crontab_ui_csrf=${encodeURIComponent(testCsrfToken)}`)
+      .send({ locale: 'pt' }).expect(204);
+    expect(locale.headers['set-cookie'].find((cookie) => cookie.startsWith('crontab_ui_locale='))).toContain('; Secure');
   });
 
   it('supports HTTP login and CSRF in production without trusting forwarded headers', async () => {
@@ -1957,6 +1962,12 @@ describe('Production transport configuration', () => {
     expect(sessionCookie).not.toContain('; Secure');
     expect(sessionCookie).toContain('HttpOnly; SameSite=Strict');
     await client.get('/').expect(200);
+    const locale = await client.post('/locale').set('X-CSRF-Token', token).send({ locale: 'pt' }).expect(204);
+    const localeCookie = locale.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_locale='));
+    expect(localeCookie).not.toContain('; Secure');
+    expect(localeCookie).toContain('HttpOnly');
+    expect((await client.get('/').expect(200)).text).toContain('Tarefas agendadas');
+    expect((await client.get('/').expect(200)).text).toContain('<option value="pt" selected>');
     await rawRequest(protectedApp).get('/').expect(401);
     await client.post('/stop').send({}).expect(403);
     await client.post('/logout').set('X-CSRF-Token', token).expect(302);
