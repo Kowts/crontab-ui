@@ -76,6 +76,33 @@ const csrfProtection = require('../middleware/csrf');
 const app = createApp();
 
 describe('Crontab UI', () => {
+  describe('Publication status tooltips', () => {
+    it.each([
+      ['en', true, false, 'job-state-published', 'publishedToService'],
+      ['pt', true, false, 'job-state-published', 'publishedToService'],
+      ['en', false, false, 'job-state-local', 'localOnly'],
+      ['pt', false, false, 'job-state-local', 'localOnly'],
+      ['en', true, true, 'job-state-local', 'localOnly'],
+      ['pt', true, true, 'job-state-local', 'localOnly'],
+    ])('renders an icon-only translated status for %s, saved=%s, review=%s', (locale, saved, needsPublishReview, stateClass, labelKey) => {
+      const template = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8')
+        .split('\n').find((line) => line.includes('job-state-published'));
+      const { translate } = require('../config/i18n');
+      const label = translate(locale, labelKey);
+      const html = require('ejs').render(template, {
+        crontab: { saved, needsPublishReview },
+        t: (key) => translate(locale, key),
+      });
+      expect(html).toContain(`job-state-icon ${stateClass}`);
+      expect(html).toContain(`title="${label}"`);
+      expect(html).toContain(`aria-label="${label}"`);
+      expect(html).toContain('role="img" tabindex="0"');
+      expect(html).toContain('data-bs-toggle="tooltip" data-bs-placement="top"');
+      expect(html).toContain('aria-hidden="true"></i></span>');
+      expect(html).not.toContain(`>${label}</span>`);
+    });
+  });
+
   describe('Execution history pagination', () => {
     function createPanel() {
       const elements = {};

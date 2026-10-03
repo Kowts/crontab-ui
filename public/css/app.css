@@ -83,6 +83,7 @@ body.app-body {
 .app-card .table thead th { color: #5a6a83; font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .045em; }
 .job-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
 .job-state { display: inline-flex; align-items: center; gap: .32rem; padding: .2rem .46rem; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.2; }
+.job-state-icon { width: 1.5rem; height: 1.5rem; padding: 0; justify-content: center; flex-shrink: 0; }
 .job-state-published { color: #08775a; background: #e4f8f0; }
 .job-state-local { color: #9b6100; background: #fff3db; }
 .job-state-stopped { color: #5a687b; background: #e8edf4; }
