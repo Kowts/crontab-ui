@@ -85,14 +85,18 @@ describe('Crontab UI', () => {
       ['en', true, true, 'job-state-local', 'localOnly'],
       ['pt', true, true, 'job-state-local', 'localOnly'],
     ])('renders an icon-only translated status for %s, saved=%s, review=%s', (locale, saved, needsPublishReview, stateClass, labelKey) => {
-      const template = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8')
-        .split('\n').find((line) => line.includes('job-state-published'));
+      const source = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8');
+      const start = source.indexOf('<div class="job-name-row">');
+      const template = source.slice(start, source.indexOf('</div>', start) + '</div>'.length);
       const { translate } = require('../config/i18n');
       const label = translate(locale, labelKey);
       const html = require('ejs').render(template, {
-        crontab: { saved, needsPublishReview },
+        crontab: { saved, needsPublishReview, name: 'Tráfego Mediador - Fraude' },
         t: (key) => translate(locale, key),
       });
+      expect(html).toContain('<div class="job-name-row">');
+      expect(html).toContain('<strong>Tráfego Mediador - Fraude</strong>');
+      expect(html.indexOf(stateClass)).toBeLessThan(html.indexOf('<strong>'));
       expect(html).toContain(`job-state-icon ${stateClass}`);
       expect(html).toContain(`title="${label}"`);
       expect(html).toContain(`aria-label="${label}"`);

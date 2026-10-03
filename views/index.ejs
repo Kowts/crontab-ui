@@ -100,11 +100,11 @@
             <tr data-job-row data-id="<%= crontab._id %>" class="<%= crontab.stopped ? 'job-row-stopped' : '' %>">
               <td><%= index + 1 %></td>
               <td>
-                <strong><%= crontab.name || crontab._id %></strong>
-                <div class="job-meta">
-                  <% if (crontab.stopped) { %><span class="job-state job-state-stopped" data-job-schedule-state><i class="bi bi-stop-circle-fill" aria-hidden="true"></i><%= t('disabled') %></span><% } %>
+                <div class="job-name-row">
                   <% if (crontab.saved && !crontab.needsPublishReview) { %><span class="job-state job-state-icon job-state-published" role="img" tabindex="0" title="<%= t('publishedToService') %>" aria-label="<%= t('publishedToService') %>" data-bs-toggle="tooltip" data-bs-placement="top"><i class="bi bi-check-circle-fill" aria-hidden="true"></i></span><% } else { %><span class="job-state job-state-icon job-state-local" role="img" tabindex="0" title="<%= t('localOnly') %>" aria-label="<%= t('localOnly') %>" data-bs-toggle="tooltip" data-bs-placement="top"><i class="bi bi-exclamation-circle-fill" aria-hidden="true"></i></span><% } %>
+                  <strong><%= crontab.name || crontab._id %></strong>
                 </div>
+                <div class="job-meta"><% if (crontab.stopped) { %><span class="job-state job-state-stopped" data-job-schedule-state><i class="bi bi-stop-circle-fill" aria-hidden="true"></i><%= t('disabled') %></span><% } %></div>
               </td>
               <td><code><%= crontab.command %></code></td>
               <td><span title="<%= crontab.next %>"><%= crontab.schedule %></span><small class="d-block text-muted"><%= crontab.human %></small></td>
