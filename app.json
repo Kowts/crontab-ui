@@ -1,7 +1,7 @@
 {
   "name": "Crontab UI",
-  "description": "Easy and safe way to manage your crontab file",
+  "description": "Self-hosted web interface for securely managing and monitoring cron jobs, with role-based access control, execution history, backups, and Docker support.",
   "repository": "https://github.com/Kowts/crontab-ui",
   "logo": "https://raw.githubusercontent.com/Kowts/crontab-ui/main/public/images/crontab-ui.svg",
-  "keywords": ["Crontab", "node"]
+  "keywords": ["cron", "crontab", "scheduler", "self-hosted", "Docker", "Node.js"]
 }
