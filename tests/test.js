@@ -380,7 +380,8 @@ describe('Crontab UI', () => {
       expect(res.text).toContain('<i class="bi bi-trash me-2" aria-hidden="true"></i>Delete');
       const script = fs.readFileSync(path.join(__dirname, '../public/js/script.js'), 'utf8');
       const tableColumns = script.match(/columns:\s*\[([^\]]*)\]/);
-      expect(tableColumns[1].match(/\{ orderable: false \}|null/g)).toHaveLength(8);
+      expect(tableColumns[1].match(/\{[^}]*\}|null/g)).toHaveLength(8);
+      expect(tableColumns[1]).toMatch(/null,\s*\{ visible: false \},\s*null/);
     });
 
     it('keeps the last successful run and counts failures while it cannot find one', async () => {
