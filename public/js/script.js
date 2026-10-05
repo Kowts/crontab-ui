@@ -52,7 +52,7 @@ function initPage() {
     }
     $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
-      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }, { orderable: false }],
+      columns: [{ orderable: false }, null, null, null, { orderable: false }, { orderable: false }, { orderable: false }, { orderable: false }],
       drawCallback: function() { updatePagingVisibility(this.api()); },
       language: {
         search: '', searchPlaceholder: tr('dataSearch'),
