@@ -225,7 +225,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `CRONTAB_UI_NETWORK` | Nome da rede Docker partilhada com o proxy. Predefinição Compose: `crontab-ui-internal`. |
 | `MAIL_PROFILES_JSON` | Perfis SMTP/SMTPS exclusivos do servidor. As tarefas guardam apenas `profileId` e a política de envio. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Limite por anexo de output de correio. Predefinição: `524288`. |
-| `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites de execução de tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. |
+| `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Limites globais por execução para tarefas e publicação. Predefinições: `300000`, `1048576`, `5000`. No Docker Compose, defina `COMMAND_TIMEOUT_MS` no ficheiro de ambiente e recrie o contentor; o scheduler transmite o valor a cada runner. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Tamanho, rotação e retenção de logs. Predefinições: `10485760`, `5`, `30`. |
 | `EXECUTION_HISTORY_PER_JOB` | Registos de execução guardados por tarefa, para além de `LOG_RETENTION_DAYS`. Predefinição: `200`. |
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Número e idade máximos de backups. Predefinições: `30`, `90`. |
