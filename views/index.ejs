@@ -93,7 +93,7 @@
     <% if (hasJobs) { %>
       <table class="table align-middle mb-0" id="main_table">
         <thead>
-          <tr><th>#</th><th><%= t('name') %></th><th><%= t('command') %></th><th><%= t('schedule') %></th><th><%= t('access') %></th><th><%= t('lastModified') %></th><th></th></tr>
+          <tr><th>#</th><th><%= t('name') %></th><th><%= t('command') %></th><th><%= t('schedule') %></th><th><%= t('access') %></th><th><%= t('lastRun') %></th><th><%= t('lastModified') %></th><th></th></tr>
         </thead>
         <tbody>
           <% jobs.forEach(function(crontab, index){ %>
@@ -112,6 +112,7 @@
                 <span class="job-access"><i class="bi bi-person-lock" aria-hidden="true"></i><%= t('owner') %>: <%= crontab.owner || t('adminOnly') %></span>
                 <small class="d-block text-muted"><%= t(accessLabel(crontab)) %></small>
               </td>
+              <td><% if (crontab.lastRun) { %><time datetime="<%= new Date(crontab.lastRun.startedAt).toISOString() %>" title="<%= new Date(crontab.lastRun.startedAt).toLocaleString() %>"><%= dayjs(new Date(crontab.lastRun.startedAt)).fromNow() %></time><% } else { %><span class="text-muted"><%= t('never') %></span><% } %></td>
               <td><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
               <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-outline-secondary" title="<%= t('executions') %>" aria-label="<%= t('executions') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="executions" data-id="<%= crontab._id %>"><i class="bi bi-activity"></i><span class="visually-hidden"><%= t('executions') %></span></button>
@@ -122,9 +123,15 @@
                 <% if (!crontab.stopped && canRunJobs) { %><button type="button" class="btn btn-sm btn-run" title="<%= t('runNow') %>" aria-label="<%= t('runNow') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="run" data-id="<%= crontab._id %>"><i class="bi bi-play-fill"></i><span class="action-label"><%= t('run') %></span><span class="visually-hidden"><%= t('runNow') %></span></button><% } %>
                 <% if (canManageJobs) { %>
                   <% if (!crontab.stopped) { %><button type="button" class="btn btn-sm btn-schedule-disable" title="<%= t('disableSchedule') %>" aria-label="<%= t('disableSchedule') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-toggle-job data-action="stop" data-id="<%= crontab._id %>"><i class="bi bi-stop-fill"></i><span class="action-label"><%= t('pause') %></span><span class="visually-hidden"><%= t('disableSchedule') %></span></button><% } else { %><button type="button" class="btn btn-sm btn-schedule-enable" title="<%= t('enableSchedule') %>" aria-label="<%= t('enableSchedule') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-toggle-job data-action="start" data-id="<%= crontab._id %>"><i class="bi bi-power"></i><span class="action-label"><%= t('enable') %></span><span class="visually-hidden"><%= t('enableSchedule') %></span></button><% } %>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" title="<%= t('edit') %>" aria-label="<%= t('edit') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil"></i><span class="visually-hidden"><%= t('edit') %></span></button>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" title="<%= t('duplicate') %>" aria-label="<%= t('duplicate') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy"></i><span class="visually-hidden"><%= t('duplicate') %></span></button>
-                  <button type="button" class="btn btn-sm btn-outline-danger" title="<%= t('delete') %>" aria-label="<%= t('delete') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash"></i><span class="visually-hidden"><%= t('delete') %></span></button>
+                  <div class="dropdown d-inline-block">
+                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle task-actions-toggle" aria-label="<%= t('actions') %>" title="<%= t('actions') %>" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots" aria-hidden="true"></i><span class="visually-hidden"><%= t('actions') %></span></button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                      <li><button type="button" class="dropdown-item" data-action="edit" data-id="<%= crontab._id %>"><i class="bi bi-pencil me-2" aria-hidden="true"></i><%= t('edit') %></button></li>
+                      <li><button type="button" class="dropdown-item" data-action="duplicate" data-id="<%= crontab._id %>"><i class="bi bi-copy me-2" aria-hidden="true"></i><%= t('duplicate') %></button></li>
+                      <li><hr class="dropdown-divider"></li>
+                      <li><button type="button" class="dropdown-item text-danger" data-action="delete-job" data-id="<%= crontab._id %>"><i class="bi bi-trash me-2" aria-hidden="true"></i><%= t('delete') %></button></li>
+                    </ul>
+                  </div>
                 <% } %>
               </td>
             </tr>

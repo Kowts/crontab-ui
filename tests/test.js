@@ -362,6 +362,24 @@ describe('Crontab UI', () => {
       expect(res.body.history).toHaveLength(1);
     });
 
+    it('renders the last run and keeps task management actions in the ellipsis menu', async () => {
+      const job = await createJob('panel-listing', 'echo panel-listing');
+      expect(await runJob(job)).toBeFalsy();
+      const execution = crontab.getLatestExecutions().find((item) => item.jobId === job._id);
+      const res = await request(app).get('/');
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('<th>Last run</th>');
+      expect(res.text).toContain(`datetime="${new Date(execution.startedAt).toISOString()}"`);
+      expect(res.text).toContain('class="bi bi-three-dots"');
+      expect(res.text).toContain('data-action="edit"');
+      expect(res.text).toContain('<i class="bi bi-pencil me-2" aria-hidden="true"></i>Edit');
+      expect(res.text).toContain('data-action="duplicate"');
+      expect(res.text).toContain('<i class="bi bi-copy me-2" aria-hidden="true"></i>Duplicate');
+      expect(res.text).toContain('data-action="delete-job"');
+      expect(res.text).toContain('<i class="bi bi-trash me-2" aria-hidden="true"></i>Delete');
+    });
+
     it('keeps the last successful run and counts failures while it cannot find one', async () => {
       const job = await createJob('panel-regression', 'echo panel-regression');
       await runJob(job);

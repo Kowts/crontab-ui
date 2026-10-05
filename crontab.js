@@ -518,6 +518,8 @@ exports.getExecutionPanel = (job) => ({
   history: db.listExecutions(job._id, executionHistoryLimit),
 });
 
+exports.getLatestExecutions = () => db.listLatestExecutions();
+
 exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
   return db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));

@@ -268,6 +268,8 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
         write: canAccessJob(req, job, 'write'),
       },
     }));
+    const latestExecutions = new Map(crontab.getLatestExecutions().map((execution) => [execution.jobId, execution]));
+    docs = docs.map((job) => ({ ...job, lastRun: latestExecutions.get(job._id) || null }));
     res.render('index', {
       routes: serializeForHtml(routes),
       crontabs: serializeForHtml(docs),
