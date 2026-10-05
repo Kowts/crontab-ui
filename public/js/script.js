@@ -53,6 +53,9 @@ function initPage() {
     $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
       columns: [{ orderable: false }, null, { visible: false }, null, { orderable: false }, { orderable: false }, { orderable: false }, { orderable: false }],
+      stateLoadParams: function(_settings, state) {
+        if (state.columns && state.columns[2]) state.columns[2].visible = false;
+      },
       drawCallback: function() { updatePagingVisibility(this.api()); },
       language: {
         search: '', searchPlaceholder: tr('dataSearch'),

@@ -382,6 +382,7 @@ describe('Crontab UI', () => {
       const tableColumns = script.match(/columns:\s*\[([^\]]*)\]/);
       expect(tableColumns[1].match(/\{[^}]*\}|null/g)).toHaveLength(8);
       expect(tableColumns[1]).toMatch(/null,\s*\{ visible: false \},\s*null/);
+      expect(script).toMatch(/stateLoadParams:\s*function\(_settings, state\)\s*\{\s*if \(state\.columns && state\.columns\[2\]\) state\.columns\[2\]\.visible = false;/);
     });
 
     it('keeps the last successful run and counts failures while it cannot find one', async () => {
