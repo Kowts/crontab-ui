@@ -31,4 +31,9 @@ function useBoundedNumber(name, fallback, minimum, maximum) {
   return value === undefined || value === null ? fallback : value;
 }
 
-module.exports = { requireBoundedNumber, useBoundedNumber };
+function useCommandTimeoutMs() {
+  return process.env.COMMAND_TIMEOUT_MS === '0'
+    ? 0 : useBoundedNumber('COMMAND_TIMEOUT_MS', 300000, 1000, 24 * 60 * 60 * 1000);
+}
+
+module.exports = { requireBoundedNumber, useBoundedNumber, useCommandTimeoutMs };

@@ -67,7 +67,7 @@ const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
-const { useBoundedNumber, requireBoundedNumber } = require('../config/limits');
+const { useBoundedNumber, requireBoundedNumber, useCommandTimeoutMs } = require('../config/limits');
 const { canAccessJob, requireSaveAccess, canManageTasks } = require('../middleware/job-authorization');
 const csrfProtection = require('../middleware/csrf');
 
@@ -1237,6 +1237,34 @@ describe('Bounded command execution', () => {
     expect(result.terminationReason).toBe('timeout');
   });
 
+  it('allows a command to finish when timeout is zero', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "setTimeout(() => process.stdout.write('done'), 150)"`, {
+      timeoutMs: 0, maxOutputBytes: 1024,
+    });
+    expect(error).toBeNull();
+    expect(result.exitCode).toBe(0);
+    expect(result.terminationReason).toBeNull();
+    expect(result.stdout.toString()).toBe('done');
+  });
+
+  it('keeps cancellation available when timeout is zero', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "setTimeout(() => {}, 5000)"`, {
+      timeoutMs: 0, maxOutputBytes: 1024, killGraceMs: 10,
+      onStart: (controller) => controller.cancel(),
+    });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('cancelled');
+  });
+
+  it('keeps the output limit when timeout is zero', async () => {
+    const { error, result } = await executeCommand(`"${process.execPath}" -e "process.stdout.write('x'.repeat(4096))"`, {
+      timeoutMs: 0, maxOutputBytes: 128,
+    });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('output_limit');
+    expect(result.stdout.length).toBeLessThanOrEqual(128);
+  });
+
   it('terminates a command that exceeds the output limit', async () => {
     const { error, result } = await executeCommand(`"${process.execPath}" -e "process.stdout.write('x'.repeat(4096))"`, {
       timeoutMs: 5_000, maxOutputBytes: 128,
@@ -1594,6 +1622,19 @@ describe('Environment limits', () => {
   it('accepts a value inside the range', () => {
     process.env.EXECUTION_HISTORY_PER_JOB = '500';
     expect(useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000)).toBe(500);
+  });
+
+  it.each([
+    ['0', 0], ['1000', 1000], ['7200000', 7200000], ['86400000', 86400000],
+    ['999', 300000], ['-1', 300000], ['abc', 300000], ['', 300000], ['86400001', 300000],
+  ])('reads command timeout %s as %s', (value, expected) => {
+    process.env.COMMAND_TIMEOUT_MS = value;
+    expect(useCommandTimeoutMs()).toBe(expected);
+  });
+
+  it('keeps the default command timeout when the setting is absent', () => {
+    delete process.env.COMMAND_TIMEOUT_MS;
+    expect(useCommandTimeoutMs()).toBe(300000);
   });
 
   it('refuses a mistuned security limit instead of silently weakening it', () => {

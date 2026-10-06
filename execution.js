@@ -46,7 +46,7 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
     }
   };
 
-  const timeout = setTimeout(() => terminateTree('timeout'), timeoutMs);
+  const timeout = timeoutMs === 0 ? null : setTimeout(() => terminateTree('timeout'), timeoutMs);
   child.stdout.on('data', collect(output.stdout));
   child.stderr.on('data', collect(output.stderr));
   child.on('error', (error) => {

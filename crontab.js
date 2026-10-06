@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
-const { useBoundedNumber } = require('./config/limits');
+const { useBoundedNumber, useCommandTimeoutMs } = require('./config/limits');
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
@@ -29,7 +29,7 @@ const db = new SqliteDatastore({ filename: crontabDbFile });
 // Every limit is read through config/limits.js. An unvalidated value was not hypothetical: a
 // non-numeric EXECUTION_HISTORY_PER_JOB reached SQLite as NULL, the retention query matched no
 // rows, and the whole execution history was deleted on the first run.
-const commandTimeoutMs = useBoundedNumber('COMMAND_TIMEOUT_MS', 300000, 1000, 24 * 60 * 60 * 1000);
+const commandTimeoutMs = useCommandTimeoutMs();
 const commandMaxBuffer = useBoundedNumber('COMMAND_MAX_BUFFER', 1024 * 1024, 1024, 256 * 1024 * 1024);
 const commandKillGraceMs = useBoundedNumber('COMMAND_KILL_GRACE_MS', 5000, 0, 600000);
 const maxLogBytes = useBoundedNumber('LOG_MAX_BYTES', 10 * 1024 * 1024, 1024, 4 * 1024 * 1024 * 1024);
@@ -78,7 +78,7 @@ function makeCommand(tab) {
 
 function applySystemCrontab(filePath, callback) {
   return execFile('crontab', [filePath], {
-    timeout: commandTimeoutMs,
+    timeout: commandTimeoutMs || 300000,
     maxBuffer: commandMaxBuffer,
     windowsHide: true,
   }, callback);
@@ -117,7 +117,7 @@ function waitForSchedulerReload(filePath, expectedDigest, callback) {
 
 function applyDockerCrontab(filePath, callback) {
   return execFile('supercronic', ['-test', filePath], {
-    timeout: commandTimeoutMs,
+    timeout: commandTimeoutMs || 300000,
     maxBuffer: commandMaxBuffer,
     windowsHide: true,
   }, (validationError) => {

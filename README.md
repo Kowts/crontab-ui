@@ -226,6 +226,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `MAIL_PROFILES_JSON` | Server-only SMTP/SMTPS profiles. Tasks retain only `profileId` and delivery policy. |
 | `MAIL_MAX_ATTACHMENT_BYTES` | Maximum output attachment size for email. Default: `524288`. |
 | `COMMAND_TIMEOUT_MS`, `COMMAND_MAX_BUFFER`, `COMMAND_KILL_GRACE_MS` | Global per-run execution and publishing limits. Defaults: `300000`, `1048576`, `5000`. In Docker Compose, set `COMMAND_TIMEOUT_MS` in the Compose environment file and recreate the container; the scheduler passes it to each runner. |
+| `COMMAND_TIMEOUT_MS=0` | Disables the task time limit for manual and scheduled runs. Cancellation and output limits remain active; publishing retains a 300000 ms timeout. Positive values must be between 1000 and 86400000 ms. A stuck task can run indefinitely and scheduled runs may overlap. Restart the service after changing its environment; native cron runners must also receive this variable in their own environment, since cron does not inherit the application's service environment. |
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Log size, rotation, and retention. Defaults: `10485760`, `5`, `30`. |
 | `EXECUTION_HISTORY_PER_JOB` | Execution records kept per task, on top of `LOG_RETENTION_DAYS`. Default: `200`. |
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Maximum backup count and age. Defaults: `30`, `90`. |
