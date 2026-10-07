@@ -107,7 +107,7 @@
                 <div class="job-meta"><% if (crontab.stopped) { %><span class="job-state job-state-stopped" data-job-schedule-state><i class="bi bi-stop-circle-fill" aria-hidden="true"></i><%= t('disabled') %></span><% } %></div>
               </td>
               <td><code><%= crontab.command %></code></td>
-              <td><span title="<%= crontab.next %>"><%= crontab.schedule %></span><small class="d-block text-muted"><%= crontab.human %></small></td>
+              <td class="schedule-cell"><span class="cron-expression" tabindex="0" aria-label="<%= t('cronExpression') %>: <%= crontab.schedule %>. <%= crontab.human %>. <%= t('nextRun') %>: <%= crontab.next %>" title="<%= crontab.human %>. <%= t('nextRun') %>: <%= crontab.next %>" data-bs-toggle="tooltip" data-bs-placement="top"><%= crontab.schedule %></span></td>
               <td>
                 <span class="job-access"><i class="bi bi-person-lock" aria-hidden="true"></i><%= t('owner') %>: <%= crontab.owner || t('adminOnly') %></span>
                 <small class="d-block text-muted"><%= t(accessLabel(crontab)) %></small>

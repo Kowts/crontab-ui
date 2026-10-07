@@ -93,6 +93,8 @@ body.app-body {
 .job-row-stopped > * { color: #4b5d75; background: #f1f5f9 !important; }
 .job-row-stopped code { color: #526783; }
 .job-row-stopped .text-muted { color: #62748d !important; }
+.cron-expression { cursor: help; text-decoration: underline dotted; text-underline-offset: .2em; }
+.cron-expression:focus-visible { border-radius: 2px; outline: 2px solid var(--app-primary); outline-offset: 2px; }
 .job-access { display: inline-flex; align-items: center; gap: .38rem; color: var(--app-ink); font-size: .84rem; font-weight: 650; }
 .btn-run, .btn-schedule-disable, .btn-schedule-enable, .btn-log-stderr, .btn-log-stdout { border-width: 1px; }
 .btn-run { color: #08775a; border-color: #59b99e; background: #f1fcf8; }

@@ -107,6 +107,28 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Cron schedule tooltip', () => {
+    it('hides the human description in the table and exposes it through a keyboard-focusable tooltip', () => {
+      const source = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8');
+      const start = source.indexOf('<td class="schedule-cell">');
+      const end = source.indexOf('</td>', start) + '</td>'.length;
+      const { translate } = require('../config/i18n');
+      const html = require('ejs').render(source.slice(start, end), {
+        crontab: {
+          schedule: '0 0 1-7 * 6', human: 'At 12:00 AM, between day 1 and 7 of the month, and on Saturday',
+          next: '2026-10-10T00:00:00.000Z',
+        },
+        t: (key) => translate('en', key),
+      });
+
+      expect(html).toContain('0 0 1-7 * 6</span>');
+      expect(html).toContain('data-bs-toggle="tooltip"');
+      expect(html).toContain('tabindex="0"');
+      expect(html).toContain('At 12:00 AM, between day 1 and 7 of the month, and on Saturday');
+      expect(html).not.toContain('<small');
+    });
+  });
+
   describe('Execution history pagination', () => {
     function createPanel() {
       const elements = {};
