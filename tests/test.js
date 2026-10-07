@@ -1179,7 +1179,9 @@ describe('Crontab publication', () => {
     });
 
     expect(path.basename(publishedFile)).toBe('crontab');
-    expect(fs.readFileSync(publishedFile, 'utf8')).toContain(publishedJob._id);
+    const publishedCrontab = fs.readFileSync(publishedFile, 'utf8');
+    expect(publishedCrontab).toContain(`COMMAND_TIMEOUT_MS=${require('../config/limits').useCommandTimeoutMs()}`);
+    expect(publishedCrontab).toContain(publishedJob._id);
     const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
     expect(jobs.find((job) => job._id === publishedJob._id).saved).toBe(true);
     expect(jobs.find((job) => job.command === 'echo publication-concurrent').saved).toBe(false);

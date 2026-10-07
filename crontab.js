@@ -73,7 +73,7 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing, owners
 }
 
 function makeCommand(tab) {
-  return `"${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
+  return `COMMAND_TIMEOUT_MS=${commandTimeoutMs} "${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
 }
 
 function applySystemCrontab(filePath, callback) {
