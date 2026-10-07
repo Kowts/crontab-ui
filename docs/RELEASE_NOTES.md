@@ -1,5 +1,39 @@
 # Release notes
 
+## 0.5.2
+
+### Correcção do timeout agendado
+
+- Cada comando agendado publicado inclui agora `COMMAND_TIMEOUT_MS` com o valor
+  efectivo do serviço. O runner deixa de depender da herança do ambiente do cron
+  para receber o timeout configurado.
+- Docker Compose transmite `COMMAND_TIMEOUT_MS`; a allowlist predefinida também
+  inclui esta variável no ambiente restrito do scheduler.
+- `COMMAND_TIMEOUT_MS=0` desactiva o timeout das tarefas, mantendo o cancelamento
+  e o limite de output. A publicação mantém um timeout limitado.
+- A tag `v0.5.1` não inclui estas correcções. A versão `0.5.2` distingue o código
+  corrigido, incluindo o commit `7546a82`, da release anterior.
+
+### Actualização obrigatória
+
+- Instale a versão corrigida e reinicie o serviço com a configuração de produção.
+  No Docker Compose, recrie o contentor com a imagem reconstruída e o ficheiro de
+  ambiente correcto; reiniciar apenas o contentor não actualiza o seu ambiente.
+- Publique novamente o crontab pela aplicação. Agendas existentes não são
+  actualizadas automaticamente quando o código ou a configuração mudam.
+- Confirme na agenda efectivamente instalada que os comandos contêm o valor
+  pretendido, por exemplo `COMMAND_TIMEOUT_MS=7200000` para duas horas. O preview
+  da aplicação não comprova o conteúdo da agenda instalada.
+- Não existem migrações de dados. Os registos históricos de timeout permanecem
+  inalterados; valide o resultado numa nova execução.
+
+### Estado da release
+
+- Validação local: manifestos JSON consistentes, 232 testes aprovados com
+  `COMMAND_TIMEOUT_MS=7200000`, lint e diagnósticos do editor sem erros.
+- Versão preparada localmente; publicação, tag `v0.5.2` e validação do CI ainda
+  pendentes. A tag `v0.5.1` deve permanecer inalterada.
+
 ## 0.5.1
 
 ### Destaques
