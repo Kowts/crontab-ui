@@ -483,6 +483,31 @@ describe('Crontab UI', () => {
       expect(tableColumns[1].match(/\{[^}]*\}|null/g)).toHaveLength(8);
       expect(tableColumns[1]).toMatch(/null,\s*\{ visible: false \},\s*null/);
       expect(script).toMatch(/stateLoadParams:\s*function\(_settings, state\)\s*\{\s*if \(state\.columns && state\.columns\[2\]\) state\.columns\[2\]\.visible = false;/);
+      expect(tableColumns[1]).toMatch(/\{\s*orderable:\s*true,\s*type:\s*'num'\s*\},\s*\{\s*orderable:\s*true,\s*type:\s*'num'\s*\}/);
+      expect(res.text).toMatch(/data-order="\d+"/);
+    });
+
+    it('sorts the task list by last run and last modified timestamps', async () => {
+      const older = await createJob('sort-older', 'echo sort-older');
+      const newer = await createJob('sort-newer', 'echo sort-newer');
+      expect(await runJob(newer)).toBeFalsy();
+      const executions = crontab.getLatestExecutions();
+      const newerRun = executions.find((item) => item.jobId === newer._id);
+      expect(newerRun).toBeTruthy();
+      const res = await request(app).get('/');
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain(`data-order="${newerRun.startedAt}"`);
+      // The task without runs sorts with epoch 0, below any real execution timestamp.
+      expect(res.text).toContain('data-order="0"');
+      const olderJob = await new Promise((resolve) => crontab.get_crontab(older._id, (_error, job) => resolve(job)));
+      const newerJob = await new Promise((resolve) => crontab.get_crontab(newer._id, (_error, job) => resolve(job)));
+      const olderTimestamp = Date.parse(olderJob.timestamp);
+      const newerTimestamp = Date.parse(newerJob.timestamp);
+      expect(olderTimestamp).toBeGreaterThan(0);
+      expect(newerTimestamp).toBeGreaterThan(0);
+      expect(res.text).toContain(`data-order="${olderTimestamp}"`);
+      expect(res.text).toContain(`data-order="${newerTimestamp}"`);
     });
 
     it('keeps the last successful run and counts failures while it cannot find one', async () => {

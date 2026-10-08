@@ -112,8 +112,8 @@
                 <span class="job-access"><i class="bi bi-person-lock" aria-hidden="true"></i><%= t('owner') %>: <%= crontab.owner || t('adminOnly') %></span>
                 <small class="d-block text-muted"><%= t(accessLabel(crontab)) %></small>
               </td>
-              <td><% if (crontab.lastRun) { %><time datetime="<%= new Date(crontab.lastRun.startedAt).toISOString() %>" title="<%= new Date(crontab.lastRun.startedAt).toLocaleString() %>"><%= dayjs(new Date(crontab.lastRun.startedAt)).fromNow() %></time><% } else { %><span class="text-muted"><%= t('never') %></span><% } %></td>
-              <td><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
+              <td data-order="<%= crontab.lastRun ? crontab.lastRun.startedAt : 0 %>"><% if (crontab.lastRun) { %><time datetime="<%= new Date(crontab.lastRun.startedAt).toISOString() %>" title="<%= new Date(crontab.lastRun.startedAt).toLocaleString() %>"><%= dayjs(new Date(crontab.lastRun.startedAt)).fromNow() %></time><% } else { %><span class="text-muted"><%= t('never') %></span><% } %></td>
+              <td data-order="<%= new Date(crontab.timestamp).getTime() || 0 %>"><%= dayjs(new Date(crontab.timestamp)).fromNow() %></td>
               <td class="text-end text-nowrap">
                 <button class="btn btn-sm btn-outline-secondary" title="<%= t('executions') %>" aria-label="<%= t('executions') %>" data-bs-toggle="tooltip" data-bs-placement="top" data-action="executions" data-id="<%= crontab._id %>"><i class="bi bi-activity"></i><span class="visually-hidden"><%= t('executions') %></span></button>
                 <% if (!crontab.stopped && crontab.logging && crontab.logging !== 'false') { %>
