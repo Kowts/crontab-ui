@@ -1,6 +1,6 @@
 {
   "name": "crontab-ui",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Easy and safe way to manage your crontab file",
   "main": "app.js",
   "scripts": {
@@ -35,6 +35,9 @@
     "prettier": "^3.5.0",
     "supertest": "^7.1.0",
     "vitest": "^3.1.0"
+  },
+  "overrides": {
+    "proxy-addr": "2.0.8"
   },
   "engines": {
     "node": ">=20.0.0"

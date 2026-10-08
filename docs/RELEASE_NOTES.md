@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.5.3
+
+### Correcção de segurança
+
+- Actualizado `proxy-addr` para `2.0.8` via `overrides` no `package.json`,
+  corrigindo a vulnerabilidade crítica de IP spoofing via sub-rede de confiança
+  IPv4-mapped IPv6 (GHSA-jqcg-44mw-7w3h) presente em `proxy-addr@2.0.7` via
+  `express@5.2.1`.
+- `npm audit --omit=dev --audit-level=high` sem vulnerabilidades.
+
 ## 0.5.2
 
 ### Correcção do timeout agendado
