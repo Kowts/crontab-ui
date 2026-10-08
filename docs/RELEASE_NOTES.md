@@ -65,8 +65,9 @@
   preservado pela migração. A variante nativa POSIX dos testes fica para o CI Linux.
 - Interface verificada em browser em desktop/mobile, com agenda instalada distinta
   da pretendida e metadados no histórico; selector de agenda confirmado em PT/EN.
-- Versão preparada localmente; publicação, tag `v0.5.2` e validação do CI ainda
-  pendentes. A tag `v0.5.1` deve permanecer inalterada.
+- Versão validada localmente; tag `v0.5.2` criada a partir de `main` e validada
+  pelo CI remoto antes da publicação da release. A tag `v0.5.1` permanece
+  inalterada.
 
 ## 0.5.1
 
