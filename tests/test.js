@@ -598,6 +598,57 @@ describe('Crontab UI', () => {
       });
     });
 
+    it('does not interrupt an active manual execution when a scheduled runner starts', async () => {
+      const create = (name, command) => new Promise((resolve, reject) => crontab.create_new(
+        name, command, '* * * * *', false, {}, {},
+        (error, job) => error ? reject(error) : resolve(job)
+      ));
+      const manual = await create('manual-recovery-isolation', `"${process.execPath}" -e "setTimeout(() => {}, 5000)"`);
+      const scheduled = await create('scheduled-recovery-isolation', 'echo scheduled-recovery-isolation');
+      const started = await new Promise((resolve, reject) => crontab.startManualRun(
+        manual._id, { actor: 'recovery-isolation' }, (error, run) => error ? reject(error) : resolve(run)
+      ));
+      try {
+        const runner = spawnSync(process.execPath, [path.join(__dirname, '../bin/crontab-ui-runner.js'), scheduled._id], {
+          env: { ...process.env, CRON_DB_PATH: testDbPath }, encoding: 'utf8', timeout: 10000,
+        });
+        expect(runner.status).toBe(0);
+        expect(crontab.getManualRun(started.operationId).status).toBe('running');
+        const duplicate = await new Promise(resolve => crontab.startManualRun(
+          manual._id, { actor: 'recovery-isolation' }, error => resolve(error)
+        ));
+        expect(duplicate).toMatchObject({ statusCode: 409 });
+        const panel = await request(app).get('/executions').query({ id: scheduled._id });
+        expect(panel.body.lastRun).toMatchObject({ trigger: 'scheduled', status: 'completed' });
+      } finally {
+        await new Promise(resolve => crontab.shutdownManualRuns(resolve));
+      }
+    }, 25000);
+
+    it.each(['en', 'pt'])('presents an interrupted manual run as an error in %s', (locale) => {
+      const elements = {};
+      const jquery = () => {};
+      jquery.get = () => ({ done(callback) {
+        callback({ status: 'interrupted', result: { terminationReason: 'service_restart' } });
+        return { fail() {} };
+      } });
+      const context = {
+        $: jquery, sessionStorage: { setItem() {}, removeItem() {} },
+        document: { addEventListener() {}, querySelector: () => null, getElementById(id) {
+          elements[id] ||= {};
+          return elements[id];
+        } },
+        bootstrap: { Modal: { getOrCreateInstance: () => ({ show() {} }) } },
+      };
+      vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/script.js'), 'utf8'), context);
+      context.i18n = require('../config/i18n').dictionaries[locale];
+      context.routes = { run_status: '/runjob/status' };
+      context.trackManualRun('test-job', 'interrupted-test-operation');
+      expect(elements['info-title'].textContent).toBe(context.i18n.error);
+      expect(elements['info-body'].textContent).toContain('interrupted-test-operation');
+      expect(elements['info-body'].textContent).toContain(locale === 'en' ? 'service recovery' : 'recuperação do serviço');
+    });
+
     it('marks unfinished persisted manual runs as interrupted during recovery', async () => {
       const job = await new Promise((resolve, reject) => {
         crontab.create_new('manual-run-recovery', `"${process.execPath}" -e "setTimeout(() => {}, 1000)"`, '* * * * *', false, {}, {}, (error, created) => {
@@ -3098,6 +3149,20 @@ describe('Administrative data boundaries', () => {
 });
 
 describe('Application bootstrap', () => {
+  it('recovers orphaned manual runs when the service starts, before listening', () => {
+    const events = [];
+    const context = {
+      require(name) {
+        if (name === './crontab') return { recoverManualRuns() { events.push('recovery'); } };
+        if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
+        throw new Error('Unexpected bootstrap dependency');
+      },
+      process: { once() {} },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bootstrap.js'), 'utf8'), context);
+    expect(events).toEqual(['recovery', 'server']);
+  });
+
   it('creates isolated applications and exposes a closable HTTP server', async () => {
     const anotherApp = createApp();
     expect(anotherApp).not.toBe(app);

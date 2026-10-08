@@ -266,6 +266,11 @@ existente, a SQLite acrescenta uma coluna opcional de metadados numa transacçã
 Os registos antigos são preservados e apresentados como indisponíveis, sem valores
 inferidos.
 
+A recuperação de execuções manuais sem desfecho ocorre apenas no arranque do serviço
+web através de `bootstrap.js`. Os runners agendados não executam essa recuperação
+nem marcam uma execução manual activa como interrompida apenas por abrirem a base
+partilhada.
+
 Antes de importar uma base ou restaurar um backup, a aplicação cria uma cópia de segurança e valida o candidato. A importação de bases usa por defeito **Combinar**: as tarefas existentes são mantidas, os duplicados exatos são ignorados e as tarefas com o mesmo nome mas conteúdo diferente são assinaladas como conflitos sem serem substituídas. O diálogo de revisão apresenta as contagens antes de qualquer escrita. **Substituir todas as tarefas existentes** está disponível apenas como modo explícito de importação e é destrutivo após o backup automático. Os backups reconhecidos seguem a retenção por quantidade e idade; falhas de retenção são auditadas.
 
 No primeiro arranque, uma `crontab.db` NeDB legada é migrada automaticamente para SQLite. O ficheiro original é retido ao lado da nova base como `crontab.db.legacy-nedb-<timestamp>`; preserve-o até confirmar as tarefas migradas e um restauro de recuperação, removendo-o depois através do processo normal de gestão de alterações.

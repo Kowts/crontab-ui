@@ -3,6 +3,7 @@
 const { createApp, startServer } = require('./app');
 const crontab = require('./crontab');
 
+crontab.recoverManualRuns();
 const server = startServer(createApp());
 
 function shutdown(signal) {

@@ -401,8 +401,9 @@ function trackManualRun(jobId, operationId) {
       var auditOperationId = tr('auditOperationId', { operationId: operationId });
       var message = run.status === 'completed' ? tr('runSuccess', { auditOperationId: auditOperationId })
         : run.status === 'cancelled' ? tr('runStopped', { auditOperationId: auditOperationId })
+          : run.status === 'interrupted' ? tr('runInterrupted', { auditOperationId: auditOperationId })
           : tr('runFailed', { auditOperationId: auditOperationId });
-      infoMessageBox(message, run.status === 'failed' ? tr('error') : tr('runComplete'));
+      infoMessageBox(message, run.status === 'completed' || run.status === 'cancelled' ? tr('runComplete') : tr('error'));
     }).fail(function(response) { if (button) button.disabled = false; if (cancelButton) cancelButton.remove(); handleOperationFailure(response); });
   };
   poll();

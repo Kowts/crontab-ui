@@ -265,6 +265,10 @@ shows timeout and runner identity; a timeout of zero is shown as Unlimited. SQLi
 adds an optional metadata column transactionally on opening an existing database.
 Legacy records remain intact and show unavailable rather than inferred values.
 
+Unfinished manual runs are recovered only when the web service starts through
+`bootstrap.js`. Scheduled runners do not perform service recovery and cannot mark
+an active manual run as interrupted merely by opening the shared database.
+
 Before importing a database or restoring a backup, the application creates a backup and validates the candidate. Database imports default to **Merge**: existing tasks remain, exact duplicates are skipped, and same-name/different-content tasks are reported as conflicts without being overwritten. The review dialog shows the resulting counts before any write. **Replace all existing tasks** is available only as an explicit import mode and is destructive after the automatic backup. Recognized backups follow count- and age-based retention; retention failures are audited.
 
 On first start, a legacy NeDB `crontab.db` is migrated automatically to SQLite. The original file is retained alongside it as `crontab.db.legacy-nedb-<timestamp>`; preserve it until the migrated tasks and a recovery restore have been verified, then remove it using the normal change-management process.

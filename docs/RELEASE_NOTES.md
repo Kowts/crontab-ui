@@ -26,6 +26,12 @@
 
 ### Actualização obrigatória
 
+- A recuperação de execuções manuais fica limitada ao arranque de `bootstrap.js`.
+  O arranque de um runner agendado deixa de marcar execuções manuais activas como
+  interrompidas, preservando também o limite de concorrência por utilizador.
+- O diálogo de execução distingue interrupção por recuperação de uma conclusão
+  normal, com título de erro e mensagem específica em PT/EN.
+
 - O diagnóstico distingue a agenda pretendida da instalada e abre na instalada.
   A confirmação Docker exige o hash reconhecido pelo Supercronic; falhas de leitura
   não são ocultadas por um preview regenerado.
@@ -47,8 +53,11 @@
 
 ### Estado da release
 
-- Validação local final: 241 testes aprovados, cobertura de linhas de 85,14% com
+- Validação local final: 245 testes aprovados, cobertura de linhas de 84,93% com
   todos os limiares cumpridos, lint e diagnósticos do editor sem erros.
+- Regressão adicional confirma que um runner agendado não interrompe uma execução
+  manual activa nem remove o bloqueio por utilizador; recuperação no bootstrap e
+  mensagem de interrupção cobertas em PT/EN, com confirmação em browser PT.
 - Integração Docker real aprovada: build, publicação, hash de recarga confirmado,
   tarefas como UID 1000, base personalizada e timeout efectivo de 5000 ms, com
   sucesso e terminação por timeout registados no histórico.

@@ -259,8 +259,6 @@ exports.recoverManualRuns = () => {
   return recovered;
 };
 
-exports.recoverManualRuns();
-
 function rotateLog(file) {
   if (!fs.existsSync(file) || fs.statSync(file).size < maxLogBytes) return;
   if (logRotationCount < 1) return;

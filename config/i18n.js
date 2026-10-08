@@ -2,6 +2,7 @@
 
 const dictionaries = {
   en: {
+    runInterrupted: 'The task execution was marked as interrupted during service recovery. {auditOperationId}',
     loginRateLimited: 'Too many sign-in attempts. Try again in {minutes} minutes.', invalidCredentials: 'Invalid username or password.',
     logout: 'Sign out', signIn: 'Sign in', signInDescription: 'Enter your account credentials to manage scheduled tasks.', username: 'Username', password: 'Password',
     pageTitle: 'Crontab UI — Scheduled tasks',
@@ -97,6 +98,7 @@ const dictionaries = {
     executionPageInfo: 'Showing _START_ to _END_ of _TOTAL_ executions',
   },
   pt: {
+    runInterrupted: 'A execução da tarefa foi marcada como interrompida durante a recuperação do serviço. {auditOperationId}',
     intendedCrontab: 'Pretendida', installedCrontab: 'Instalada',
     intendedSchedule: 'Configuração local, não instalada', installedSchedule: 'Agenda instalada',
     reloadUnconfirmed: 'Recarga do scheduler não confirmada', crontabUnavailable: 'Não foi possível ler a agenda instalada.',
