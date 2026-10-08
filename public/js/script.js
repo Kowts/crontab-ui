@@ -205,6 +205,8 @@ document.addEventListener('click', function(event) {
     case 'import-crontab': getCrontab(); break;
     case 'set-crontab': setCrontab(); break;
     case 'preview': previewCrontab(); break;
+    case 'preview-intended': previewCrontab('intended'); break;
+    case 'preview-installed': previewCrontab('installed'); break;
     case 'test-mail-profile': openMailProfileTest(); break;
     case 'send-mail-test': sendMailTest(target.dataset.profile); break;
     case 'toggle-environment': toggleEnvironment(); break;
@@ -634,6 +636,14 @@ function renderExecutions(panel) {
     row.appendChild(executionsCell(executionStatusLabel(run)));
     row.appendChild(executionsCell(formatDuration(run.durationMs)));
     row.appendChild(executionsCell(run.exitCode === null || run.exitCode === undefined ? (run.signal || '—') : String(run.exitCode)));
+    var runtime = run.runtime;
+    row.appendChild(executionsCell(runtime && typeof runtime.timeoutMs === 'number'
+      ? (runtime.timeoutMs === 0 ? tr('noTimeout') : formatDuration(runtime.timeoutMs)) : tr('unavailable')));
+    var runnerCell = executionsCell(runtime
+      ? runtime.version + ' @ ' + runtime.hostname + ' (PID ' + runtime.pid + ') ' + runtime.codeHash.slice(0, 12)
+      : tr('unavailable'));
+    if (runtime) runnerCell.title = 'SHA-256: ' + runtime.codeHash;
+    row.appendChild(runnerCell);
     body.appendChild(row);
   });
   document.getElementById('executions-empty').hidden = panel.history.length > 0;
@@ -791,10 +801,32 @@ function set_schedule() {
   job_string();
 }
 
-function previewCrontab() {
-  $.get(routes.preview_crontab, function(data) {
-    document.getElementById('preview-crontab-content').textContent = data || '# (empty crontab)';
-    getModal('preview-crontab-modal').show();
+var crontabPreviewRequestId = 0;
+
+function previewCrontab(source) {
+  source = source === 'intended' ? 'intended' : 'installed';
+  var requestId = ++crontabPreviewRequestId;
+  var content = document.getElementById('preview-crontab-content');
+  var status = document.getElementById('preview-crontab-status');
+  var copy = document.getElementById('copy-crontab');
+  ['intended', 'installed'].forEach(function(view) {
+    var tab = document.getElementById('crontab-tab-' + view);
+    tab.setAttribute('aria-selected', String(view === source));
+    tab.classList.toggle('active', view === source);
+  });
+  content.textContent = '';
+  status.textContent = tr('loading');
+  copy.disabled = true;
+  getModal('preview-crontab-modal').show();
+  $.get(source === 'installed' ? routes.installed_crontab : routes.preview_crontab, function(data) {
+    if (requestId !== crontabPreviewRequestId) return;
+    content.textContent = (source === 'installed' ? data.content : data) || tr('emptyCrontab');
+    status.textContent = source === 'intended' ? tr('intendedSchedule')
+      : (data.confirmed ? tr('installedSchedule') : tr('reloadUnconfirmed'));
+    copy.disabled = false;
+  }).fail(function() {
+    if (requestId !== crontabPreviewRequestId) return;
+    status.textContent = tr('crontabUnavailable');
   });
 }
 

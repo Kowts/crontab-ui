@@ -207,7 +207,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | --- | --- |
 | `NODE_ENV` | Use `production` no deployment; ativa cookies seguros e exige TLS/proxy de confiança. |
 | `HOST`, `PORT`, `BASE_URL` | Escuta HTTP e prefixo público. Predefinições: `127.0.0.1`, `8000`, sem prefixo. |
-| `CRON_DB_PATH` | Diretório persistente para a base SQLite (`crontab.db`), backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. |
+| `CRON_DB_PATH` | Directório persistente para a base SQLite (`crontab.db`), backups, ambiente, auditoria e output de execução. Predefinição: `./crontabs`. Os comandos publicados incluem o caminho absoluto para que os runners agendados usem a mesma base que o serviço. Após alterar o caminho, reinicie o serviço e publique novamente o crontab. |
 | `CRON_PATH` | Diretório de staging do crontab. Deve ser acessível apenas ao processo da aplicação e ao mecanismo de agendamento isolado. Predefinição: `$CRON_DB_PATH/crontab-staging`. |
 | `CRON_USER` | Conta do agendador quando `CRON_IN_DOCKER` está ativo. A imagem fixa-a em `node`; não a defina como `root`. |
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Tempo máximo de espera para o Supercronic validar e confirmar a recarga de uma agenda Docker publicada. Predefinição: `10000`. |
@@ -252,6 +252,19 @@ Cada execução manual ou agendada tem timeout, limite conjunto de output e ence
 Cada execução concluída, manual ou agendada, é registada na base de dados com a origem, o resultado, o código de saída, o sinal, a duração e o motivo de terminação. Uma execução que esgotou o tempo, foi cancelada ou foi interrompida pelo limite de output conta como falha, porque o comando não fez o seu trabalho. O histórico é apenas diagnóstico: uma falha ao guardar um registo é auditada e nunca transforma uma execução concluída numa falha, e a leitura do painel exige o mesmo acesso à tarefa que a leitura dos seus logs. O painel nunca devolve o comando nem o seu output.
 
 ## Backups, recuperação e auditoria
+
+Os administradores podem usar **Consultar crontab** para comparar a configuração
+local **Pretendida** com a agenda **Instalada**. A consulta abre na agenda instalada.
+O cron nativo é lido com `crontab -l` limitado; em Docker, é lido o ficheiro do
+Supercronic e a recarga só é confirmada quando o hash coincide com o reconhecimento
+do scheduler. Uma falha de leitura não é substituída pela configuração pretendida.
+
+Os novos registos de execução e eventos de auditoria incluem timeout efectivo,
+versão, host, PID e SHA-256 do código do executor. O painel mostra o timeout e a
+identidade do runner; zero é apresentado como Sem limite. Ao abrir uma base
+existente, a SQLite acrescenta uma coluna opcional de metadados numa transacção.
+Os registos antigos são preservados e apresentados como indisponíveis, sem valores
+inferidos.
 
 Antes de importar uma base ou restaurar um backup, a aplicação cria uma cópia de segurança e valida o candidato. A importação de bases usa por defeito **Combinar**: as tarefas existentes são mantidas, os duplicados exatos são ignorados e as tarefas com o mesmo nome mas conteúdo diferente são assinaladas como conflitos sem serem substituídas. O diálogo de revisão apresenta as contagens antes de qualquer escrita. **Substituir todas as tarefas existentes** está disponível apenas como modo explícito de importação e é destrutivo após o backup automático. Os backups reconhecidos seguem a retenção por quantidade e idade; falhas de retenção são auditadas.
 

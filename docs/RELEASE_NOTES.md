@@ -14,7 +14,24 @@
 - A tag `v0.5.1` não inclui estas correcções. A versão `0.5.2` distingue o código
   corrigido, incluindo o commit `7546a82`, da release anterior.
 
+### Base de dados dos runners agendados
+
+- Cada comando publicado transmite `CRON_DB_PATH` como caminho absoluto, evitando
+  que o runner abra a base predefinida da instalação em vez da base do serviço.
+- Caminhos com espaços, apóstrofos e caracteres especiais mantêm o quoting da
+  shell; o escape de percentagens respeita a diferença entre cron nativo e Docker.
+- Caminhos com quebras de linha ou bytes nulos são rejeitados no arranque.
+- A alteração aplica-se após reiniciar o serviço actualizado e publicar novamente
+  a agenda. Não move nem combina bases de dados anteriormente separadas.
+
 ### Actualização obrigatória
+
+- O diagnóstico distingue a agenda pretendida da instalada e abre na instalada.
+  A confirmação Docker exige o hash reconhecido pelo Supercronic; falhas de leitura
+  não são ocultadas por um preview regenerado.
+- Histórico e auditoria registam timeout efectivo, versão, host, PID e hash do
+  executor. Os testes verificam processos novos, timeout zero e integração Docker
+  com base personalizada, sucesso e terminação real por timeout.
 
 - Instale a versão corrigida e reinicie o serviço com a configuração de produção.
   No Docker Compose, recrie o contentor com a imagem reconstruída e o ficheiro de
@@ -24,13 +41,21 @@
 - Confirme na agenda efectivamente instalada que os comandos contêm o valor
   pretendido, por exemplo `COMMAND_TIMEOUT_MS=7200000` para duas horas. O preview
   da aplicação não comprova o conteúdo da agenda instalada.
-- Não existem migrações de dados. Os registos históricos de timeout permanecem
-  inalterados; valide o resultado numa nova execução.
+- A SQLite recebe uma migração aditiva e transaccional para metadados opcionais.
+  Os registos históricos permanecem inalterados e sem metadados presumidos; valide
+  o resultado numa nova execução.
 
 ### Estado da release
 
-- Validação local: manifestos JSON consistentes, 232 testes aprovados com
-  `COMMAND_TIMEOUT_MS=7200000`, lint e diagnósticos do editor sem erros.
+- Validação local final: 241 testes aprovados, cobertura de linhas de 85,14% com
+  todos os limiares cumpridos, lint e diagnósticos do editor sem erros.
+- Integração Docker real aprovada: build, publicação, hash de recarga confirmado,
+  tarefas como UID 1000, base personalizada e timeout efectivo de 5000 ms, com
+  sucesso e terminação por timeout registados no histórico.
+- Runners novos testados com caminhos especiais e timeout zero; histórico antigo
+  preservado pela migração. A variante nativa POSIX dos testes fica para o CI Linux.
+- Interface verificada em browser em desktop/mobile, com agenda instalada distinta
+  da pretendida e metadados no histórico; selector de agenda confirmado em PT/EN.
 - Versão preparada localmente; publicação, tag `v0.5.2` e validação do CI ainda
   pendentes. A tag `v0.5.1` deve permanecer inalterada.
 

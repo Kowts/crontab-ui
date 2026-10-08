@@ -4,6 +4,7 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
+const os = require('os');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
@@ -17,6 +18,7 @@ const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
 const dbFolder = process.env.CRON_DB_PATH || path.join(__dirname, 'crontabs');
+if (/[\r\n\0]/.test(dbFolder)) throw new Error('CRON_DB_PATH must not contain line breaks or null bytes');
 console.log(`Cron db path: ${dbFolder}`);
 
 const logFolder = path.join(dbFolder, 'logs');
@@ -30,6 +32,17 @@ const db = new SqliteDatastore({ filename: crontabDbFile });
 // non-numeric EXECUTION_HISTORY_PER_JOB reached SQLite as NULL, the retention query matched no
 // rows, and the whole execution history was deleted on the first run.
 const commandTimeoutMs = useCommandTimeoutMs();
+const executionRuntime = Object.freeze({
+  timeoutMs: commandTimeoutMs,
+  version: require('./package.json').version,
+  hostname: os.hostname(),
+  pid: process.pid,
+  codeHash: crypto.createHash('sha256')
+    .update(fs.readFileSync(__filename))
+    .update(fs.readFileSync(path.join(__dirname, 'execution.js')))
+    .update(fs.readFileSync(path.join(__dirname, 'bin', 'crontab-ui-runner.js')))
+    .digest('hex'),
+});
 const commandMaxBuffer = useBoundedNumber('COMMAND_MAX_BUFFER', 1024 * 1024, 1024, 256 * 1024 * 1024);
 const commandKillGraceMs = useBoundedNumber('COMMAND_KILL_GRACE_MS', 5000, 0, 600000);
 const maxLogBytes = useBoundedNumber('LOG_MAX_BYTES', 10 * 1024 * 1024, 1024, 4 * 1024 * 1024 * 1024);
@@ -73,7 +86,9 @@ function buildCrontab(name, command, schedule, stopped, logging, mailing, owners
 }
 
 function makeCommand(tab) {
-  return `COMMAND_TIMEOUT_MS=${commandTimeoutMs} "${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
+  const quotedDbFolder = "'" + path.resolve(dbFolder).replace(/'/g, "'\\''") + "'";
+  const cronDbFolder = isDockerScheduler() ? quotedDbFolder : quotedDbFolder.replace(/%/g, '\\%');
+  return `CRON_DB_PATH=${cronDbFolder} COMMAND_TIMEOUT_MS=${commandTimeoutMs} "${process.execPath}" "${path.join(__dirname, 'bin', 'crontab-ui-runner.js')}" ${tab._id}`;
 }
 
 function applySystemCrontab(filePath, callback) {
@@ -305,6 +320,7 @@ function recordExecution({ job, operationId, trigger, actor, startedAt, status, 
       durationMs: result.durationMs,
       terminationReason: result.terminationReason,
       outputExceeded: result.outputExceeded,
+      runtime: executionRuntime,
     });
   } catch (error) {
     audit({ operationId, type: 'execution_history', jobId: job._id, status: 'failed', error: error.message });
@@ -462,7 +478,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     const cmd = res.command;
 
     const operationId = crypto.randomUUID();
-    audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext });
+    audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext, runtime: executionRuntime });
 
     const startedAt = Date.now();
     execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
@@ -477,7 +493,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
       if (output) deliverMail(res, operationId, result, failed);
       else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
-      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext });
+      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext, runtime: executionRuntime });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });
@@ -546,7 +562,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       }
       return callback(error);
     }
-    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext });
+    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext, runtime: executionRuntime });
     callback(null, exports.getManualRun(operationId));
     const startedAt = Date.now();
     const controller = execute(job.command, {
@@ -563,7 +579,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
       manualRunControllers.delete(operationId);
-      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext });
+      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, runtime: executionRuntime });
       pruneManualRuns();
     });
     manualRunControllers.set(operationId, controller);
@@ -1062,6 +1078,26 @@ function readSystemCrontab(callback) {
     windowsHide: true,
   }, callback);
 }
+
+exports.get_installed_crontab = (callback, readCrontab = readSystemCrontab) => {
+  if (!isDockerScheduler()) {
+    return readCrontab((error, content) => callback(error, error ? undefined : {
+      content, source: 'system', confirmed: true,
+    }));
+  }
+  const file = path.join(cronPath, process.env.CRON_USER || 'node');
+  return fs.readFile(file, 'utf8', (error, content) => {
+    if (error) return callback(error);
+    let confirmed = false;
+    try {
+      const state = JSON.parse(fs.readFileSync(schedulerReloadStateFile(file), 'utf8'));
+      confirmed = state.digest === crypto.createHash('sha256').update(content).digest('hex');
+    } catch (_error) {
+      confirmed = false;
+    }
+    return callback(null, { content, source: 'docker', confirmed });
+  });
+};
 
 function writeImportedJobs(entries, callback) {
   return db.find({}).exec((findError, existingJobs) => {

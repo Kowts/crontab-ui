@@ -38,7 +38,7 @@ const { dictionaries, localeFromRequest, normalizeLocale, translate } = require(
 
 dayjs.extend(relativeTime);
 
-function createApp({ setCrontab = crontab.set_crontab, probeMailProfile = sendTestMessage } = {}) {
+function createApp({ setCrontab = crontab.set_crontab, probeMailProfile = sendTestMessage, readInstalledCrontab = crontab.get_installed_crontab } = {}) {
 const app = express();
 app.locals.baseURL = baseUrl;
 app.set('host', process.env.HOST || '127.0.0.1');
@@ -619,6 +619,14 @@ app.get(routes.preview_crontab, requireRole('admin'), (req, res) => {
   const envVars = crontab.get_env();
   crontab.preview_crontab(envVars, (result) => {
     res.type('text/plain').send(result);
+  });
+});
+
+app.get(routes.installed_crontab, requireRole('admin'), (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  readInstalledCrontab((error, result) => {
+    if (error) return next(error);
+    return res.json(result);
   });
 });
 

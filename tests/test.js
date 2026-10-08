@@ -8,7 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const vm = require('vm');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { EventEmitter } = require('events');
 const cronstrue = require('cronstrue/i18n');
 const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
@@ -201,6 +201,84 @@ describe('Crontab UI', () => {
       expect(state.options).toHaveLength(2);
       expect(elements['executions-body'].children).toHaveLength(0);
       expect(elements['executions-empty'].hidden).toBe(false);
+    });
+
+    it('shows effective timeout and runner identity, without inventing legacy metadata', () => {
+      const { context, elements } = createPanel();
+      const runs = history(2);
+      runs[0].runtime = { timeoutMs: 7200000, version: '0.5.2', hostname: 'worker-1', pid: 123, codeHash: 'a'.repeat(64) };
+      context.renderExecutions({ history: runs, consecutiveFailures: 0 });
+      const rows = elements['executions-body'].children;
+      expect(rows[0].children[5].textContent).toBe('120m 0s');
+      expect(rows[0].children[6].textContent).toContain('0.5.2 @ worker-1 (PID 123)');
+      expect(rows[0].children[6].title).toBe('SHA-256: ' + 'a'.repeat(64));
+      expect(rows[1].children[5].textContent).toBe('unavailable');
+      runs[0].runtime.timeoutMs = 0;
+      context.renderExecutions({ history: runs, consecutiveFailures: 0 });
+      expect(elements['executions-body'].children[0].children[5].textContent).toBe('Unlimited');
+    });
+  });
+
+  describe('Crontab inspection controls', () => {
+    it('defaults to installed, ignores stale responses and clears data on failure', () => {
+      const elements = {};
+      const requests = [];
+      const jquery = () => {};
+      jquery.get = (url, success) => {
+        const pending = { url, success };
+        requests.push(pending);
+        return { fail(handler) { pending.fail = handler; } };
+      };
+      const context = {
+        $: jquery,
+        document: { addEventListener() {}, getElementById(id) {
+          elements[id] ||= { textContent: '', classList: { toggle() {} }, setAttribute() {} };
+          return elements[id];
+        } },
+        bootstrap: { Modal: { getOrCreateInstance: () => ({ show() {} }) } },
+      };
+      vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/script.js'), 'utf8'), context);
+      context.i18n = require('../config/i18n').dictionaries.en;
+      context.routes = { installed_crontab: '/installed', preview_crontab: '/intended' };
+      context.previewCrontab();
+      expect(requests[0].url).toBe('/installed');
+      requests[0].success({ content: '# installed', confirmed: false });
+      expect(elements['preview-crontab-status'].textContent).toBe('Scheduler reload not confirmed');
+      context.previewCrontab('intended');
+      context.previewCrontab();
+      requests[1].success('# stale intended');
+      expect(elements['preview-crontab-content'].textContent).toBe('');
+      requests[2].success({ content: '# installed again', confirmed: true });
+      expect(elements['preview-crontab-content'].textContent).toBe('# installed again');
+      context.previewCrontab();
+      requests[3].fail();
+      expect(elements['preview-crontab-content'].textContent).toBe('');
+      expect(elements['copy-crontab'].disabled).toBe(true);
+      expect(elements['preview-crontab-status'].textContent).toBe('The installed schedule could not be read.');
+    });
+  });
+
+  describe('Execution runtime migration', () => {
+    it('preserves legacy history and round-trips optional runtime metadata after reopening', () => {
+      const file = path.join(testDbPath, 'runtime-migration.db');
+      let datastore = new SqliteDatastore({ filename: file });
+      const run = { operationId: 'legacy-runtime', jobId: 'runtime-job', trigger: 'scheduled', status: 'completed', startedAt: 1, completedAt: 2 };
+      try {
+        datastore.createExecution(run);
+        datastore.database.exec('ALTER TABLE executions DROP COLUMN runtime_metadata');
+        datastore.close();
+        datastore = new SqliteDatastore({ filename: file });
+        expect(datastore.listExecutions(run.jobId, 10)[0].runtime).toBeNull();
+        const runtime = { timeoutMs: 0, version: '0.5.2', hostname: 'test-host', pid: 42, codeHash: 'b'.repeat(64) };
+        datastore.createExecution({ ...run, operationId: 'current-runtime', completedAt: 3, runtime });
+        datastore.close();
+        datastore = new SqliteDatastore({ filename: file });
+        expect(datastore.listExecutions(run.jobId, 10)[0].runtime).toEqual(runtime);
+        expect(datastore.listLatestExecutions()[0].runtime).toEqual(runtime);
+      } finally {
+        datastore.close();
+        fs.rmSync(file, { force: true });
+      }
     });
   });
 
@@ -711,6 +789,13 @@ describe('Crontab UI', () => {
   });
 
   describe('GET /preview_crontab', () => {
+    beforeAll(async () => {
+      await new Promise((resolve, reject) => crontab.create_new(
+        'preview-fixture', 'echo preview-fixture', '* * * * *', false, {}, {},
+        error => error ? reject(error) : resolve()
+      ));
+    });
+
     it('should return the crontab preview as plain text', async () => {
       const res = await request(app).get('/preview_crontab');
       expect(res.status).toBe(200);
@@ -737,6 +822,53 @@ describe('Crontab UI', () => {
       expect(lines.length).toBe(activeCount);
 
       await request(app).post('/start').send({ _id: match[1] });
+    });
+  });
+
+  describe('GET /installed_crontab', () => {
+    it('returns the installed schedule rather than regenerating a preview', async () => {
+      const installed = { content: '* * * * * COMMAND_TIMEOUT_MS=300000 old-runner\n', source: 'system', confirmed: true };
+      const isolatedApp = createApp({ readInstalledCrontab: callback => callback(null, installed) });
+      const response = await request(isolatedApp).get('/installed_crontab');
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.body).toEqual(installed);
+    });
+
+    it('reads the native scheduler through the bounded crontab reader', async () => {
+      const result = await new Promise((resolve, reject) => crontab.get_installed_crontab(
+        (error, value) => error ? reject(error) : resolve(value),
+        callback => callback(null, '# actual native schedule\n')
+      ));
+      expect(result).toEqual({ content: '# actual native schedule\n', source: 'system', confirmed: true });
+    });
+
+    it('only confirms a Docker schedule when the acknowledgement matches its contents', async () => {
+      const originalDocker = process.env.CRON_IN_DOCKER;
+      const originalUser = process.env.CRON_USER;
+      process.env.CRON_IN_DOCKER = 'true';
+      process.env.CRON_USER = 'installed-test';
+      const file = path.join(testDbPath, 'installed-test');
+      const stateFile = crontab.scheduler_reload_state_file(file);
+      const content = '# installed Docker schedule\n';
+      const read = () => new Promise((resolve, reject) => crontab.get_installed_crontab(
+        (error, value) => error ? reject(error) : resolve(value)
+      ));
+      try {
+        fs.writeFileSync(file, content);
+        expect(await read()).toEqual({ content, source: 'docker', confirmed: false });
+        fs.writeFileSync(stateFile, JSON.stringify({ digest: 'stale' }));
+        expect((await read()).confirmed).toBe(false);
+        fs.writeFileSync(stateFile, JSON.stringify({ digest: crypto.createHash('sha256').update(content).digest('hex') }));
+        expect((await read()).confirmed).toBe(true);
+      } finally {
+        if (originalDocker === undefined) delete process.env.CRON_IN_DOCKER;
+        else process.env.CRON_IN_DOCKER = originalDocker;
+        if (originalUser === undefined) delete process.env.CRON_USER;
+        else process.env.CRON_USER = originalUser;
+        fs.rmSync(file, { force: true });
+        fs.rmSync(stateFile, { force: true });
+      }
     });
   });
 
@@ -1202,6 +1334,7 @@ describe('Crontab publication', () => {
 
     expect(path.basename(publishedFile)).toBe('crontab');
     const publishedCrontab = fs.readFileSync(publishedFile, 'utf8');
+    expect(publishedCrontab).toContain(`CRON_DB_PATH='${path.resolve(testDbPath)}' COMMAND_TIMEOUT_MS=`);
     expect(publishedCrontab).toContain(`COMMAND_TIMEOUT_MS=${require('../config/limits').useCommandTimeoutMs()}`);
     expect(publishedCrontab).toContain(publishedJob._id);
     const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
@@ -1225,6 +1358,83 @@ describe('Crontab publication', () => {
       else process.env.CRON_USER = previousUser;
     }
   });
+
+  it.each([[false, '5000'], [true, '5000'], [false, '0']])('preserves a custom database path in a fresh runner, Docker=%s, timeout=%s', (docker, timeoutMs) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "crontab runner '$`%-"));
+    const projectRoot = path.resolve(__dirname, '..');
+    const runnerPath = path.join(projectRoot, 'bin', 'crontab-ui-runner.js');
+    const runtimeNames = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP']);
+    const runtimeEnvironment = Object.fromEntries(Object.entries(process.env)
+      .filter(([name]) => runtimeNames.has(name.toUpperCase())));
+    const guardPath = path.join(directory, 'runner-guard.js');
+    fs.writeFileSync(guardPath, `if (require('path').resolve(process.env.CRON_DB_PATH || '.') !== ${JSON.stringify(directory)}) throw new Error('Runner database path mismatch');`);
+    const publisherScript = `
+      const fs = require('fs');
+      const path = require('path');
+      const crontab = require(${JSON.stringify(path.join(projectRoot, 'crontab.js'))});
+      crontab.create_new('custom-database-runner', 'echo runner-db-path-ok', '* * * * *', false, {}, {}, (error, job) => {
+        if (error) throw error;
+        crontab.set_crontab({}, error => {
+          if (error) throw error;
+          const text = fs.readFileSync(path.join(crontab.db_folder, 'crontab-staging', ${JSON.stringify(docker ? 'node' : 'crontab')}), 'utf8');
+          console.log('PUBLISHED ' + JSON.stringify({ jobId: job._id, text, publisherPid: process.pid }));
+          crontab.close_db();
+        }, (_file, done) => done(null));
+      });
+    `;
+    try {
+      const publisher = spawnSync(process.execPath, ['-e', publisherScript], {
+        cwd: projectRoot,
+        env: {
+          ...runtimeEnvironment,
+          CRON_DB_PATH: path.relative(projectRoot, directory),
+          COMMAND_TIMEOUT_MS: timeoutMs,
+          ...(docker && { CRON_IN_DOCKER: 'true' }),
+        },
+        encoding: 'utf8', timeout: 10000,
+      });
+      expect(publisher.stderr).toBe('');
+      expect(publisher.status).toBe(0);
+      const published = JSON.parse(publisher.stdout.split(/\r?\n/)
+        .find(line => line.startsWith('PUBLISHED ')).slice('PUBLISHED '.length));
+      const quotedPath = "'" + directory.replace(/'/g, "'\\''") + "'";
+      const expectedPath = docker ? quotedPath : quotedPath.replace(/%/g, '\\%');
+      expect(published.text).toContain(`CRON_DB_PATH=${expectedPath} COMMAND_TIMEOUT_MS=${timeoutMs}`);
+      const runnerEnvironment = {
+        ...runtimeEnvironment,
+        NODE_OPTIONS: `--require=${JSON.stringify(guardPath)}`,
+      };
+      const command = published.text.trim().slice('* * * * * '.length);
+      const runner = process.platform === 'win32'
+        ? spawnSync(process.execPath, [runnerPath, published.jobId], {
+          cwd: os.tmpdir(), env: { ...runnerEnvironment, CRON_DB_PATH: directory, COMMAND_TIMEOUT_MS: timeoutMs },
+          encoding: 'utf8', timeout: 10000,
+        })
+        : spawnSync('/bin/sh', ['-c', docker ? command : command.replace(/\\%/g, '%')], {
+          cwd: os.tmpdir(), env: runnerEnvironment, encoding: 'utf8', timeout: 10000,
+        });
+      expect(runner.stderr).toBe('');
+      expect(runner.status).toBe(0);
+      const datastore = new SqliteDatastore({ filename: path.join(directory, 'crontab.db') });
+      try {
+        expect(datastore.listExecutions(published.jobId, 10)).toEqual([
+          expect.objectContaining({ trigger: 'scheduled', status: 'completed', exitCode: 0,
+            runtime: expect.objectContaining({ timeoutMs: Number(timeoutMs), version: require('../package.json').version,
+              hostname: os.hostname(), pid: expect.any(Number), codeHash: expect.stringMatching(/^[a-f0-9]{64}$/) }),
+          }),
+        ]);
+        expect(datastore.listExecutions(published.jobId, 10)[0].runtime.pid).not.toBe(published.publisherPid);
+        const audit = fs.readFileSync(path.join(directory, 'logs', 'operations.jsonl'), 'utf8')
+          .trim().split(/\r?\n/).map(line => JSON.parse(line));
+        const completed = audit.find(event => event.type === 'runjob' && event.status === 'completed');
+        expect(completed.runtime).toEqual(datastore.listExecutions(published.jobId, 10)[0].runtime);
+      } finally {
+        datastore.close();
+      }
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }, 25000);
 
   it('restores the environment and staged crontab when applying it fails', async () => {
     const stagedCrontab = path.join(testDbPath, 'crontab');
@@ -2882,6 +3092,7 @@ describe('Administrative data boundaries', () => {
     expect(page.text).not.toContain('>Backups<');
     expect((await viewer.get('/export')).status).toBe(403);
     expect((await viewer.get('/preview_crontab')).status).toBe(403);
+    expect((await viewer.get('/installed_crontab')).status).toBe(403);
     expect((await viewer.get('/restore?db=backup-2026-01-01.db')).status).toBe(403);
   });
 });

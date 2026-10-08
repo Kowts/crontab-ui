@@ -207,7 +207,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | --- | --- |
 | `NODE_ENV` | Use `production` for deployment; enables secure cookies and requires TLS or a trusted proxy. |
 | `HOST`, `PORT`, `BASE_URL` | HTTP listener and public prefix. Defaults: `127.0.0.1`, `8000`, no prefix. |
-| `CRON_DB_PATH` | Persistent directory for the SQLite database (`crontab.db`), backups, environment, audit log, and execution output. Default: `./crontabs`. |
+| `CRON_DB_PATH` | Persistent directory for the SQLite database (`crontab.db`), backups, environment, audit log, and execution output. Default: `./crontabs`. Published commands include the absolute directory so scheduled runners use the same database as the service. Restart the service and republish the crontab after changing it. |
 | `CRON_PATH` | Crontab staging directory. It must be accessible only to the application process and the isolated scheduler. Default: `$CRON_DB_PATH/crontab-staging`. |
 | `CRON_USER` | Scheduler account when `CRON_IN_DOCKER` is enabled. The image fixes this to `node`; do not set it to `root`. |
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Maximum wait for Supercronic to validate and acknowledge a published Docker schedule. Default: `10000`. |
@@ -252,6 +252,18 @@ Every manual or scheduled execution has a timeout, a combined output limit, and 
 Every completed execution, manual or scheduled, is recorded in the database with its trigger, outcome, exit code, signal, duration, and termination reason. A run that timed out, was cancelled, or was stopped by the output limit counts as a failure, because the command did not do its job. The history is diagnostic only: a failure to store a record is audited and never turns a completed run into a failed one, and reading the panel requires the same task access as reading that task's logs. The panel never returns the command or its output.
 
 ## Backups, recovery, and audit
+
+Administrators can use **Inspect crontab** to compare **Intended** local configuration
+with **Installed** scheduler contents. Inspection defaults to Installed. Native cron
+is read with bounded `crontab -l`; Docker reads the Supercronic file and only confirms
+reload when its digest matches the scheduler acknowledgement. A failed read does not
+fall back to the intended configuration.
+
+New execution records and audit events include the effective timeout, package
+version, host, process ID and SHA-256 of the executor source. The execution panel
+shows timeout and runner identity; a timeout of zero is shown as Unlimited. SQLite
+adds an optional metadata column transactionally on opening an existing database.
+Legacy records remain intact and show unavailable rather than inferred values.
 
 Before importing a database or restoring a backup, the application creates a backup and validates the candidate. Database imports default to **Merge**: existing tasks remain, exact duplicates are skipped, and same-name/different-content tasks are reported as conflicts without being overwritten. The review dialog shows the resulting counts before any write. **Replace all existing tasks** is available only as an explicit import mode and is destructive after the automatic backup. Recognized backups follow count- and age-based retention; retention failures are audited.
 
