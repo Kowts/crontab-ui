@@ -404,7 +404,19 @@ function trackManualRun(jobId, operationId) {
           : run.status === 'interrupted' ? tr('runInterrupted', { auditOperationId: auditOperationId })
           : tr('runFailed', { auditOperationId: auditOperationId });
       infoMessageBox(message, run.status === 'completed' || run.status === 'cancelled' ? tr('runComplete') : tr('error'));
-    }).fail(function(response) { if (button) button.disabled = false; if (cancelButton) cancelButton.remove(); handleOperationFailure(response); });
+    }).fail(function(response) {
+      if (button) button.disabled = false;
+      if (cancelButton) cancelButton.remove();
+      if (response && response.status === 404) {
+        // A execução manual já foi podada (retenção de 24h / máximo 10 concluídas)
+        // e não existe mais no datastore. Limpa o estado pendente silenciosamente
+        // em vez de apresentar um confuso "Execution not found" ao iniciar sessão.
+        // O histórico mantém-se disponível no painel de execuções.
+        try { sessionStorage.removeItem('crontab_ui_manual_run'); } catch (_error) { /* optional persistence */ }
+        return;
+      }
+      handleOperationFailure(response);
+    });
   };
   poll();
 }
