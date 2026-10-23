@@ -3197,6 +3197,27 @@ describe('Application bootstrap', () => {
     expect(events).toEqual(['recovery', 'server']);
   });
 
+  it('rejects startup as root in production', () => {
+    const events = [];
+    const context = {
+      require(name) {
+        if (name === './crontab') return { recoverManualRuns() { events.push('recovery'); } };
+        if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
+        if (name === './config/privileges') return { validateProductionPrivileges: () => { throw new Error('must not run as root'); } };
+        throw new Error('Unexpected bootstrap dependency');
+      },
+      process: { env: { NODE_ENV: 'production' }, getuid: () => 0, once() {} },
+    };
+    let threw = false;
+    try {
+      vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bootstrap.js'), 'utf8'), context);
+    } catch (error) {
+      threw = true;
+      expect(error.message).toContain('must not run as root');
+    }
+    expect(threw).toBe(true);
+  });
+
   it('creates isolated applications and exposes a closable HTTP server', async () => {
     const anotherApp = createApp();
     expect(anotherApp).not.toBe(app);

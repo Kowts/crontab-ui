@@ -2,6 +2,10 @@
 
 const { createApp, startServer } = require('./app');
 const crontab = require('./crontab');
+const { validateProductionPrivileges } = require('./config/privileges');
+
+// Rejeita configurações inseguras antes de expôr o serviço.
+validateProductionPrivileges({ nodeEnv: process.env.NODE_ENV });
 
 crontab.recoverManualRuns();
 const server = startServer(createApp());
