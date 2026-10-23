@@ -957,6 +957,20 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('GET /diagnostics', () => {
+    it('returns aggregated web and scheduler health diagnostics', async () => {
+      const res = await request(app).get('/diagnostics');
+      expect(res.status).toBe(200);
+      expect(res.headers['cache-control']).toContain('no-store');
+      expect(res.body.status).toBe('ok');
+      expect(res.body.version).toBe(require('../package.json').version);
+      expect(typeof res.body.hostname).toBe('string');
+      expect(Number.isInteger(res.body.pid)).toBe(true);
+      expect(typeof res.body.timestamp).toBe('string');
+      expect(res.body.scheduler).toBeDefined();
+    });
+  });
+
   describe('Input validation', () => {
     it('should reject an invalid cron schedule on job creation', async () => {
       const res = await request(app).post('/save').send({

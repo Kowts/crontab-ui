@@ -26,6 +26,7 @@ const routes = {
   stdout: '/stdout',
   preview_crontab: '/preview_crontab',
   installed_crontab: '/installed_crontab',
+  diagnostics: '/diagnostics',
   locale: '/locale',
   login: '/login',
   logout: '/logout',

@@ -6,6 +6,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
+const os = require('os');
 const mime = require('mime-types');
 const dayjs = require('dayjs');
 const relativeTime = require('dayjs/plugin/relativeTime');
@@ -35,6 +36,7 @@ const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
 const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
+const { configuredCronUser } = require('./scheduler');
 
 dayjs.extend(relativeTime);
 
@@ -77,6 +79,23 @@ app.get(`${baseUrl}/healthz`, (req, res) => {
   const address = req.socket.remoteAddress;
   if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) return res.sendStatus(404);
   return res.json({ status: 'ok' });
+});
+app.get(`${baseUrl}/diagnostics`, (req, res) => {
+  const address = req.socket.remoteAddress;
+  if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)) {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  res.set('Cache-Control', 'no-store');
+  return res.json({
+    status: 'ok',
+    version: packageJson.version,
+    hostname: app.get('host'),
+    pid: process.pid,
+    timestamp: new Date().toISOString(),
+    scheduler: {
+      running: true,
+    },
+  });
 });
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && !allowHttp && !req.secure) {
@@ -627,6 +646,36 @@ app.get(routes.installed_crontab, requireRole('admin'), (req, res, next) => {
   readInstalledCrontab((error, result) => {
     if (error) return next(error);
     return res.json(result);
+  });
+});
+
+// Aggregated health diagnostics: web application plus scheduler state.
+// No command output or secrets are exposed.
+app.get(routes.diagnostics, requireRole('viewer'), (req, res) => {
+  res.set('Cache-Control', 'no-store');
+
+  const cronPath = process.env.CRON_PATH || path.join(crontab.db_folder, 'crontab-staging');
+  const cronFile = path.join(cronPath, configuredCronUser());
+  const stateFile = crontab.scheduler_reload_state_file(cronFile);
+
+  let scheduler = null;
+  try {
+    scheduler = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      scheduler = { error: error.message };
+    }
+  }
+
+  return res.json({
+    status: 'ok',
+    version: packageJson.version,
+    hostname: os.hostname(),
+    pid: process.pid,
+    nodeEnv: process.env.NODE_ENV,
+    uptime: process.uptime(),
+    scheduler: scheduler || { status: 'no_reload_confirmed' },
+    timestamp: new Date().toISOString(),
   });
 });
 
