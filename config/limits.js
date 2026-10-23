@@ -36,4 +36,8 @@ function useCommandTimeoutMs() {
     ? 0 : useBoundedNumber('COMMAND_TIMEOUT_MS', 300000, 1000, 24 * 60 * 60 * 1000);
 }
 
-module.exports = { requireBoundedNumber, useBoundedNumber, useCommandTimeoutMs };
+function useResourceLimit(name, fallback, minimum, maximum) {
+  return useBoundedNumber(name, fallback, minimum, maximum);
+}
+
+module.exports = { requireBoundedNumber, useBoundedNumber, useCommandTimeoutMs, useResourceLimit };

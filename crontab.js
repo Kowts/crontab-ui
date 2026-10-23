@@ -8,7 +8,7 @@ const os = require('os');
 const { CronExpressionParser } = require('cron-parser');
 const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
-const { useBoundedNumber, useCommandTimeoutMs } = require('./config/limits');
+const { useBoundedNumber, useCommandTimeoutMs, useResourceLimit } = require('./config/limits');
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
@@ -32,6 +32,9 @@ const db = new SqliteDatastore({ filename: crontabDbFile });
 // non-numeric EXECUTION_HISTORY_PER_JOB reached SQLite as NULL, the retention query matched no
 // rows, and the whole execution history was deleted on the first run.
 const commandTimeoutMs = useCommandTimeoutMs();
+const commandMemoryLimitMb = useResourceLimit('COMMAND_MEMORY_LIMIT_MB', 0, 0, 1024 * 1024);
+const commandCpuSeconds = useResourceLimit('COMMAND_CPU_SECONDS', 0, 0, 86400);
+const commandMaxProcesses = useResourceLimit('COMMAND_MAX_PROCESSES', 0, 0, 100000);
 const executionRuntime = Object.freeze({
   timeoutMs: commandTimeoutMs,
   version: require('./package.json').version,
@@ -42,6 +45,16 @@ const executionRuntime = Object.freeze({
     .update(fs.readFileSync(path.join(__dirname, 'execution.js')))
     .update(fs.readFileSync(path.join(__dirname, 'bin', 'crontab-ui-runner.js')))
     .digest('hex'),
+  resourceLimits: Object.freeze({
+    memoryLimitMb: commandMemoryLimitMb,
+    cpuSeconds: commandCpuSeconds,
+    maxProcesses: commandMaxProcesses,
+  }),
+  identity: Object.freeze({
+    uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    gid: typeof process.getgid === 'function' ? process.getgid() : null,
+    username: os.userInfo().username || null,
+  }),
 });
 const commandMaxBuffer = useBoundedNumber('COMMAND_MAX_BUFFER', 1024 * 1024, 1024, 256 * 1024 * 1024);
 const commandKillGraceMs = useBoundedNumber('COMMAND_KILL_GRACE_MS', 5000, 0, 600000);
@@ -479,7 +492,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext, runtime: executionRuntime });
 
     const startedAt = Date.now();
-    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment }, (error, result) => {
+    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment, resourceLimits: { memoryLimitKb: commandMemoryLimitMb * 1024, cpuSeconds: commandCpuSeconds, maxProcesses: commandMaxProcesses } }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(res, result, operationId);
       // The execution is recorded before the notification decision, because the number of
@@ -491,7 +504,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
       if (output) deliverMail(res, operationId, result, failed);
       else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
-      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, error: error?.message, ...auditContext, runtime: executionRuntime });
+      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits, error: error?.message, ...auditContext, runtime: executionRuntime });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });
@@ -566,6 +579,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     const controller = execute(job.command, {
       timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
       env: jobEnvironment,
+      resourceLimits: { memoryLimitKb: commandMemoryLimitMb * 1024, cpuSeconds: commandCpuSeconds, maxProcesses: commandMaxProcesses },
     }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
@@ -574,7 +588,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       if (output) deliverMail(job, operationId, result, failed);
       else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
-      const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded };
+      const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
       manualRunControllers.delete(operationId);
       audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, runtime: executionRuntime });

@@ -1,6 +1,18 @@
 'use strict';
 
+const os = require('os');
 const { spawn } = require('child_process');
+
+function effectiveIdentity() {
+  const info = os.userInfo();
+  return Object.freeze({
+    uid: typeof process.getuid === 'function' ? process.getuid() : null,
+    gid: typeof process.getgid === 'function' ? process.getgid() : null,
+    username: info.username || null,
+    homedir: info.homedir || null,
+    shell: info.shell || null,
+  });
+}
 
 function terminate(child, signal) {
   if (process.platform !== 'win32' && child.pid) {
@@ -12,11 +24,31 @@ function terminate(child, signal) {
   child.kill(signal);
 }
 
-function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGraceMs = 5_000, onStart = null }, callback) {
+function buildResourceLimitPrefix(limits) {
+  if (process.platform === 'win32') return '';
+  const parts = [];
+  if (limits && Number.isFinite(limits.memoryLimitKb) && limits.memoryLimitKb > 0) {
+    parts.push(`ulimit -v ${Math.floor(limits.memoryLimitKb)};`);
+  }
+  if (limits && Number.isFinite(limits.cpuSeconds) && limits.cpuSeconds > 0) {
+    parts.push(`ulimit -t ${Math.floor(limits.cpuSeconds)};`);
+  }
+  if (limits && Number.isFinite(limits.maxProcesses) && limits.maxProcesses > 0) {
+    parts.push(`ulimit -u ${Math.floor(limits.maxProcesses)};`);
+  }
+  return parts.join(' ');
+}
+
+function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGraceMs = 5_000, onStart = null, resourceLimits = null }, callback) {
   const startedAt = Date.now();
+  const identity = effectiveIdentity();
+  const appliedLimits = resourceLimits ? Object.freeze({ ...resourceLimits }) : null;
+  const limitPrefix = buildResourceLimitPrefix(resourceLimits);
+  const wrappedCommand = limitPrefix ? `${limitPrefix} ${command}` : command;
+
   const child = process.platform === 'win32'
-    ? spawn(command, { shell: true, env, stdio: ['ignore', 'pipe', 'pipe'] })
-    : spawn(process.env.SHELL || '/bin/sh', ['-c', command], {
+    ? spawn(wrappedCommand, { shell: true, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    : spawn(process.env.SHELL || '/bin/sh', ['-c', wrappedCommand], {
     detached: process.platform !== 'win32',
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -54,7 +86,7 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
     settled = true;
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity, resourceLimits: appliedLimits });
   });
   child.on('close', (exitCode, signal) => {
     if (settled) return;
@@ -69,6 +101,8 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
       stdout: Buffer.concat(output.stdout),
       stderr: Buffer.concat(output.stderr),
       outputExceeded: output.exceeded,
+      identity,
+      resourceLimits: appliedLimits,
     };
     const error = terminationReason
       ? Object.assign(new Error(`Command terminated: ${terminationReason}`), { code: terminationReason, signal })
