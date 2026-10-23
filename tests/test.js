@@ -693,6 +693,15 @@ describe('Crontab UI', () => {
       crontab.shutdownManualRuns();
     });
 
+    it('does not throw when completing a manual run after the database is closed', () => {
+      const operationId = 'regression-test-operation';
+      // Simula SqliteDatastore com base de dados fechada (this.database === null),
+      // que ocorre após crontab.close_db() durante encerramento do serviço.
+      const closedDatastore = { database: null };
+      const bound = SqliteDatastore.prototype.completeManualRun.bind(closedDatastore);
+      expect(() => bound(operationId, 'completed', Date.now(), { exitCode: 0 })).not.toThrow();
+    });
+
     it('stores execution output in the managed log directory instead of CRON_PATH', async () => {
       const job = await new Promise((resolve, reject) => {
         crontab.create_new('managed-output', `"${process.execPath}" -e "process.stdout.write('managed-output')"`, '* * * * *', false, {}, {}, (error, created) => {
