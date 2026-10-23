@@ -3218,6 +3218,44 @@ describe('Application bootstrap', () => {
     expect(threw).toBe(true);
   });
 
+  it('rejects startup with overly open database file permissions in production', () => {
+    const context = {
+      require(name) {
+        if (name === './crontab') {
+          return {
+            db_folder: '/crontab-ui/crontabs',
+            log_folder: '/crontab-ui/crontabs/logs',
+            crontab_db_file: '/crontab-ui/crontabs/crontab.db',
+            recoverManualRuns() {},
+          };
+        }
+        if (name === './app') {
+          return { createApp: () => ({}), startServer() { return {}; } };
+        }
+        if (name === './config/privileges') {
+          return { validateProductionPrivileges() {} };
+        }
+        if (name === './config/file-permissions') {
+          return {
+            validateFilePermissions: () => {
+              throw new Error('Database file has overly open permissions');
+            },
+          };
+        }
+        throw new Error('Unexpected bootstrap dependency');
+      },
+      process: { env: { NODE_ENV: 'production' }, getuid: () => 1000, once() {} },
+    };
+    let threw = false;
+    try {
+      vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bootstrap.js'), 'utf8'), context);
+    } catch (error) {
+      threw = true;
+      expect(error.message).toContain('overly open permissions');
+    }
+    expect(threw).toBe(true);
+  });
+
   it('creates isolated applications and exposes a closable HTTP server', async () => {
     const anotherApp = createApp();
     expect(anotherApp).not.toBe(app);
