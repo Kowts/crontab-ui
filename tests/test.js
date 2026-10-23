@@ -1608,6 +1608,48 @@ describe('Bounded command execution', () => {
   });
 });
 
+describe('Process tree termination', () => {
+  function executeCommand(command, options) {
+    return new Promise((resolve) => execute(command, options, (error, result) => resolve({ error, result })));
+  }
+
+  it('terminates descendant processes when the parent is killed on timeout', async () => {
+    const markerFile = path.join(os.tmpdir(), `ptree-${process.pid}-${Date.now()}.txt`);
+    const markerPath = markerFile.replace(/\\/g, '/');
+    const command = `"${process.execPath}" -e "const{spawn}=require('child_process');const fs=require('fs');const c=spawn(process.execPath,['-e','setTimeout(()=>{},60000)'],{detached:true,stdio:'ignore'});fs.writeFileSync('${markerPath}',String(c.pid));setTimeout(()=>{},60000)"`;
+    const { error, result } = await executeCommand(command, { timeoutMs: 200, maxOutputBytes: 1024, killGraceMs: 50 });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('timeout');
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    let childPid;
+    try {
+      childPid = Number(fs.readFileSync(markerFile, 'utf8').trim());
+    } catch (_e) {
+      try { fs.unlinkSync(markerFile); } catch (_e2) { /* ignore */ }
+      return;
+    }
+    try { fs.unlinkSync(markerFile); } catch (_e) { /* ignore */ }
+
+    let alive = true;
+    try {
+      process.kill(childPid, 0);
+    } catch (_e) {
+      alive = false;
+    }
+    expect(alive).toBe(false);
+  }, 10_000);
+
+  it('escalates to SIGKILL when a child ignores SIGTERM', async () => {
+    if (process.platform === 'win32') return;
+    const command = `"${process.execPath}" -e "process.on('SIGTERM',()=>{});setTimeout(()=>{},60000)"`;
+    const { error, result } = await executeCommand(command, { timeoutMs: 100, maxOutputBytes: 1024, killGraceMs: 50 });
+    expect(error).toBeTruthy();
+    expect(result.terminationReason).toBe('timeout');
+  }, 10_000);
+});
+
 describe('POST /save job identifier validation', () => {
   let jobId;
 

@@ -1,7 +1,8 @@
 'use strict';
 
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
+const fs = require('fs');
 
 function effectiveIdentity() {
   const info = os.userInfo();
@@ -14,12 +15,55 @@ function effectiveIdentity() {
   });
 }
 
+function collectDescendantPids(rootPid) {
+  if (process.platform === 'win32') return [];
+  const descendants = [];
+  const queue = [rootPid];
+  const seen = new Set([rootPid]);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    try {
+      const entries = fs.readdirSync('/proc');
+      for (const entry of entries) {
+        if (!/^\d+$/.test(entry)) continue;
+        const pid = Number(entry);
+        if (seen.has(pid)) continue;
+        try {
+          const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+          // ppid is the 4th field (index 3 after splitting by space, but comm may contain spaces in parens)
+          const match = stat.match(/\)\s+(\S+)\s+(\d+)/);
+          if (match && Number(match[2]) === current) {
+            seen.add(pid);
+            descendants.push(pid);
+            queue.push(pid);
+          }
+        } catch (_error) { /* process may have exited */ }
+      }
+    } catch (_error) { /* /proc not available */ }
+  }
+  return descendants;
+}
+
 function terminate(child, signal) {
-  if (process.platform !== 'win32' && child.pid) {
+  if (process.platform === 'win32') {
+    try {
+      execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore' });
+      return;
+    } catch (_error) { /* fall through */ }
+    child.kill(signal);
+    return;
+  }
+  // Try process group first
+  if (child.pid) {
     try {
       process.kill(-child.pid, signal);
       return;
-    } catch (_error) { /* fall through */ }
+    } catch (_error) { /* fall through to individual killing */ }
+  }
+  // Fallback: kill descendants individually, then the child
+  const descendants = collectDescendantPids(child.pid);
+  for (const pid of descendants.reverse()) {
+    try { process.kill(pid, signal); } catch (_error) { /* already exited */ }
   }
   child.kill(signal);
 }
