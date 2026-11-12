@@ -21,6 +21,12 @@ services:
       ALLOW_HTTP: ${ALLOW_HTTP:-false}
     volumes:
       - crontab-data:/crontab-ui/crontabs
+    restart: unless-stopped
+    # Gives running tasks time to be cancelled before the container is killed.
+    stop_grace_period: 20s
+    pids_limit: ${CONTAINER_PIDS_LIMIT:-512}
+    mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
+    cpus: ${CONTAINER_CPUS:-2}
     security_opt:
       - no-new-privileges:true
     cap_drop:

@@ -3392,6 +3392,21 @@ describe('Application bootstrap', () => {
 });
 
 describe('Failure injection', () => {
+  it('pre-deploy check rejects an incomplete production configuration and accepts a valid one', () => {
+    const run = (env) => spawnSync(process.execPath, ['scripts/predeploy-check.js'], {
+      cwd: path.join(__dirname, '..'), encoding: 'utf8', env: { PATH: process.env.PATH, ...env },
+    });
+    const bad = run({ CSRF_SECRET: 'short' });
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toContain('BASIC_AUTH_USERS_JSON');
+    expect(bad.stderr).toContain('CSRF_SECRET');
+    const good = run({
+      BASIC_AUTH_USERS_JSON: '{"admin":"x"}', AUTHZ_ROLE_MAP_JSON: '{"admin":"admin"}',
+      CSRF_SECRET: 'a'.repeat(40), TRUSTED_PROXY: 'loopback',
+    });
+    expect(good.status).toBe(0);
+  });
+
   it('completes a task and audits the failure when its output directory is not writable', () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fault-logs-'));
     const data = path.join(base, 'data');
