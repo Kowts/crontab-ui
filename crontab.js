@@ -12,6 +12,7 @@ const { useBoundedNumber, useCommandTimeoutMs, useResourceLimit } = require('./c
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { EXECUTION_STATES, resolveTerminalState } = require('./config/execution-states');
 const { execute } = require('./execution');
+const { redact, searchAudit } = require('./lib/audit-log');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 const { buildTaskEnvironment } = require('./config/task-environment');
 const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
@@ -244,7 +245,7 @@ exports.get_crontab = (_id, callback) => {
 function audit(event) {
   try {
     rotateLog(auditFile);
-    const entry = `${JSON.stringify({ timestamp: new Date().toISOString(), ...event })}\n`;
+    const entry = `${JSON.stringify({ timestamp: new Date().toISOString(), ...redact(event) })}\n`;
     let writeError;
     for (let attempt = 0; attempt < auditWriteAttempts; attempt += 1) {
       try {
@@ -268,6 +269,11 @@ function audit(event) {
 }
 
 exports.audit = audit;
+
+exports.searchAudit = (filters, limit) => {
+  const rotated = Array.from({ length: logRotationCount }, (_, index) => `${auditFile}.${index + 1}`);
+  return searchAudit([auditFile, ...rotated], filters, limit);
+};
 
 exports.recoverManualRuns = () => {
   const recovered = db.recoverManualRuns(Date.now());

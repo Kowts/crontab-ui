@@ -288,7 +288,7 @@ Recovery procedure:
 
 Do not run the service as `root` to bypass permissions and do not use `--reset` as routine recovery: both can invalidate privilege separation or erase the active configuration. Correct volume permissions and restore a validated backup.
 
-`operations.jsonl` contains structured events with actor, role, outcome, duration, and correlation IDs. Commands are recorded as SHA-256 hashes. Export the log to centrally retained storage with restricted access and regularly test restores in a non-production instance.
+`operations.jsonl` contains structured events with actor, role, outcome, duration, and correlation IDs. Commands are recorded as SHA-256 hashes, and values under sensitive keys (password, token, secret, API key, authorization, cookie) and credentials inside URLs are masked before writing. Administrators can search the log, including rotated files, with `GET /audit?jobId=&type=&status=&trigger=&operationId=&from=&to=&limit=` (newest first, up to 500 records). Export the log to centrally retained storage with restricted access and regularly test restores in a non-production instance.
 
 Arbitrary hooks are not supported. For post-processing, use an explicit, reviewed, and auditable task.
 

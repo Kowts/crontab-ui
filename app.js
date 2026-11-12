@@ -715,6 +715,18 @@ app.get(routes.executions, requireRole('viewer'), validateIdParam, requireJobAcc
   });
 });
 
+// Audit search is administrator-only: records name actors and every job, not just the caller's.
+app.get(routes.audit, requireRole('admin'), (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const text = (name) => (typeof req.query[name] === 'string' ? req.query[name].slice(0, 100) : undefined);
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
+  const filters = {
+    jobId: text('jobId'), type: text('type'), status: text('status'), trigger: text('trigger'),
+    operationId: text('operationId'), from: text('from'), to: text('to'),
+  };
+  return res.json({ records: crontab.searchAudit(filters, limit) });
+});
+
 // error handler
 app.use(errorHandler);
   return app;

@@ -3391,6 +3391,32 @@ describe('Application bootstrap', () => {
   });
 });
 
+describe('Audit redaction and search', () => {
+  const { redact } = require('../lib/audit-log');
+
+  it('masks sensitive keys and URL credentials at any depth', () => {
+    expect(redact({ type: 'x', password: 'p', nested: { apiKey: 'k', note: 'ok' }, error: 'fail smtp://user:pw@host/x' }))
+      .toEqual({ type: 'x', password: '[REDACTED]', nested: { apiKey: '[REDACTED]', note: 'ok' }, error: 'fail smtp://[REDACTED]@host/x' });
+  });
+
+  it('never writes secrets to the audit log and finds records by filter', () => {
+    const marker = crypto.randomUUID();
+    crontab.audit({ type: 'redaction_probe', status: 'probe', jobId: marker, token: 'super-secret-value' });
+    expect(fs.readFileSync(crontab.audit_file, 'utf8')).not.toContain('super-secret-value');
+    const found = crontab.searchAudit({ jobId: marker, type: 'redaction_probe' }, 10);
+    expect(found).toEqual([expect.objectContaining({ jobId: marker, token: '[REDACTED]' })]);
+    expect(crontab.searchAudit({ jobId: marker, status: 'other' }, 10)).toEqual([]);
+  });
+
+  it('serves GET /audit with filters', async () => {
+    const marker = crypto.randomUUID();
+    crontab.audit({ type: 'redaction_probe', status: 'probe', jobId: marker });
+    const res = await request(app).get('/audit').query({ jobId: marker });
+    expect(res.status).toBe(200);
+    expect(res.body.records).toEqual([expect.objectContaining({ jobId: marker })]);
+  });
+});
+
 afterAll(() => {
   crontab.close_db();
   fs.rmSync(testDbPath, { recursive: true, force: true });

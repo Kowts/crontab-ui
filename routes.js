@@ -23,6 +23,7 @@ const routes = {
   import_crontab: '/import_crontab',
   logger: '/logger',
   executions: '/executions',
+  audit: '/audit',
   stdout: '/stdout',
   preview_crontab: '/preview_crontab',
   installed_crontab: '/installed_crontab',
