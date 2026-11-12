@@ -1,5 +1,41 @@
 # Release notes
 
+## 0.6.0 (em preparação)
+
+### Execução e estados
+
+- Estados finais explícitos: `completed`, `failed`, `timeout`, `cancelled`, `interrupted` e
+  `output_limit`. Timeouts e limites de output deixam de ser gravados como `failed`;
+  relatórios externos que filtram por estado devem ser ajustados.
+- A conclusão de uma execução manual é idempotente e só transita a partir de `running`.
+- `MANUAL_RUN_CONCURRENCY=forbid` rejeita com 409 uma segunda execução manual da mesma tarefa.
+- Recusa de arranque como root ou com permissões abertas em produção; limites de recursos
+  por tarefa e terminação da árvore de processos.
+
+### Backups e auditoria
+
+- Cada backup é verificado com `PRAGMA integrity_check` antes de ser publicado.
+- `BACKUP_EXTERNAL_DIR` guarda uma segunda cópia fora do volume de dados.
+- Auditoria com máscara de segredos e credenciais em URLs e `GET /audit` (administradores).
+
+### Deployment e releases
+
+- Workflow de release por tag `vX.Y.Z` com imagem versionada, SBOM, proveniência e Trivy;
+  requer o ambiente GitHub `production`. Actions fixadas por SHA.
+- `/diagnostics` expõe `commit` e `image`. `npm run predeploy` valida a configuração.
+- Compose com política de reinício, período de paragem e limites de CPU, memória e PIDs.
+- Novo guia [OPERATIONS.md](OPERATIONS.md): actualização, rollback, recuperação, diagnóstico.
+
+### Migração
+
+Sem migração manual de dados. Executar como utilizador não-root e com directórios `700` e
+ficheiros `600`. Após actualizar, republicar a agenda.
+
+### Por validar
+
+Rollback entre releases, restauro numa instalação limpa e o workflow de release ainda não
+foram exercitados num ambiente com Docker/GitHub.
+
 ## 0.5.3
 
 ### Correcção de segurança
