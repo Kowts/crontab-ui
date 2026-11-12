@@ -80,6 +80,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" sbom.spdx.json \
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" sbom.spdx.json $prerelease \
             --title "${GITHUB_REF_NAME}" \
             --notes "Image: ghcr.io/${GITHUB_REPOSITORY}@${DIGEST}. See CHANGELOG.md and docs/RELEASE_NOTES.md. Roll back by deploying a previous tag or digest."
