@@ -231,6 +231,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `LOG_MAX_BYTES`, `LOG_ROTATION_COUNT`, `LOG_RETENTION_DAYS` | Tamanho, rotação e retenção de logs. Predefinições: `10485760`, `5`, `30`. |
 | `EXECUTION_HISTORY_PER_JOB` | Registos de execução guardados por tarefa, para além de `LOG_RETENTION_DAYS`. Predefinição: `200`. |
 | `BACKUP_RETENTION_COUNT`, `BACKUP_RETENTION_DAYS` | Número e idade máximos de backups. Predefinições: `30`, `90`. |
+| `BACKUP_EXTERNAL_DIR` | Diretório opcional (idealmente noutro volume) que recebe uma cópia de cada backup, limitado a `BACKUP_RETENTION_COUNT`. Cada backup é verificado quanto à integridade antes de publicado; uma falha na cópia externa é auditada e não faz falhar o backup. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limites da leitura `crontab -l`. Predefinições: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Variáveis geridas pela interface, revistas e separadas por vírgulas, passadas aos processos de tarefas. Predefinição: `PATH,LANG,LC_ALL,TZ,MAILTO`. Segredos do serviço e variáveis inseguras de carregamento são sempre recusados. |
 | `ALLOW_OPERATOR_TASK_EXECUTION` | Permite aos operadores criar, alterar e executar comandos arbitrários. Predefinição: `false`. Defina apenas após aceitar que um operador é um papel altamente privilegiado sem isolamento de processo/sistema de ficheiros. |

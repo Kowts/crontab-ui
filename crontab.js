@@ -10,6 +10,7 @@ const cronstrue = require('cronstrue/i18n');
 const { getProfile } = require('./config/mail-profiles');
 const { useBoundedNumber, useCommandTimeoutMs, useResourceLimit } = require('./config/limits');
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
+const { EXECUTION_STATES, resolveTerminalState } = require('./config/execution-states');
 const { execute } = require('./execution');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 const { buildTaskEnvironment } = require('./config/task-environment');
@@ -58,11 +59,13 @@ const executionRuntime = Object.freeze({
 });
 const commandMaxBuffer = useBoundedNumber('COMMAND_MAX_BUFFER', 1024 * 1024, 1024, 256 * 1024 * 1024);
 const commandKillGraceMs = useBoundedNumber('COMMAND_KILL_GRACE_MS', 5000, 0, 600000);
+const manualRunConcurrency = process.env.MANUAL_RUN_CONCURRENCY === 'forbid' ? 'forbid' : 'allow';
 const maxLogBytes = useBoundedNumber('LOG_MAX_BYTES', 10 * 1024 * 1024, 1024, 4 * 1024 * 1024 * 1024);
 const logRotationCount = useBoundedNumber('LOG_ROTATION_COUNT', 5, 0, 100);
 const logRetentionDays = useBoundedNumber('LOG_RETENTION_DAYS', 30, 1, 3650);
 const backupRetentionCount = useBoundedNumber('BACKUP_RETENTION_COUNT', 30, 1, 10_000);
 const backupRetentionDays = useBoundedNumber('BACKUP_RETENTION_DAYS', 90, 1, 3650);
+const backupExternalDir = process.env.BACKUP_EXTERNAL_DIR ? path.resolve(process.env.BACKUP_EXTERNAL_DIR) : '';
 const systemCrontabImportTimeoutMs = useBoundedNumber('SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS', 30000, 1000, 10 * 60 * 1000);
 const systemCrontabImportMaxBuffer = useBoundedNumber('SYSTEM_CRONTAB_IMPORT_MAX_BUFFER', 256 * 1024, 1024, 64 * 1024 * 1024);
 const executionHistoryPerJob = useBoundedNumber('EXECUTION_HISTORY_PER_JOB', 200, 1, 10_000);
@@ -499,7 +502,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
       // consecutive failures is what that decision depends on.
       recordExecution({
         job: res, operationId, trigger: 'scheduled', startedAt,
-        status: failed ? 'failed' : 'completed', result,
+        status: resolveTerminalState(error, result), result,
       });
       if (output) deliverMail(res, operationId, result, failed);
       else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
@@ -565,8 +568,11 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     const job = docs[0];
     const operationId = crypto.randomUUID();
     const actor = auditContext.actor || 'local';
+    if (manualRunConcurrency === 'forbid' && db.findActiveManualRun(_id)) {
+      return callback(Object.assign(new Error('This task already has an active manual execution'), { statusCode: 409 }));
+    }
     try {
-      db.createManualRun({ operationId, jobId: _id, actor, status: 'running', startedAt: Date.now() });
+      db.createManualRun({ operationId, jobId: _id, actor, status: EXECUTION_STATES.RUNNING, startedAt: Date.now() });
     } catch (error) {
       if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
         return callback(Object.assign(new Error('A manual execution is already active for this user'), { statusCode: 409 }));
@@ -583,7 +589,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
     }, (error, result) => {
       const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
-      const status = error ? (result.terminationReason === 'cancelled' ? 'cancelled' : 'failed') : 'completed';
+      const status = resolveTerminalState(error, result);
       recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result });
       if (output) deliverMail(job, operationId, result, failed);
       else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
@@ -601,7 +607,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
 exports.cancelManualRun = (operationId, auditContext = {}) => {
   const run = exports.getManualRun(operationId);
   const controller = manualRunControllers.get(operationId);
-  if (!run || run.status !== 'running' || !controller) return null;
+  if (!run || run.status !== EXECUTION_STATES.RUNNING || !controller) return null;
   controller.cancel();
   audit({ operationId, type: 'manual_run', jobId: run.jobId, status: 'cancellation_requested', ...auditContext });
   return exports.getManualRun(operationId);
@@ -731,6 +737,26 @@ function writeAtomicFile(destination, contents, callback) {
   });
 }
 
+// A second copy outside the main data volume survives the loss of that volume. A failure here is
+// audited but never fails the backup, which already exists locally.
+function copyBackupExternally(backupFile) {
+  if (!backupExternalDir) return;
+  const name = path.basename(backupFile);
+  const temporary = path.join(backupExternalDir, `.${name}.tmp`);
+  try {
+    fs.mkdirSync(backupExternalDir, { recursive: true, mode: 0o700 });
+    fs.copyFileSync(backupFile, temporary);
+    fs.renameSync(temporary, path.join(backupExternalDir, name));
+    const kept = fs.readdirSync(backupExternalDir)
+      .filter((file) => /^backup-.*\.db$/.test(file)).sort().reverse();
+    for (const stale of kept.slice(backupRetentionCount)) fs.unlinkSync(path.join(backupExternalDir, stale));
+    audit({ type: 'backup_external', status: 'completed', backup: name });
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    audit({ type: 'backup_external', status: 'failed', backup: name, error: error.message });
+  }
+}
+
 function backupDatabase(callback) {
   setImmediate(() => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -740,6 +766,7 @@ function backupDatabase(callback) {
       fs.mkdirSync(dbFolder, { recursive: true, mode: 0o700 });
       db.snapshotTo(temporary);
       fs.renameSync(temporary, dest);
+      copyBackupExternally(dest);
       applyRetention();
       callback(null, path.basename(dest));
     } catch (error) {

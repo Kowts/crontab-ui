@@ -282,6 +282,44 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Execution state machine', () => {
+    const { isValidTransition, resolveTerminalState } = require('../config/execution-states');
+
+    it('allows only forward transitions and never leaves a terminal state', () => {
+      expect(isValidTransition('pending', 'running')).toBe(true);
+      expect(isValidTransition('running', 'timeout')).toBe(true);
+      expect(isValidTransition('completed', 'failed')).toBe(false);
+      expect(isValidTransition('interrupted', 'completed')).toBe(false);
+      expect(isValidTransition('running', 'bogus')).toBe(false);
+    });
+
+    it('maps termination reasons to distinct terminal states', () => {
+      expect(resolveTerminalState(null, { exitCode: 0 })).toBe('completed');
+      expect(resolveTerminalState(new Error('x'), { exitCode: 1 })).toBe('failed');
+      expect(resolveTerminalState(new Error('x'), { terminationReason: 'timeout' })).toBe('timeout');
+      expect(resolveTerminalState(new Error('x'), { terminationReason: 'cancelled' })).toBe('cancelled');
+    });
+
+    it('completes a manual run once and does not overwrite an interrupted run', () => {
+      const store = new SqliteDatastore({ filename: path.join(testDbPath, `states-${crypto.randomUUID()}.db`) });
+      try {
+        store.createManualRun({ operationId: 'a', jobId: 'job', actor: 'u1', status: 'running', startedAt: 1 });
+        expect(store.findActiveManualRun('job')).toBe('a');
+        expect(store.completeManualRun('a', 'timeout', 2, {})).toBe(true);
+        expect(store.completeManualRun('a', 'completed', 3, {})).toBe(false);
+        expect(store.getManualRun('a').status).toBe('timeout');
+        expect(store.findActiveManualRun('job')).toBeNull();
+
+        store.createManualRun({ operationId: 'b', jobId: 'job', actor: 'u1', status: 'running', startedAt: 4 });
+        expect(store.recoverManualRuns(5)).toBe(1);
+        expect(store.completeManualRun('b', 'completed', 6, {})).toBe(false);
+        expect(store.getManualRun('b').status).toBe('interrupted');
+      } finally {
+        store.close();
+      }
+    });
+  });
+
   describe('SQLite primary-key operations', () => {
     it('finds, updates and removes targeted job ids without changing other documents', async () => {
       const filename = path.join(testDbPath, `primary-key-${crypto.randomUUID()}.db`);
@@ -2552,6 +2590,24 @@ describe('Operational audit trail', () => {
 });
 
 describe('Transactional backup operations', () => {
+  it('verifies backup integrity and copies it to the external directory when configured', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-external-'));
+    const external = path.join(base, 'external');
+    const script = "const c=require('./crontab');c.backup((e,n)=>{console.log(JSON.stringify({e:e&&e.message,n}));c.close_db&&c.close_db();});";
+    try {
+      const run = spawnSync(process.execPath, ['-e', script], {
+        cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 20000,
+        env: { ...process.env, CRON_DB_PATH: path.join(base, 'data'), BACKUP_EXTERNAL_DIR: external },
+      });
+      const result = JSON.parse(run.stdout.trim().split('\n').pop());
+      expect(result.e).toBeFalsy();
+      expect(fs.readdirSync(external)).toEqual([result.n]);
+      expect(isSqliteFile(path.join(external, result.n))).toBe(true);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('serializes concurrent backup attempts through the database lock', async () => {
     const backup = () => new Promise((resolve) => crontab.backup((error, name) => resolve({ error, name })));
     const first = backup();
@@ -3245,9 +3301,11 @@ describe('Application bootstrap', () => {
       require(name) {
         if (name === './crontab') return { recoverManualRuns() { events.push('recovery'); } };
         if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
+        if (name === './config/privileges') return { validateProductionPrivileges() {} };
+        if (name === './config/file-permissions') return { validateFilePermissions() {} };
         throw new Error('Unexpected bootstrap dependency');
       },
-      process: { once() {} },
+      process: { env: {}, once() {} },
     };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bootstrap.js'), 'utf8'), context);
     expect(events).toEqual(['recovery', 'server']);
@@ -3260,6 +3318,7 @@ describe('Application bootstrap', () => {
         if (name === './crontab') return { recoverManualRuns() { events.push('recovery'); } };
         if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
         if (name === './config/privileges') return { validateProductionPrivileges: () => { throw new Error('must not run as root'); } };
+        if (name === './config/file-permissions') return { validateFilePermissions() {} };
         throw new Error('Unexpected bootstrap dependency');
       },
       process: { env: { NODE_ENV: 'production' }, getuid: () => 0, once() {} },
