@@ -1006,7 +1006,24 @@ describe('Crontab UI', () => {
       expect(typeof res.body.hostname).toBe('string');
       expect(Number.isInteger(res.body.pid)).toBe(true);
       expect(typeof res.body.timestamp).toBe('string');
-      expect(res.body.scheduler).toBeDefined();
+      expect(res.body.scheduler).toMatchObject({ mode: 'native', running: null, monitored: false });
+      expect(res.body.web).toEqual({ status: 'ok' });
+    });
+
+    it('reports the scheduler separately from the web process', () => {
+      const { schedulerHealth } = require('../lib/scheduler-health');
+      const proc = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-proc-'));
+      try {
+        fs.mkdirSync(path.join(proc, '42'));
+        fs.writeFileSync(path.join(proc, '42', 'cmdline'), '/usr/bin/supercronic\0-quiet\0/etc/crontabs/node');
+        expect(schedulerHealth({ inDocker: true, procRoot: proc }).running).toBe(true);
+        fs.rmSync(path.join(proc, '42'), { recursive: true });
+        const stopped = schedulerHealth({ inDocker: true, procRoot: proc, readReloadState: () => ({ digest: 'x' }) });
+        expect(stopped).toMatchObject({ mode: 'docker', running: false, lastReload: { digest: 'x' } });
+        expect(schedulerHealth({ inDocker: true, procRoot: path.join(proc, 'missing') }).running).toBeNull();
+      } finally {
+        fs.rmSync(proc, { recursive: true, force: true });
+      }
     });
   });
 

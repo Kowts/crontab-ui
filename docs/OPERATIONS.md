@@ -58,7 +58,7 @@ Older versions display them as failures; no schema change is required.
 | Symptom | Check |
 | --- | --- |
 | Service not starting | Container logs: privilege, permission or transport validation errors name the cause |
-| Task did not run | `GET /diagnostics` (loopback), then the installed vs intended schedule in the UI; republish if different |
+| Task did not run | `GET /diagnostics` (loopback, no auth): `scheduler.running` is `false` when Supercronic is down (`status: degraded`; `null` for native cron, which is not observable). Then compare installed vs intended schedule in the UI and republish if different |
 | Task fails or stops | Execution history status (`timeout`, `output_limit`, `cancelled`, `interrupted`) and `GET /audit?jobId=<id>` |
 | Output missing | Audit event `execution_output` with `status=failed` means the log directory was not writable |
 | Email not sent | Audit events for notification; SMTP failures never change the task result |
