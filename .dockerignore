@@ -9,5 +9,4 @@ tests/
 docs/
 AGENTS.md
 .playwright-cli/
-crontabs/*.db
-crontabs/logs/*.log
+crontabs/

@@ -33,7 +33,7 @@ LABEL description="Crontab-UI docker"
 
 COPY --from=build /crontab-ui/node_modules ./node_modules
 COPY --chown=node:node . .
-RUN mkdir -p /crontab-ui/crontabs/logs && chown -R node:node /crontab-ui/crontabs
+RUN mkdir -p /crontab-ui/crontabs/logs && chown -R node:node /crontab-ui/crontabs && chmod -R go-rwx /crontab-ui/crontabs
 
 ENV   HOST=0.0.0.0
 ENV   PORT=8000
@@ -56,4 +56,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -fsS http://localhost:${PORT}/healthz || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["supervisord", "-c", "/crontab-ui/supervisord.conf"]
+# Volumes created by earlier releases keep open permissions; tighten them before the services
+# start, because production start-up refuses data that group/others can access. Best effort: the
+# hardened container drops CAP_FOWNER, and the application then reports any remaining problem.
+CMD ["sh", "-c", "chmod -R go-rwx /crontab-ui/crontabs 2>/dev/null; exec supervisord -c /crontab-ui/supervisord.conf"]
