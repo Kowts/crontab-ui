@@ -86,5 +86,6 @@ Always quote the `operationId` from the UI error when searching the audit.
 
 ## Manually validated scenarios
 
-Not automated: SQLite lock contention, SMTP unavailable, restore into a clean installation,
-release rollback. Run them in a non-production instance before each minor release.
+Automated: unwritable output directory, SQLite lock held by another process, mailer failing
+to start. Not automated (run in a non-production instance before each minor release): SMTP
+server rejecting delivery, restore into a clean installation, release rollback.

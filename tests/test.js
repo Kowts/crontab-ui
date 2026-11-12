@@ -3392,6 +3392,36 @@ describe('Application bootstrap', () => {
 });
 
 describe('Failure injection', () => {
+  it('waits out a short SQLite lock held by another process and still records the run', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fault-lock-'));
+    const root = path.join(__dirname, '..');
+    const env = { ...process.env, CRON_DB_PATH: base };
+    const setup = spawnSync(process.execPath, ['-e', `
+      const c = require('./crontab');
+      c.create_new('locked', 'echo ok', '* * * * *', false, {}, {}, (e, job) => { console.log('ID=' + job._id); c.close_db(); });`],
+    { cwd: root, encoding: 'utf8', env });
+    const id = /ID=(\S+)/.exec(setup.stdout)[1];
+    const locker = spawn(process.execPath, ['-e', `
+      const Database = require('better-sqlite3');
+      const db = new Database(require('path').join(process.env.CRON_DB_PATH, 'crontab.db'));
+      db.exec('BEGIN EXCLUSIVE'); console.log('locked');
+      setTimeout(() => { db.exec('COMMIT'); db.close(); }, 1500);`], { cwd: root, env });
+    try {
+      await new Promise((resolve) => locker.stdout.once('data', resolve));
+      const run = spawnSync(process.execPath, ['-e', `
+        const c = require('./crontab');
+        c.runjob(${JSON.stringify(id)}, {}, (error, result) => {
+          console.log('RESULT=' + JSON.stringify({ failed: Boolean(error), exitCode: result && result.exitCode }));
+          c.close_db();
+        });`], { cwd: root, encoding: 'utf8', timeout: 30000, env });
+      expect(run.stdout).toContain('RESULT={"failed":false,"exitCode":0}');
+      expect(run.stderr).not.toContain('Unable to record execution history');
+    } finally {
+      locker.kill();
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('pre-deploy check rejects an incomplete production configuration and accepts a valid one', () => {
     const run = (env) => spawnSync(process.execPath, ['scripts/predeploy-check.js'], {
       cwd: path.join(__dirname, '..'), encoding: 'utf8', env: { PATH: process.env.PATH, ...env },
