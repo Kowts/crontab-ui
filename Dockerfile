@@ -41,6 +41,15 @@ ENV   CRON_IN_DOCKER=true
 ENV   CRON_USER=node
 ENV   NODE_ENV=production
 
+# Build identity, reported by /diagnostics so a running instance maps to an exact source and image.
+ARG   GIT_COMMIT=unknown
+ARG   IMAGE_VERSION=unknown
+ENV   GIT_COMMIT=${GIT_COMMIT}
+ENV   IMAGE_VERSION=${IMAGE_VERSION}
+LABEL org.opencontainers.image.revision=${GIT_COMMIT}
+LABEL org.opencontainers.image.version=${IMAGE_VERSION}
+LABEL org.opencontainers.image.source="https://github.com/Kowts/crontab-ui"
+
 EXPOSE $PORT
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

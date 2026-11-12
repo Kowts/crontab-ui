@@ -89,6 +89,8 @@ app.get(`${baseUrl}/diagnostics`, (req, res) => {
   return res.json({
     status: 'ok',
     version: packageJson.version,
+    commit: process.env.GIT_COMMIT || 'unknown',
+    image: process.env.IMAGE_VERSION || 'unknown',
     hostname: app.get('host'),
     pid: process.pid,
     timestamp: new Date().toISOString(),
@@ -670,6 +672,8 @@ app.get(routes.diagnostics, requireRole('viewer'), (req, res) => {
   return res.json({
     status: 'ok',
     version: packageJson.version,
+    commit: process.env.GIT_COMMIT || 'unknown',
+    image: process.env.IMAGE_VERSION || 'unknown',
     hostname: os.hostname(),
     pid: process.pid,
     nodeEnv: process.env.NODE_ENV,

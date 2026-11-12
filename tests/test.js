@@ -1002,6 +1002,7 @@ describe('Crontab UI', () => {
       expect(res.headers['cache-control']).toContain('no-store');
       expect(res.body.status).toBe('ok');
       expect(res.body.version).toBe(require('../package.json').version);
+      expect(res.body).toMatchObject({ commit: expect.any(String), image: expect.any(String) });
       expect(typeof res.body.hostname).toBe('string');
       expect(Number.isInteger(res.body.pid)).toBe(true);
       expect(typeof res.body.timestamp).toBe('string');
