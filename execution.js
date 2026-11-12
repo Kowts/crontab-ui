@@ -53,19 +53,20 @@ function terminate(child, signal) {
     child.kill(signal);
     return;
   }
-  // Try process group first
+  // Descendants are collected before signalling: they are re-parented once the parent dies, and
+  // detached ones are outside the process group.
+  const descendants = collectDescendantPids(child.pid);
+  let groupSignalled = false;
   if (child.pid) {
     try {
       process.kill(-child.pid, signal);
-      return;
+      groupSignalled = true;
     } catch (_error) { /* fall through to individual killing */ }
   }
-  // Fallback: kill descendants individually, then the child
-  const descendants = collectDescendantPids(child.pid);
   for (const pid of descendants.reverse()) {
     try { process.kill(pid, signal); } catch (_error) { /* already exited */ }
   }
-  child.kill(signal);
+  if (!groupSignalled) child.kill(signal);
 }
 
 function buildResourceLimitPrefix(limits) {
