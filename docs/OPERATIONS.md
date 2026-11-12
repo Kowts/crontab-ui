@@ -87,5 +87,11 @@ Always quote the `operationId` from the UI error when searching the audit.
 ## Manually validated scenarios
 
 Automated: unwritable output directory, SQLite lock held by another process, mailer failing
-to start. Not automated (run in a non-production instance before each minor release): SMTP
-server rejecting delivery, restore into a clean installation, release rollback.
+to start, restore of a backup into a clean volume (`npm run test:docker-recovery`, run in CI)
+and rollback of the data volume to the previous release image (set `RECOVERY_OLD_IMAGE` to a
+built image of the previous tag). Not automated (run in a non-production instance before each
+minor release): SMTP server rejecting delivery.
+
+A new Docker volume is owned by root unless it is populated from the image: `chown node:node`
+the volume root before copying a backup into it. The image tightens permissions of existing
+volumes (`go-rwx`) at start-up, as production start-up refuses open permissions.

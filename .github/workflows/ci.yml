@@ -86,3 +86,6 @@ jobs:
 
       - name: Publish and execute a scheduled task as node
         run: npm run test:docker-scheduler
+
+      - name: Restore a backup into a clean volume and start the service
+        run: npm run test:docker-recovery

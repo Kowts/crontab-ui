@@ -33,8 +33,15 @@ ficheiros `600`. Após actualizar, republicar a agenda.
 
 ### Por validar
 
-Rollback entre releases, restauro numa instalação limpa e o workflow de release ainda não
-foram exercitados num ambiente com Docker/GitHub.
+O workflow de release ainda não foi exercitado no GitHub. Rollback (0.5.2) e restauro numa
+instalação limpa foram validados com imagens Docker reais.
+
+### Correcções encontradas na validação Docker
+
+- A imagem incluía dados locais de `crontabs/` do contexto de build; `.dockerignore` exclui-os.
+- Em Docker, o directório de dados e a base SQLite ficavam com permissões abertas e a
+  validação de produção impedia o arranque. A base é criada com modo `0600` e a imagem
+  restringe volumes existentes no arranque.
 
 ## 0.5.3
 

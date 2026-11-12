@@ -26,6 +26,12 @@ All notable changes to this project are documented here. The format follows
 ### Security
 - GitHub Actions are pinned by commit SHA.
 
+### Fixed
+- Docker image no longer embeds local `crontabs/` data from the build context.
+- SQLite database is created owner-only (`0600`) and the image restricts data permissions at
+  start-up, so the production permission check no longer blocks the Docker deployment.
+- `npm run test:docker-recovery`: restore into a clean volume and rollback verification.
+
 ### Changed
 - Timeouts and output limits are now stored as `timeout` and `output_limit` instead of `failed`.
 

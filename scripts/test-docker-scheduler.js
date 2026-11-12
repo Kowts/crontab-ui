@@ -99,7 +99,7 @@ try {
   assert.ok(results.installed.content.includes(`CRON_DB_PATH='${databasePath}' COMMAND_TIMEOUT_MS=5000`));
   assert.equal(results.success.status, 'completed');
   assert.equal(results.success.exitCode, 0);
-  assert.equal(results.timeout.status, 'failed');
+  assert.equal(results.timeout.status, 'timeout');
   assert.equal(results.timeout.terminationReason, 'timeout');
   assert.equal(results.timeout.signal, 'SIGTERM');
   assert.ok(results.timeout.durationMs >= 5000 && results.timeout.durationMs < 15000);
