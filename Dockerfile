@@ -14,7 +14,8 @@ RUN   mkdir -p "$CRON_PATH" \
       && chmod 0700 "$CRON_PATH" \
       && chmod 0600 "$CRON_PATH/node"
 
-RUN   apk --no-cache add \
+RUN   apk --no-cache upgrade \
+      && apk --no-cache add \
       curl \
       supercronic \
       supervisor \
