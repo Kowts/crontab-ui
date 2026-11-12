@@ -97,3 +97,47 @@ tasks (the latter two depend on the host; verify with a size-limited volume and 
 A new Docker volume is owned by root unless it is populated from the image: `chown node:node`
 the volume root before copying a backup into it. The image tightens permissions of existing
 volumes (`go-rwx`) at start-up, as production start-up refuses open permissions.
+
+## Read-only root filesystem (evaluated, not adopted)
+
+`read_only: true` was tried with tmpfs mounts for `/tmp`, `/var/log` and `/etc/crontabs`.
+It is not adopted in 0.6.0 for two reasons:
+
+- Supervisor writes `supervisord.log` under `/crontab-ui` by default, so it needs `logfile` and
+  `pidfile` pointed at writable paths.
+- A tmpfs on `/etc/crontabs` hides the schedule file created in the image and loses the
+  published schedule on every restart, while the database still marks tasks as published. A
+  safe adoption needs the schedule file to live on the data volume.
+
+Until then the container keeps `cap_drop: ALL`, `no-new-privileges`, an unprivileged user,
+limited resources and a `noexec` tmpfs on `/tmp`.
+
+## Scheduling behaviour and examples
+
+- Scheduled runs use Supercronic with default flags: a task is not started again while its
+  previous run is still going. Manual runs follow `MANUAL_RUN_CONCURRENCY` (`allow` or `forbid`).
+- Each run is bounded by `COMMAND_TIMEOUT_MS` (`0` disables the timeout) and ends as
+  `completed`, `failed`, `timeout`, `cancelled`, `output_limit` or `interrupted`.
+- After `docker restart` the published schedule file survives (container filesystem); after
+  recreating the container it is lost, so publish again. Verify with `GET /diagnostics`
+  (`scheduler.running`). Manual runs left running are marked `interrupted`.
+
+Examples (schedule / command):
+
+| Purpose | Schedule | Command |
+| --- | --- | --- |
+| Nightly cleanup | `0 3 * * *` | `find /data/tmp -type f -mtime +7 -delete` |
+| Health ping every 5 minutes | `*/5 * * * *` | `curl -fsS https://example.org/health` |
+| Weekly report | `0 8 * * 1` | `node /opt/jobs/report.js` |
+
+Use absolute paths and set `TASK_ENV_ALLOWLIST` for any variable a task needs.
+
+## Standalone installation (without Docker)
+
+1. Install Node.js 20 or 22 and a build toolchain for `better-sqlite3`.
+2. Create an unprivileged user, clone the repository at a release tag and run `npm ci --omit=dev`.
+3. Copy `.env.example` to `.env.production`; set authentication, roles, `CSRF_SECRET` and
+   either TLS or `TRUSTED_PROXY`. Do not run as root.
+4. Keep `CRON_DB_PATH` owner-only (`chmod 700`); start with `NODE_ENV=production node bootstrap.js`
+   under a service manager (for example systemd with `Restart=on-failure`).
+5. Run `npm run predeploy` and check `GET /healthz` and `GET /diagnostics` from loopback.
