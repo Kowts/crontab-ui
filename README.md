@@ -303,6 +303,7 @@ Arbitrary hooks are not supported. For post-processing, use an explicit, reviewe
 
 ## Resources
 
+- [Operations guide: upgrade, rollback, recovery, diagnostics](docs/OPERATIONS.md)
 - [Nginx and TLS configuration](README/nginx.md)
 - [Troubleshooting and recovery](README/issues.md)
 - [MIT License](LICENSE.md)

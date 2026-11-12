@@ -289,7 +289,7 @@ Procedimento de recuperação:
 
 Não execute o serviço como `root` para contornar permissões e não use `--reset` como recuperação de rotina: ambos podem invalidar a separação de privilégios ou apagar a configuração ativa. Corrija permissões do volume e restaure um backup validado.
 
-O diário `operations.jsonl` contém eventos estruturados com actor, papel, resultado, duração e IDs de correlação. Comandos são registados por hash SHA-256. Exporte o diário para retenção central com acesso restrito e teste restauros regularmente numa instância não produtiva.
+O diário `operations.jsonl` contém eventos estruturados com actor, papel, resultado, duração e IDs de correlação. Comandos são registados por hash SHA-256; valores de chaves sensíveis (password, token, secret, API key, authorization, cookie) e credenciais em URLs são mascarados antes da escrita. Os administradores podem pesquisar o diário, incluindo ficheiros rodados, com `GET /audit?jobId=&type=&status=&trigger=&operationId=&from=&to=&limit=` (mais recentes primeiro, até 500 registos). Exporte o diário para retenção central com acesso restrito e teste restauros regularmente numa instância não produtiva.
 
 Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa explícita, revista e auditável.
 
@@ -304,6 +304,7 @@ Hooks arbitrários não são suportados. Para pós-processamento, use uma tarefa
 
 ## Recursos
 
+- [Guia de operações (em inglês): actualização, rollback, recuperação, diagnóstico](docs/OPERATIONS.md)
 - [Configuração de Nginx e TLS](README/nginx.md)
 - [Diagnóstico e recuperação](README/issues.md)
 - [Licença MIT](LICENSE.md)

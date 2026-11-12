@@ -17,6 +17,14 @@ All notable changes to this project are documented here. The format follows
 - Tag-triggered release workflow publishing a versioned image with SBOM and provenance.
 - Refusal to start as root or with open file permissions in production; per-task resource
   limits; process-tree termination on timeout and cancellation.
+- `npm run predeploy` validates authentication, roles, CSRF secret and proxy/TLS settings.
+- Compose restart policy, 20 s stop grace period and configurable container CPU, memory and
+  PID limits (`CONTAINER_CPUS`, `CONTAINER_MEMORY_LIMIT`, `CONTAINER_PIDS_LIMIT`).
+- `GET /audit` (administrators) with filters; audit records mask secrets and URL credentials.
+- Operations guide: [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+### Security
+- GitHub Actions are pinned by commit SHA.
 
 ### Changed
 - Timeouts and output limits are now stored as `timeout` and `output_limit` instead of `failed`.
