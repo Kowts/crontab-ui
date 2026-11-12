@@ -46,6 +46,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase image repository
+        id: image
+        run: echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push versioned image
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -57,12 +61,12 @@ jobs:
           build-args: |
             GIT_COMMIT=${{ github.sha }}
             IMAGE_VERSION=${{ github.ref_name }}
-          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          tags: ghcr.io/${{ steps.image.outputs.repo }}:${{ github.ref_name }}
 
       - name: Scan published image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          image-ref: ghcr.io/${{ steps.image.outputs.repo }}@${{ steps.build.outputs.digest }}
           format: table
           exit-code: '1'
           ignore-unfixed: true
@@ -71,7 +75,7 @@ jobs:
       - name: Generate SBOM
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          image-ref: ghcr.io/${{ steps.image.outputs.repo }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output: sbom.spdx.json
 
@@ -79,9 +83,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_REPO: ${{ steps.image.outputs.repo }}
         run: |
           prerelease=""
           case "${GITHUB_REF_NAME}" in *-*) prerelease="--prerelease" ;; esac
           gh release create "${GITHUB_REF_NAME}" sbom.spdx.json $prerelease \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Image: ghcr.io/${GITHUB_REPOSITORY}@${DIGEST}. See CHANGELOG.md and docs/RELEASE_NOTES.md. Roll back by deploying a previous tag or digest."
+            --notes "Image: ghcr.io/${IMAGE_REPO}@${DIGEST}. See CHANGELOG.md and docs/RELEASE_NOTES.md. Roll back by deploying a previous tag or digest."
