@@ -1497,6 +1497,22 @@ describe('Crontab publication', () => {
     expect(jobs.find((job) => job.command === 'echo publication-concurrent').saved).toBe(false);
   });
 
+  it('keeps the last valid schedule and leaves new tasks unpublished when applying fails', async () => {
+    await createJob('publication-good', 'echo publication-good');
+    let publishedFile;
+    await publish({}, (file, callback) => { publishedFile = file; callback(null); });
+    const before = fs.readFileSync(publishedFile, 'utf8');
+
+    const rejected = await createJob('publication-rejected', 'echo publication-rejected');
+    await expect(publish({}, (_file, callback) => callback(new Error('scheduler rejected the schedule'))))
+      .rejects.toThrow('scheduler rejected the schedule');
+
+    expect(fs.readFileSync(publishedFile, 'utf8')).toBe(before);
+    expect(before).not.toContain(rejected._id);
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    expect(jobs.find((job) => job._id === rejected._id).saved).toBe(false);
+  });
+
   it('writes the Docker scheduler file for the unprivileged configured user', async () => {
     const previousDocker = process.env.CRON_IN_DOCKER;
     const previousUser = process.env.CRON_USER;
@@ -3409,6 +3425,45 @@ describe('Application bootstrap', () => {
 });
 
 describe('Failure injection', () => {
+  it('marks a manual run interrupted after the service is killed, without a false success', async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fault-kill-'));
+    const root = path.join(__dirname, '..');
+    const env = { ...process.env, CRON_DB_PATH: base };
+    const command = `"${process.execPath}" -e "setTimeout(()=>{},6000)"`;
+    const service = spawn(process.execPath, ['-e', `
+      const c = require('./crontab');
+      c.create_new('killed', ${JSON.stringify(command)}, '* * * * *', false, {}, {}, (e, job) => {
+        c.startManualRun(job._id, {}, (err, run) => console.log('OP=' + run.operationId));
+      });`], { cwd: root, env });
+    try {
+      const operationId = await new Promise((resolve, reject) => {
+        let buffer = '';
+        service.stdout.on('data', (chunk) => {
+          buffer += chunk;
+          const match = /OP=(\S+)/.exec(buffer);
+          if (match) resolve(match[1]);
+        });
+        service.once('exit', () => reject(new Error(`service exited early: ${buffer}`)));
+      });
+      service.removeAllListeners('exit');
+      service.kill('SIGKILL');
+      await new Promise((resolve) => service.once('exit', resolve));
+
+      const recover = () => spawnSync(process.execPath, ['-e', `
+        const c = require('./crontab');
+        c.recoverManualRuns();
+        console.log('RUN=' + JSON.stringify(c.getManualRun(${JSON.stringify(operationId)})));
+        c.close_db();`], { cwd: root, encoding: 'utf8', timeout: 20000, env });
+      const first = JSON.parse(/RUN=(.*)/.exec(recover().stdout)[1]);
+      expect(first.status).toBe('interrupted');
+      const second = JSON.parse(/RUN=(.*)/.exec(recover().stdout)[1]);
+      expect(second.status).toBe('interrupted');
+    } finally {
+      service.kill();
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('waits out a short SQLite lock held by another process and still records the run', async () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fault-lock-'));
     const root = path.join(__dirname, '..');

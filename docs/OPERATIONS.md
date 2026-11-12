@@ -87,10 +87,12 @@ Always quote the `operationId` from the UI error when searching the audit.
 ## Manually validated scenarios
 
 Automated: unwritable output directory, SQLite lock held by another process, mailer failing
-to start, restore of a backup into a clean volume (`npm run test:docker-recovery`, run in CI)
+to start, scheduler rejecting a publication (previous schedule kept, tasks stay unpublished),
+service killed with SIGKILL during a manual run (recovered as `interrupted`), restore of a backup into a clean volume (`npm run test:docker-recovery`, run in CI)
 and rollback of the data volume to the previous release image (set `RECOVERY_OLD_IMAGE` to a
 built image of the previous tag). Not automated (run in a non-production instance before each
-minor release): SMTP server rejecting delivery.
+minor release): SMTP server rejecting delivery, disk full and container restart with active
+tasks (the latter two depend on the host; verify with a size-limited volume and `docker restart`).
 
 A new Docker volume is owned by root unless it is populated from the image: `chown node:node`
 the volume root before copying a backup into it. The image tightens permissions of existing
