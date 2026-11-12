@@ -3391,6 +3391,37 @@ describe('Application bootstrap', () => {
   });
 });
 
+describe('Failure injection', () => {
+  it('completes a task and audits the failure when its output directory is not writable', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'fault-logs-'));
+    const data = path.join(base, 'data');
+    // The log directory is replaced by a regular file after load, so every output write fails.
+    fs.mkdirSync(data, { recursive: true });
+    const script = `
+      const fs = require('fs');
+      const c = require('./crontab');
+      c.create_new('fault', 'echo ok', '* * * * *', false, {}, {}, (e, job) => {
+        fs.rmSync(${JSON.stringify(path.join(data, 'logs'))}, { recursive: true, force: true });
+        fs.writeFileSync(${JSON.stringify(path.join(data, 'logs'))}, 'not a directory');
+        c.runjob(job._id, {}, (error, result) => {
+          console.log(JSON.stringify({ failed: Boolean(error), exitCode: result && result.exitCode }));
+          c.close_db();
+        });
+      });`;
+    try {
+      const run = spawnSync(process.execPath, ['-e', script], {
+        cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 20000,
+        env: { ...process.env, CRON_DB_PATH: data },
+      });
+      const result = JSON.parse(run.stdout.trim().split('\n').pop());
+      expect(result).toEqual({ failed: false, exitCode: 0 });
+      expect(run.stderr).toContain('Unable to persist execution output');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Audit redaction and search', () => {
   const { redact } = require('../lib/audit-log');
 
