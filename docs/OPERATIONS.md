@@ -84,6 +84,19 @@ Always quote the `operationId` from the UI error when searching the audit.
    publishes the image with SBOM and provenance. The `production` GitHub environment must exist.
 5. After publishing, check the image's `/diagnostics` and test a rollback to the previous tag.
 
+The release workflow waits up to 30 minutes for CI (including the Docker scheduler and
+recovery jobs) to succeed for the tagged commit and fails at once if CI failed. If it fails,
+fix the problem and re-run the failed workflow once CI is green, or delete and re-push the tag
+(`git push --delete origin vX.Y.Z`) only if the tagged commit itself changes.
+
+## Task resource isolation
+
+Per-task limits (`ulimit` for CPU time, address space and processes) are a safety net, not a
+sandbox: `ulimit -v` bounds virtual address space rather than resident memory, and `ulimit -u`
+counts processes of the whole `node` user, not of one execution. CPU, memory and PID limits set
+in Docker apply to the container as a whole, so tasks share them. Run mutually untrusted tasks
+in separate containers; cgroup-based per-task isolation is not part of 0.6.x.
+
 ## Manually validated scenarios
 
 Automated: unwritable output directory, SQLite lock held by another process, mailer failing

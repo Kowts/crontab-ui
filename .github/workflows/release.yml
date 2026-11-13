@@ -17,8 +17,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          result=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=success" --jq '.total_count')
-          test "${result}" -gt 0 || { echo "No successful CI run for ${GITHUB_SHA}; wait for CI before tagging."; exit 1; }
+          # Wait up to 30 minutes for CI to finish when the tag is pushed right after the commit.
+          for attempt in $(seq 1 60); do
+            success=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=success" --jq '.total_count')
+            [ "${success}" -gt 0 ] && exit 0
+            failed=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=failure" --jq '.total_count')
+            if [ "${failed}" -gt 0 ]; then
+              echo "CI failed for ${GITHUB_SHA}; fix it and tag again."
+              exit 1
+            fi
+            echo "CI not finished for ${GITHUB_SHA} (attempt ${attempt}/60); waiting."
+            sleep 30
+          done
+          echo "No successful CI run for ${GITHUB_SHA} after 30 minutes."
+          exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:

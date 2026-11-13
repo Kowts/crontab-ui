@@ -9,7 +9,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- The release workflow now refuses to publish unless CI (including the Docker scheduler and recovery tests) succeeded for the tagged commit.
+- The release workflow now waits up to 30 minutes for CI (including the Docker scheduler and recovery tests) and refuses to publish unless it succeeded for the tagged commit; it fails immediately if CI failed.
+- Operations guide documents the real level of per-task resource isolation and the release retry procedure.
 
 ### Fixed
 
