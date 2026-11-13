@@ -120,9 +120,9 @@ container recreation and restart keeping the published schedule, and the read-on
 (`npm run test:docker-resilience`, run in CI), a lost scheduler reload acknowledgement (previous
 schedule kept), a failing external backup copy and a backup failing with `ENOSPC` (no partial file),
 and rollback of the data volume to the previous release image (set `RECOVERY_OLD_IMAGE` to a
-built image of the previous tag). Not automated (run in a non-production instance before each
-minor release): a real SMTP server rejecting delivery and a genuinely full host disk
-(verify with a size-limited volume).
+built image of the previous tag), and delivery to a real SMTP server including a rejected
+recipient (`tests/mail-smtp.js`). Not automated (run in a non-production instance before each
+minor release): a genuinely full host disk (verify with a size-limited volume).
 
 A new Docker volume is owned by root unless it is populated from the image: `chown node:node`
 the volume root before copying a backup into it. The image tightens permissions of existing

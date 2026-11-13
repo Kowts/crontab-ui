@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The audit alert now resolves, and `/diagnostics` returns to `ok`, once the audit log is writable again; the watchdog retries a write while the audit is failing instead of waiting for unrelated audit activity.
+- `docs/OPERATIONS.md` no longer lists real-SMTP rejection as a manual scenario (covered by `tests/mail-smtp.js`).
+
 ## [0.6.2]
 
 ### Added

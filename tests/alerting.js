@@ -50,10 +50,32 @@ describe('Operational alerts', () => {
       post: (url, payload) => { posts.push({ url: url.href, payload }); return Promise.resolve(); },
       intervalMs: 3600000,
     }).stop();
-    expect(audits.map((a) => a.condition)).toEqual(['scheduler', 'audit']);
+    expect(audits.filter((a) => a.type === 'alert').map((a) => a.condition)).toEqual(['scheduler', 'audit']);
     expect(posts).toHaveLength(2);
     expect(posts[0].url).toBe('https://alerts.example.test/hook');
     expect(posts[1].payload).toMatchObject({ service: 'crontab-ui', condition: 'audit', state: 'firing' });
+  });
+
+  it('resolves the audit alert once the log is writable again, without other audit activity', () => {
+    const state = { scheduler: { running: true }, audit: { ok: false, lastError: 'EACCES' } };
+    const posts = [];
+    let writable = false;
+    const audit = (event) => { if (event.type === 'audit_probe' && writable) state.audit.ok = true; };
+    const watchdog = startWatchdog({
+      health: () => state,
+      audit,
+      env: { ALERT_WEBHOOK_URL: 'https://alerts.example.test/hook' },
+      post: (url, payload) => { posts.push(payload); return Promise.resolve(); },
+      intervalMs: 20,
+    });
+    return new Promise((resolve) => setTimeout(resolve, 60)).then(() => {
+      expect(posts.map((p) => p.state)).toEqual(['firing']);
+      writable = true;
+      return new Promise((resolve) => setTimeout(resolve, 80));
+    }).then(() => {
+      watchdog.stop();
+      expect(posts.map((p) => p.state)).toEqual(['firing', 'resolved']);
+    });
   });
 
   it('accepts only http(s) webhook URLs', () => {
