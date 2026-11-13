@@ -99,6 +99,7 @@ describe('Publication and recovery failures', () => {
         process.stdout.write("", () => process.exit(0));
       });
     `, { CRON_DB_PATH: path.join(workDir, 'data'), CRON_PATH: path.join(workDir, 'cron'), BACKUP_EXTERNAL_DIR: path.join(blocked, 'inner') });
+    expect(result.json, result.stderr).not.toBeNull();
     expect(result.json.error).toBeFalsy();
     expect(result.json.name).toMatch(/^backup-.*\.db$/);
     expect(result.json.audit).toContain('"backup_external"');
