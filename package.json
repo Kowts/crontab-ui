@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:docker-scheduler": "node scripts/test-docker-scheduler.js",
     "test:docker-recovery": "node scripts/test-docker-recovery.js",
+    "test:docker-resilience": "node scripts/test-docker-resilience.js",
     "predeploy": "node scripts/predeploy-check.js",
     "test:watch": "vitest",
     "lint": "eslint ."

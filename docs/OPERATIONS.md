@@ -101,29 +101,30 @@ in separate containers; cgroup-based per-task isolation is not part of 0.6.x.
 
 Automated: unwritable output directory, SQLite lock held by another process, mailer failing
 to start, scheduler rejecting a publication (previous schedule kept, tasks stay unpublished),
-service killed with SIGKILL during a manual run (recovered as `interrupted`), restore of a backup into a clean volume (`npm run test:docker-recovery`, run in CI)
+service killed with SIGKILL during a manual run (recovered as `interrupted`), restore of a backup into a clean volume (`npm run test:docker-recovery`, run in CI),
+container recreation and restart keeping the published schedule, and the read-only root
+(`npm run test:docker-resilience`, run in CI), a lost scheduler reload acknowledgement (previous
+schedule kept), a failing external backup copy and a backup failing with `ENOSPC` (no partial file),
 and rollback of the data volume to the previous release image (set `RECOVERY_OLD_IMAGE` to a
 built image of the previous tag). Not automated (run in a non-production instance before each
-minor release): SMTP server rejecting delivery, disk full and container restart with active
-tasks (the latter two depend on the host; verify with a size-limited volume and `docker restart`).
+minor release): a real SMTP server rejecting delivery and a genuinely full host disk
+(verify with a size-limited volume).
 
 A new Docker volume is owned by root unless it is populated from the image: `chown node:node`
 the volume root before copying a backup into it. The image tightens permissions of existing
 volumes (`go-rwx`) at start-up, as production start-up refuses open permissions.
 
-## Read-only root filesystem (evaluated, not adopted)
+## Read-only root filesystem (optional)
 
-`read_only: true` was tried with tmpfs mounts for `/tmp`, `/var/log` and `/etc/crontabs`.
-It is not adopted in 0.6.0 for two reasons:
+Because the published schedule lives on the data volume, the root filesystem can be read-only:
 
-- Supervisor writes `supervisord.log` under `/crontab-ui` by default, so it needs `logfile` and
-  `pidfile` pointed at writable paths.
-- A tmpfs on `/etc/crontabs` hides the schedule file created in the image and loses the
-  published schedule on every restart, while the database still marks tasks as published. A
-  safe adoption needs the schedule file to live on the data volume.
+```
+docker compose -f docker-compose.yml -f docker-compose.readonly.yml up -d
+```
 
-Until then the container keeps `cap_drop: ALL`, `no-new-privileges`, an unprivileged user,
-limited resources and a `noexec` tmpfs on `/tmp`.
+The override mounts tmpfs on `/tmp`, `/var/log` and `/etc/crontabs` (owned by `node`, mode 0700);
+Supervisor logs to `/tmp`. `npm run test:docker-resilience` (run in CI) checks recreation,
+restart and the read-only mode. It is opt-in: the base Compose file is unchanged.
 
 ## Scheduling behaviour and examples
 
@@ -131,8 +132,10 @@ limited resources and a `noexec` tmpfs on `/tmp`.
   previous run is still going. Manual runs follow `MANUAL_RUN_CONCURRENCY` (`allow` or `forbid`).
 - Each run is bounded by `COMMAND_TIMEOUT_MS` (`0` disables the timeout) and ends as
   `completed`, `failed`, `timeout`, `cancelled`, `output_limit` or `interrupted`.
-- After `docker restart` the published schedule file survives (container filesystem); after
-  recreating the container it is lost, so publish again. Verify with `GET /diagnostics`
+- The published schedule is mirrored to `<data>/schedule/` after each confirmed publication and
+  restored (validated with `supercronic -test`) when the scheduler starts, so it survives
+  `docker restart` and recreating the container. If the copy is invalid it is not installed
+  and the start-up log says so. Verify with `GET /diagnostics`
   (`scheduler.running`). Manual runs left running are marked `interrupted`.
 
 Examples (schedule / command):

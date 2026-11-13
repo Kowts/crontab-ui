@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The published Docker schedule is persisted on the data volume and restored at scheduler start; it survives container recreation.
+- Optional read-only root filesystem (`docker-compose.readonly.yml`) and `npm run test:docker-resilience` (run in CI).
+- Automated tests for a lost scheduler reload acknowledgement, a failing external backup copy and a backup failing with `ENOSPC`.
+
 ### Changed
 
 - The release workflow now waits up to 30 minutes for CI (including the Docker scheduler and recovery tests) and refuses to publish unless it succeeded for the tagged commit; it fails immediately if CI failed.

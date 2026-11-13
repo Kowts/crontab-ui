@@ -108,6 +108,8 @@ function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedu
   if (!cronPath) throw new Error('CRON_PATH is required in Docker');
   const cronFile = path.join(cronPath, configuredCronUser());
   restore(cronFile);
+  // An empty tmpfs (read-only root) has no schedule file until the first publication.
+  if (!fs.existsSync(cronFile)) fs.writeFileSync(cronFile, '', { mode: 0o600 });
   const scheduler = spawnProcess('supercronic', ['-passthrough-logs', cronFile], {
     env: schedulerEnvironment(),
     stdio: ['ignore', 'pipe', 'pipe'],

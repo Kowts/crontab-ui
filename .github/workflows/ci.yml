@@ -89,3 +89,6 @@ jobs:
 
       - name: Restore a backup into a clean volume and start the service
         run: npm run test:docker-recovery
+
+      - name: Recreate and restart the container, and run on a read-only root
+        run: npm run test:docker-resilience

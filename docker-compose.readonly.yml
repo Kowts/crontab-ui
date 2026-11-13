@@ -1,0 +1,10 @@
+# Optional hardening: read-only root filesystem. Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.readonly.yml up -d
+# The published schedule lives on the data volume and is restored when the scheduler starts.
+services:
+  crontab-ui:
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /var/log:rw,noexec,nosuid,size=16m
+      - /etc/crontabs:rw,noexec,nosuid,uid=1000,gid=1000,mode=0700,size=1m
