@@ -7,9 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1]
+
 ### Added
 
-- Task list filters for last run (success, error, running, never run), schedule state (enabled, disabled) and publication (published, local changes), with a clear button.
+- Task list filters for last run (success, error, running, never run), schedule state (enabled, disabled) and publication (published, local changes), with a clear button. The filters sit on the same row as the search box and share its styling.
 
 ## [0.6.0]
 

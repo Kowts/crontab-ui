@@ -1,5 +1,14 @@
 # Release notes
 
+## 0.6.1
+
+### Interface
+- Filtros na lista de tarefas: última execução (sucesso, erro, em execução, nunca executada), agendamento (ativadas, desativadas) e publicação (publicadas, alterações locais), com botão para limpar.
+- Os filtros ficam na mesma linha da pesquisa e usam o mesmo estilo visual.
+
+### Atualização
+- Sem alterações de configuração, dados ou dependências; basta atualizar a imagem.
+
 ## 0.6.0
 
 ### Execução e estados
