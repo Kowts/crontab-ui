@@ -774,7 +774,11 @@ function copyBackupExternally(backupFile) {
     for (const stale of kept.slice(backupRetentionCount)) fs.unlinkSync(path.join(backupExternalDir, stale));
     audit({ type: 'backup_external', status: 'completed', backup: name });
   } catch (error) {
-    fs.rmSync(temporary, { force: true });
+    try {
+      fs.rmSync(temporary, { force: true });
+    } catch (cleanupError) {
+      // The external directory may be unusable (for example ENOTDIR); the failure is audited below.
+    }
     audit({ type: 'backup_external', status: 'failed', backup: name, error: error.message });
   }
 }
