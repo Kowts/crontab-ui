@@ -17,6 +17,7 @@ This fork extends the original visual crontab management interface with producti
 - Server-only SMTP profiles: task records store only a `profileId` and delivery policy, never mail credentials.
 - Per-task failure alerting after N consecutive failures, with a cooldown and a clear-on-success reset, so one bad afternoon does not become a hundred emails and a transient failure does not become an alert.
 - A per-task execution panel with retained run history: last run, duration, exit code, last successful run, next scheduled run, and consecutive failures, without opening one log per task.
+- Task list filters by last run (success, error, running, never run), schedule state, and publication state, combinable with search.
 - Atomic, mutex-protected import, restore, and backup workflows with count- and age-based retention.
 - Bounded command execution with timeouts, output limits, termination handling, structured audit events, correlation IDs, and log rotation.
 - Persisted manual-run state, with one simultaneous manual execution per actor and clean interruption on service shutdown.

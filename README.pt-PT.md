@@ -17,6 +17,7 @@ Este fork estende a interface visual original de gestão de crontab com controlo
 - Perfis SMTP exclusivos do servidor: os registos das tarefas guardam apenas `profileId` e política de envio, nunca credenciais de correio.
 - Alerta de falha por tarefa após N falhas consecutivas, com intervalo entre alertas e reinício quando uma execução tem sucesso, para que uma má tarde não se torne cem emails nem uma falha transitória se torne um alerta.
 - Painel de execução por tarefa com histórico retido: última execução, duração, código de saída, última execução com sucesso, próxima execução agendada e falhas consecutivas, sem abrir um log por tarefa.
+- Filtros na lista de tarefas por última execução (sucesso, erro, em execução, nunca executada), estado do agendamento e estado de publicação, combináveis com a pesquisa.
 - Fluxos atómicos e protegidos por bloqueio para importação, restauro e backups, com retenção por quantidade e idade.
 - Execução de comandos limitada por timeout e output, tratamento de terminação, auditoria estruturada, IDs de correlação e rotação de logs.
 - Estado persistente das execuções manuais, com uma execução simultânea por actor e interrupção controlada no encerramento do serviço.
