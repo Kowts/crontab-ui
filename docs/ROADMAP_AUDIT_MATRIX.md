@@ -15,4 +15,4 @@ implementation, automated evidence, result and remaining risk. Updated after v0.
 | 8 | Dependency security and CI/CD | `ci.yml` (audit, Trivy, coverage thresholds), `.github/dependabot.yml` | CI | Done | New advisories can fail CI at any time | Handle through Dependabot patches |
 | 9 | Docker hardening | `Dockerfile` (non-root `node`), `docker-compose.yml` limits, `docker-compose.readonly.yml` | `npm run test:docker-resilience` (read-only mode) | Done | Read-only mode is opt-in | Enable it where the deployment allows |
 | 10 | Operational documentation | `docs/OPERATIONS.md`, READMEs (EN/PT) | Review | Done | Docs can drift | Update with each release |
-| 11 | Separate web and scheduler | Not implemented | n/a | Deferred | Single container runs both | Revisit after 0.6.x if scaling or isolation requires it |
+| 11 | Separate web and scheduler | `docker-compose.split.yml`, scheduler heartbeat (`scheduler.js`, `lib/scheduler-health.js`) | `npm run test:docker-split` (CI), `tests/alerting.js` | Done (opt-in) | Default deployment still runs both in one container | Adopt the split override where isolation is needed |

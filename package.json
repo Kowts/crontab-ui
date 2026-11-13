@@ -13,6 +13,7 @@
     "test:docker-scheduler": "node scripts/test-docker-scheduler.js",
     "test:docker-recovery": "node scripts/test-docker-recovery.js",
     "test:docker-resilience": "node scripts/test-docker-resilience.js",
+    "test:docker-split": "node scripts/test-docker-split.js",
     "predeploy": "node scripts/predeploy-check.js",
     "test:watch": "vitest",
     "lint": "eslint ."

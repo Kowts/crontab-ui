@@ -3,6 +3,17 @@
 /* global describe, it, expect */
 const { createWatchdog, parseWebhookUrl, startWatchdog } = require('../lib/alerting');
 
+describe('External scheduler heartbeat', () => {
+  const { schedulerHealth } = require('../lib/scheduler-health');
+  const heartbeat = (age) => ({ maxAgeMs: 20000, read: () => age });
+
+  it('reports a fresh heartbeat as running and a stale or missing one as stopped', () => {
+    expect(schedulerHealth({ inDocker: true, heartbeat: heartbeat(3000) })).toMatchObject({ running: true, external: true });
+    expect(schedulerHealth({ inDocker: true, heartbeat: heartbeat(60000) }).running).toBe(false);
+    expect(schedulerHealth({ inDocker: true, heartbeat: heartbeat(null) }).running).toBe(false);
+  });
+});
+
 describe('Operational alerts', () => {
   it('notifies once when a condition starts failing and once when it recovers', () => {
     let problem = null;

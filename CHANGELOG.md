@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 - Optional read-only root filesystem (`docker-compose.readonly.yml`) and `npm run test:docker-resilience` (run in CI).
 - Automated tests for a lost scheduler reload acknowledgement, a failing external backup copy and a backup failing with `ENOSPC`.
 - Documented the audit retention, rotation and export policy in `docs/OPERATIONS.md`.
+- Optional split deployment (`docker-compose.split.yml`): web and scheduler in separate containers sharing the data volume, with a scheduler heartbeat for health and `npm run test:docker-split` (run in CI).
 - Integration tests that deliver mail to a real SMTP server, covering a rejected recipient and a successful delivery.
 - Operational alerts: a watchdog reports scheduler-down and audit-write failures (stderr, audit event, optional `ALERT_WEBHOOK_URL`); `/diagnostics` exposes `audit` health and reports `degraded`.
 

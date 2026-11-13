@@ -1,0 +1,44 @@
+# Optional split deployment: the web UI and the scheduler run in separate containers that share
+# the data volume. Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.split.yml up -d
+# The schedule lives on the shared volume; the web service sees the scheduler through a heartbeat.
+x-split-env: &split-env
+  CRON_PATH: /crontab-ui/crontabs/schedule-live
+
+services:
+  crontab-ui:
+    command: ["node", "/crontab-ui/bootstrap.js"]
+    entrypoint: ["/sbin/tini", "--"]
+    user: "1000:1000"
+    environment:
+      <<: *split-env
+      SCHEDULER_MODE: external
+    depends_on:
+      scheduler:
+        condition: service_started
+
+  scheduler:
+    image: kowts/crontab-ui
+    command: ["node", "/crontab-ui/scheduler.js"]
+    entrypoint: ["/sbin/tini", "--"]
+    user: "1000:1000"
+    environment:
+      <<: *split-env
+      TASK_ENV_ALLOWLIST: ${TASK_ENV_ALLOWLIST:-PATH,LANG,LC_ALL,TZ,MAILTO,COMMAND_TIMEOUT_MS}
+      COMMAND_TIMEOUT_MS: ${COMMAND_TIMEOUT_MS:-300000}
+      COMMAND_MEMORY_LIMIT_MB: ${COMMAND_MEMORY_LIMIT_MB:-0}
+      COMMAND_CPU_SECONDS: ${COMMAND_CPU_SECONDS:-0}
+      COMMAND_MAX_PROCESSES: ${COMMAND_MAX_PROCESSES:-0}
+      MAIL_PROFILES_JSON: ${MAIL_PROFILES_JSON:-}
+    volumes:
+      - crontab-data:/crontab-ui/crontabs
+    restart: unless-stopped
+    pids_limit: ${CONTAINER_PIDS_LIMIT:-512}
+    mem_limit: ${CONTAINER_MEMORY_LIMIT:-1g}
+    cpus: ${CONTAINER_CPUS:-2}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m

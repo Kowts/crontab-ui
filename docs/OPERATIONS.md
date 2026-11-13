@@ -140,6 +140,25 @@ The override mounts tmpfs on `/tmp`, `/var/log` and `/etc/crontabs` (owned by `n
 Supervisor logs to `/tmp`. `npm run test:docker-resilience` (run in CI) checks recreation,
 restart and the read-only mode. It is opt-in: the base Compose file is unchanged.
 
+## Split web and scheduler (optional)
+
+By default one container runs both processes under Supervisor. To isolate them, run the web UI and
+the scheduler as separate containers sharing the data volume:
+
+```
+docker compose -f docker-compose.yml -f docker-compose.split.yml up -d
+```
+
+Both run as `node` without Supervisor and share the schedule directory
+`/crontab-ui/crontabs/schedule-live` on the data volume. Publishing from the web container is
+validated and acknowledged by the scheduler container exactly as before. Because `/proc` cannot see
+across containers, the scheduler writes a heartbeat file every 5 s and the web service
+(`SCHEDULER_MODE=external`) reports `scheduler.running=false` and `status: degraded` in
+`/diagnostics` when it is older than 20 s, which also raises the scheduler-down alert. Scheduled
+tasks run in the scheduler container, so it receives the task limits and `MAIL_PROFILES_JSON`.
+`npm run test:docker-split` (run in CI) verifies publication across containers and detection of a
+stopped scheduler. It is opt-in and the default deployment is unchanged.
+
 ## Scheduling behaviour and examples
 
 - Scheduled runs use Supercronic with default flags: a task is not started again while its

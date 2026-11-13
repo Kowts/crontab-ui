@@ -29,6 +29,10 @@ function schedulerReloadStateFile(cronFile) {
   return `${cronFile}.reload.json`;
 }
 
+function schedulerHeartbeatFile(cronFile) {
+  return `${cronFile}.heartbeat`;
+}
+
 function writeReloadState(cronFile, digest = crypto.createHash('sha256').update(fs.readFileSync(cronFile)).digest('hex')) {
   const destination = schedulerReloadStateFile(cronFile);
   const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${crypto.randomUUID()}.tmp`);
@@ -107,6 +111,8 @@ function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedu
   const cronPath = process.env.CRON_PATH;
   if (!cronPath) throw new Error('CRON_PATH is required in Docker');
   const cronFile = path.join(cronPath, configuredCronUser());
+  // In split deployments the schedule directory lives on a shared volume and may not exist yet.
+  fs.mkdirSync(cronPath, { recursive: true, mode: 0o700 });
   restore(cronFile);
   // An empty tmpfs (read-only root) has no schedule file until the first publication.
   if (!fs.existsSync(cronFile)) fs.writeFileSync(cronFile, '', { mode: 0o600 });
@@ -114,6 +120,16 @@ function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedu
     env: schedulerEnvironment(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const beat = () => {
+    try {
+      fs.writeFileSync(schedulerHeartbeatFile(cronFile), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), { mode: 0o600 });
+    } catch (error) {
+      console.error(`Unable to write scheduler heartbeat: ${error.message}`);
+    }
+  };
+  beat();
+  const heartbeat = setInterval(beat, 5000);
+  heartbeat.unref();
   const coordinator = createReloadCoordinator({ cronFile, scheduler });
   const watcher = fs.watch(path.dirname(cronFile), (_eventType, fileName) => {
     if (String(fileName) === path.basename(cronFile)) coordinator.recordFileChange();
@@ -125,6 +141,7 @@ function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedu
     process.on(signal, () => scheduler.kill(signal));
   }
   scheduler.once('exit', (code, signal) => {
+    clearInterval(heartbeat);
     watcher.close();
     process.exitCode = code === null ? 1 : code;
     if (signal) process.exitCode = 1;
@@ -134,4 +151,4 @@ function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedu
 
 if (require.main === module) startScheduler();
 
-module.exports = { configuredCronUser, createReloadCoordinator, restorePersistedSchedule, schedulerEnvironment, schedulerReloadStateFile, startScheduler, writeReloadState };
+module.exports = { configuredCronUser, createReloadCoordinator, restorePersistedSchedule, schedulerEnvironment, schedulerHeartbeatFile, schedulerReloadStateFile, startScheduler, writeReloadState };

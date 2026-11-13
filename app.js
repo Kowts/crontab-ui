@@ -36,7 +36,7 @@ const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
 const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
-const { configuredCronUser } = require('./scheduler');
+const { configuredCronUser, schedulerHeartbeatFile } = require('./scheduler');
 const { schedulerHealth } = require('./lib/scheduler-health');
 
 dayjs.extend(relativeTime);
@@ -78,9 +78,21 @@ function boundedEnvironmentNumber(name, fallback, minimum, maximum) {
 
 function currentSchedulerHealth() {
   const cronPath = process.env.CRON_PATH || path.join(crontab.db_folder, 'crontab-staging');
-  const stateFile = crontab.scheduler_reload_state_file(path.join(cronPath, configuredCronUser()));
+  const cronFile = path.join(cronPath, configuredCronUser());
+  const stateFile = crontab.scheduler_reload_state_file(cronFile);
+  const external = process.env.SCHEDULER_MODE === 'external';
   return schedulerHealth({
     inDocker: process.env.CRON_IN_DOCKER === 'true',
+    heartbeat: external ? {
+      maxAgeMs: 20000,
+      read: () => {
+        try {
+          return Math.max(0, Date.now() - fs.statSync(schedulerHeartbeatFile(cronFile)).mtimeMs);
+        } catch (_error) {
+          return null;
+        }
+      },
+    } : null,
     readReloadState: () => {
       try {
         return JSON.parse(fs.readFileSync(stateFile, 'utf8'));

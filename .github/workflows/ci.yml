@@ -92,3 +92,6 @@ jobs:
 
       - name: Recreate and restart the container, and run on a read-only root
         run: npm run test:docker-resilience
+
+      - name: Run web and scheduler in separate containers
+        run: npm run test:docker-split
