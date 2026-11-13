@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.3]
+
 ### Added
 
 - `docs/RELEASE_CHECKLIST.md`: publication, operational drill (automated vs manual) and rollback procedure, linked from `docs/OPERATIONS.md`.
@@ -93,7 +95,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `ALLOW_HTTP=true` explicit exception for HTTP in production.
 
-[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/Kowts/crontab-ui/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Kowts/crontab-ui/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kowts/crontab-ui/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...v0.6.0

@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.6.3
+
+### Observabilidade
+- O alerta da auditoria passa a ser resolvido, e `/diagnostics` volta a `ok`, quando o registo volta a ser gravável, mesmo sem outra actividade de auditoria.
+- Falhas repetidas de escrita da auditoria são registadas no `stderr` de imediato na primeira vez e depois no máximo de 5 em 5 minutos.
+
+### Documentação
+- Novo [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md): publicação, ensaio operacional (automatizado vs manual) e rollback.
+- `OPERATIONS.md` deixa de listar a rejeição por SMTP real como cenário manual.
+
+### Atualização
+- Sem alterações de dados ou dependências; basta atualizar a imagem.
+
 ## 0.6.2
 
 ### Resiliência
