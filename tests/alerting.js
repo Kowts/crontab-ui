@@ -14,6 +14,24 @@ describe('External scheduler heartbeat', () => {
   });
 });
 
+describe('Audit error log throttle', () => {
+  const { createLogThrottle } = require('../lib/log-throttle');
+
+  it('logs the first failure, suppresses repeats within the interval and re-arms after recovery', () => {
+    let time = 0;
+    const throttle = createLogThrottle(300000, () => time);
+    expect(throttle.shouldLog()).toBe(true);
+    time = 30000;
+    expect(throttle.shouldLog()).toBe(false);
+    time = 300000;
+    expect(throttle.shouldLog()).toBe(true);
+    time = 310000;
+    expect(throttle.shouldLog()).toBe(false);
+    throttle.reset();
+    expect(throttle.shouldLog()).toBe(true);
+  });
+});
+
 describe('Operational alerts', () => {
   it('notifies once when a condition starts failing and once when it recovers', () => {
     let problem = null;

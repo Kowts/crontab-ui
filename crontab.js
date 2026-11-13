@@ -17,6 +17,7 @@ const { parseEnvironment, serialiseEnvironment } = require('./config/environment
 const { buildTaskEnvironment } = require('./config/task-environment');
 const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
 const { persistSchedule } = require('./lib/schedule-store');
+const { createLogThrottle } = require('./lib/log-throttle');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -244,6 +245,7 @@ exports.get_crontab = (_id, callback) => {
 };
 
 const auditState = { ok: true, failures: 0, lastError: null, lastErrorAt: null };
+const auditErrorLog = createLogThrottle(5 * 60 * 1000);
 
 function audit(event) {
   try {
@@ -254,6 +256,7 @@ function audit(event) {
       try {
         fs.appendFileSync(auditFile, entry, { encoding: 'utf8', mode: 0o600 });
         auditState.ok = true;
+        auditErrorLog.reset();
         return;
       } catch (error) {
         writeError = error;
@@ -272,7 +275,9 @@ function audit(event) {
     auditState.failures += 1;
     auditState.lastError = error.message;
     auditState.lastErrorAt = new Date().toISOString();
-    console.error('Unable to write audit record:', error.message);
+    if (auditErrorLog.shouldLog(error.message)) {
+      console.error('Unable to write audit record:', error.message);
+    }
   }
 }
 

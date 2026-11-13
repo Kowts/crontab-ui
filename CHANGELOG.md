@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Repeated audit write failures are logged to stderr immediately the first time and then at most once every 5 minutes; the alert and the 30-second recovery probe are unchanged.
+
 ### Fixed
 
 - The audit alert now resolves, and `/diagnostics` returns to `ok`, once the audit log is writable again; the watchdog retries a write while the audit is failing instead of waiting for unrelated audit activity.
