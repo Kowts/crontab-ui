@@ -37,6 +37,26 @@ Run on an instance that is not production, ideally on a different server.
 Record the result, date, environment and who ran the drill (for example in the release pull
 request or issue). If anything fails, fix it and repeat the affected steps.
 
+Copy this template for each release and fill in only what was actually tested manually:
+
+```markdown
+### Drill record - vX.Y.Z
+
+- Date:
+- Environment (independent server / volume):
+- Image or version tested (tag and digest):
+- Run by:
+- Backup and integrity, external copy:        pass / fail / not tested
+- Restore into a clean volume:                pass / fail / not tested
+- Rollback to the previous image:             pass / fail / not tested
+- Users, roles and permissions:               pass / fail / not tested
+- Configuration and secrets (`predeploy`):    pass / fail / not tested
+- Scheduled tasks recovered:                  pass / fail / not tested
+- Task executed by the scheduler:             pass / fail / not tested
+- Logs, history and audit:                    pass / fail / not tested
+- Notes and limitations:
+```
+
 ## 3. Publish
 
 1. Commit and push; wait for green CI on that commit.
