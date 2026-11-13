@@ -37,6 +37,11 @@ a native installation.
 
 ### Rollback
 
+Choose between an application rollback (previous image on the current volume, when the data is
+compatible) and a backup restore (corruption or an incompatible change); the full decision is in
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md#5-rollback). Changing the image does not undo
+changes already written to persistent files.
+
 1. Stop the service: `docker compose stop` (running tasks are cancelled within the grace period).
 2. Restore the pre-upgrade backup in the UI, or copy the saved `crontab.db` back into the volume.
 3. Start the previous pinned image tag, check `/diagnostics` (`version`, `commit`) and
@@ -91,13 +96,11 @@ The audit log is `<CRON_DB_PATH>/logs/operations.jsonl` (JSON lines; commands ap
 
 ## Pre-release checklist
 
-1. `npm run lint`, `npm test`, `npm run test:coverage`, `npm audit --omit=dev --audit-level=high`.
-2. `npm run test:docker-scheduler` on a Docker-capable runner.
-3. Update `CHANGELOG.md`, `docs/RELEASE_NOTES.md`, both READMEs and `package.json` version.
-4. Tag `vX.Y.Z` (must equal the `package.json` version); the release workflow builds, scans and
-   publishes the image with SBOM and provenance. The `production` GitHub environment must exist.
-5. After publishing, check the image's `/diagnostics` and test a rollback to the previous tag.
-
+The full publication, operational drill and rollback procedure is in
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). In short: lint, tests and audit pass; the
+changelog, release notes, READMEs and `package.json` version are updated; CI is green for the
+tagged commit; the drill passed; then tag `vX.Y.Z` (must equal the `package.json` version). The
+`production` GitHub environment must exist and its reviewer must approve the deployment.
 The release workflow waits up to 30 minutes for CI (including the Docker scheduler and
 recovery jobs) to succeed for the tagged commit and fails at once if CI failed. If it fails,
 fix the problem and re-run the failed workflow once CI is green, or delete and re-push the tag

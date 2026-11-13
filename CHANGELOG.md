@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `docs/RELEASE_CHECKLIST.md`: publication, operational drill (automated vs manual) and rollback procedure, linked from `docs/OPERATIONS.md`.
+
 ### Changed
 
 - Repeated audit write failures are logged to stderr immediately the first time and then at most once every 5 minutes; the alert and the 30-second recovery probe are unchanged.
