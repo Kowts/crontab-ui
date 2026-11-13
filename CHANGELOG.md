@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The release workflow now refuses to publish unless CI (including the Docker scheduler and recovery tests) succeeded for the tagged commit.
+
+### Fixed
+
+- Documentation: CHANGELOG comparison links and the README statement that the remote had no published tags.
+
 ## [0.6.1]
 
 ### Added
@@ -58,7 +66,9 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `ALLOW_HTTP=true` explicit exception for HTTP in production.
 
-[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Kowts/crontab-ui/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...v0.6.0
 [0.5.3]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...HEAD
 [0.5.2]: https://github.com/Kowts/crontab-ui/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Kowts/crontab-ui/releases/tag/v0.5.1

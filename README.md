@@ -62,7 +62,7 @@ Tasks are saved locally first. They affect the system scheduler only after an au
 
 ## Canonical source and releases
 
-The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). The remote currently has no published tags: do not replace `<release-tag>` with a version inferred only from `package.json`. For production, approve a commit after validation, create an annotated tag, and publish a release; the `main` branch is intended for ongoing development and validation.
+The canonical source for this fork is [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). Stable versions are published as annotated tags and [GitHub releases](https://github.com/Kowts/crontab-ui/releases), each with an immutable image at `ghcr.io/kowts/crontab-ui:<release-tag>`. Replace `<release-tag>` with a published tag, never a version inferred from `package.json`, and never deploy `main` or `latest` in production; `main` is for ongoing development and validation.
 
 Do not use `npm install -g crontab-ui` to install this fork: that name may resolve to a different package and does not guarantee the security controls documented here.
 

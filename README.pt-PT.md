@@ -62,7 +62,7 @@ As tarefas são guardadas primeiro localmente. Só afetam o agendador do sistema
 
 ## Origem canónica e versões
 
-A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). O remoto não tem, neste momento, tags publicadas: não substitua `<release-tag>` por uma versão assumida apenas a partir de `package.json`. Para produção, aprove um commit depois da validação, crie uma tag anotada e publique a release; o ramo `main` destina-se a desenvolvimento e validação contínua.
+A origem canónica deste fork é [Kowts/crontab-ui](https://github.com/Kowts/crontab-ui). As versões estáveis são publicadas como tags anotadas e [releases do GitHub](https://github.com/Kowts/crontab-ui/releases), cada uma com uma imagem imutável em `ghcr.io/kowts/crontab-ui:<release-tag>`. Substitua `<release-tag>` por uma tag publicada, nunca por uma versão assumida a partir de `package.json`, e nunca use `main` ou `latest` em produção; o ramo `main` destina-se a desenvolvimento e validação contínua.
 
 Não use `npm install -g crontab-ui` como instrução de instalação deste fork: esse nome pode resolver para outro pacote e não garante a presença dos controlos documentados aqui.
 
