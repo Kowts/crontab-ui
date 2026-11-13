@@ -50,7 +50,7 @@ function runInCrontab(script, env = {}) {
     timeout: 20000,
     env: { PATH: process.env.PATH, NODE_ENV: 'test', ...env },
   });
-  const lines = result.stdout.trim().split('\n');
+  const lines = result.stdout.trim().split('\n').filter((line) => line.startsWith('{'));
   return { ...result, json: JSON.parse(lines[lines.length - 1] || 'null') };
 }
 
