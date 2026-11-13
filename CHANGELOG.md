@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/OPERATIONS.md`: the rollback procedure now separates application rollback (keep the volume) from backup restore, matching the release checklist.
+
 ## [0.6.3]
 
 ### Added

@@ -42,10 +42,20 @@ compatible) and a backup restore (corruption or an incompatible change); the ful
 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md#5-rollback). Changing the image does not undo
 changes already written to persistent files.
 
+**A. Application rollback** (the problem is in the code; data is intact and compatible):
+
 1. Stop the service: `docker compose stop` (running tasks are cancelled within the grace period).
+2. Keep the current volume. Start the previous pinned image tag.
+3. Check `/diagnostics` (`version`, `commit`) and republish the schedule. Never roll back by
+   tracking `main`.
+
+**B. Backup restore** (corruption, or an incompatible or irreversible data change):
+
+1. Stop the service as above.
 2. Restore the pre-upgrade backup in the UI, or copy the saved `crontab.db` back into the volume.
-3. Start the previous pinned image tag, check `/diagnostics` (`version`, `commit`) and
-   republish the schedule. Never roll back by tracking `main`.
+3. Start the previous pinned image tag, check `/diagnostics` and republish the schedule.
+
+Start with A; use B only when the data itself is the problem.
 
 Data written by 0.6.0 uses new execution states (`timeout`, `output_limit`, `interrupted`).
 Older versions display them as failures; no schema change is required.
