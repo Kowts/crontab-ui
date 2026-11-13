@@ -15,10 +15,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.6.0]
 
-- Release workflow fixes found by the first run: lowercase GHCR repository, pre-release flag
-  for `-` tags, detached descendants terminated on timeout, Alpine packages upgraded and
-  lockfile updated for audit findings.
-
 ### Added
 - Execution state machine (`running`, `completed`, `failed`, `timeout`, `cancelled`,
   `interrupted`, `output_limit`) with final terminal states and idempotent completion.
@@ -39,6 +35,9 @@ All notable changes to this project are documented here. The format follows
 - GitHub Actions are pinned by commit SHA.
 
 ### Fixed
+- Release workflow fixes found by the first run: lowercase GHCR repository, pre-release flag
+  for `-` tags, detached descendants terminated on timeout, Alpine packages upgraded and
+  lockfile updated for audit findings.
 - Docker image no longer embeds local `crontabs/` data from the build context.
 - SQLite database is created owner-only (`0600`) and the image restricts data permissions at
   start-up, so the production permission check no longer blocks the Docker deployment.
