@@ -89,7 +89,7 @@ the tagged commit changes.
 ### Drill record - v0.6.3
 
 - Date: 2026-11-13
-- Environment (independent server / volume): independent non-production server (host name not recorded)
+- Environment (independent server / volume): independent non-production server `cvtvmetl01`
 - Image or version tested (tag and digest): v0.6.3, ghcr.io/kowts/crontab-ui@sha256:5735d315917a3cebab49faa4c64b5a658c61d0f0334315082d5076ae60c44695; rollback target v0.6.2
 - Run by: Kowts
 - Backup and integrity, external copy: pass
@@ -100,5 +100,5 @@ the tagged commit changes.
 - Scheduled tasks recovered: pass
 - Task executed by the scheduler: pass
 - Logs, history and audit: pass
-- Notes and limitations: reported by the operator as all pass; no screenshots or command output were attached.
+- Notes and limitations: reported by the operator as all pass; no screenshots or command output were attached. Host name and time confirmed on the server (`hostname`: cvtvmetl01; `date -u`: Fri Nov 13 17:55:48 UTC 2026).
 
