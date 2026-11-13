@@ -77,6 +77,13 @@ function initPage() {
       }
     });
     var filterReset = document.querySelector('[data-job-filter-reset]');
+    var filterBar = document.querySelector('.jobs-filters');
+    var searchBox = $('#main_table').closest('.dt-container').find('.dt-search').get(0);
+    if (filterBar && searchBox) {
+      filterBar.classList.add('jobs-filters-inline');
+      searchBox.parentNode.classList.add('jobs-search-cell');
+      searchBox.parentNode.insertBefore(filterBar, searchBox);
+    }
     [].slice.call(document.querySelectorAll('[data-job-filter]')).forEach(function(select) {
       select.addEventListener('change', function() {
         jobFilters[select.dataset.jobFilter] = select.value;
