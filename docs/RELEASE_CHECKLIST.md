@@ -83,3 +83,22 @@ database or other persistent files.
 Never roll back by tracking `main`. If the release workflow itself fails after CI succeeded,
 re-run the failed workflow; delete and re-push the tag (`git push --delete origin vX.Y.Z`) only if
 the tagged commit changes.
+
+## 6. Drill records
+
+### Drill record - v0.6.3
+
+- Date: 2026-11-13
+- Environment (independent server / volume): independent non-production server (host name not recorded)
+- Image or version tested (tag and digest): v0.6.3, ghcr.io/kowts/crontab-ui@sha256:5735d315917a3cebab49faa4c64b5a658c61d0f0334315082d5076ae60c44695; rollback target v0.6.2
+- Run by: Kowts
+- Backup and integrity, external copy: pass
+- Restore into a clean volume: pass
+- Rollback to the previous image: pass
+- Users, roles and permissions: pass
+- Configuration and secrets (`predeploy`): pass
+- Scheduled tasks recovered: pass
+- Task executed by the scheduler: pass
+- Logs, history and audit: pass
+- Notes and limitations: reported by the operator as all pass; no screenshots or command output were attached.
+
