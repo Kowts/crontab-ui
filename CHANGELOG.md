@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0]
+
+- Release workflow fixes found by the first run: lowercase GHCR repository, pre-release flag
+  for `-` tags, detached descendants terminated on timeout, Alpine packages upgraded and
+  lockfile updated for audit findings.
+
 ### Added
 - Execution state machine (`running`, `completed`, `failed`, `timeout`, `cancelled`,
   `interrupted`, `output_limit`) with final terminal states and idempotent completion.

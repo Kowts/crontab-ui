@@ -1,6 +1,6 @@
 # Release notes
 
-## 0.6.0 (em preparação)
+## 0.6.0
 
 ### Execução e estados
 
@@ -33,8 +33,9 @@ ficheiros `600`. Após actualizar, republicar a agenda.
 
 ### Por validar
 
-O workflow de release ainda não foi exercitado no GitHub. Rollback (0.5.2) e restauro numa
-instalação limpa foram validados com imagens Docker reais.
+O workflow de release foi exercitado com `v0.6.0-rc.1` (imagem GHCR, SBOM e scan). Disco
+cheio, reinício com tarefas activas e SMTP a rejeitar envio permanecem como validação manual.
+Rollback (0.5.2) e restauro numa instalação limpa foram validados com imagens Docker reais.
 
 ### Correcções encontradas na validação Docker
 
