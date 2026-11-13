@@ -29,6 +29,7 @@
 <% const jobs = JSON.parse(crontabs); %>
 <% const hasJobs = jobs.length > 0; %>
 <% const hasUnsavedChanges = jobs.some(function(job) { return !job.saved || job.needsPublishReview; }); %>
+<% function lastResult(job) { if (!job.lastRun) return 'never'; if (job.lastRun.status === 'completed') return 'success'; if (job.lastRun.status === 'running' || job.lastRun.status === 'pending') return 'running'; return 'error'; } %>
 <% function accessLabel(job) { if (job.permissions.write) return 'manageAndRun'; if (job.permissions.execute) return 'runOnly'; return 'viewOnly'; } %>
 <%- include('navbar.ejs') -%>
 
@@ -91,13 +92,39 @@
     </div>
 
     <% if (hasJobs) { %>
+      <div class="jobs-filters" role="group" aria-label="<%= t('filters') %>">
+        <label class="jobs-filter"><span><%= t('filterLastRun') %></span>
+          <select class="form-select form-select-sm" data-job-filter="result">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="success"><%= t('filterSuccess') %></option>
+            <option value="error"><%= t('filterError') %></option>
+            <option value="running"><%= t('filterRunning') %></option>
+            <option value="never"><%= t('filterNeverRun') %></option>
+          </select>
+        </label>
+        <label class="jobs-filter"><span><%= t('filterSchedule') %></span>
+          <select class="form-select form-select-sm" data-job-filter="state">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="enabled"><%= t('filterEnabled') %></option>
+            <option value="disabled"><%= t('disabled') %></option>
+          </select>
+        </label>
+        <label class="jobs-filter"><span><%= t('filterPublication') %></span>
+          <select class="form-select form-select-sm" data-job-filter="publication">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="published"><%= t('filterPublished') %></option>
+            <option value="local"><%= t('localChanges') %></option>
+          </select>
+        </label>
+        <button type="button" class="btn btn-sm btn-link" data-job-filter-reset hidden><%= t('filterClear') %></button>
+      </div>
       <table class="table align-middle mb-0" id="main_table">
         <thead>
           <tr><th>#</th><th><%= t('name') %></th><th><%= t('command') %></th><th><%= t('schedule') %></th><th><%= t('access') %></th><th><%= t('lastRun') %></th><th><%= t('lastModified') %></th><th></th></tr>
         </thead>
         <tbody>
           <% jobs.forEach(function(crontab, index){ %>
-            <tr data-job-row data-id="<%= crontab._id %>" class="<%= crontab.stopped ? 'job-row-stopped' : '' %>">
+            <tr data-job-row data-id="<%= crontab._id %>" data-last-result="<%= lastResult(crontab) %>" data-published="<%= crontab.saved && !crontab.needsPublishReview ? 'published' : 'local' %>" class="<%= crontab.stopped ? 'job-row-stopped' : '' %>">
               <td><%= index + 1 %></td>
               <td>
                 <div class="job-name-row">

@@ -107,6 +107,28 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Task list filters', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8');
+
+    it.each([
+      [null, 'never'], [{ status: 'completed' }, 'success'], [{ status: 'running' }, 'running'],
+      [{ status: 'failed' }, 'error'], [{ status: 'timeout' }, 'error'], [{ status: 'interrupted' }, 'error'],
+    ])('classifies the last run %j as %s', (lastRun, expected) => {
+      const line = source.split('\n').find((entry) => entry.includes('function lastResult'));
+      const html = require('ejs').render(`${line}<%= lastResult(job) %>`, { job: { lastRun } });
+      expect(html.trim()).toBe(expected);
+    });
+
+    it('exposes translated last-run, schedule and publication filters', () => {
+      const { dictionaries } = require('../config/i18n');
+      const keys = ['filterLastRun', 'filterSchedule', 'filterPublication', 'filterAll', 'filterSuccess', 'filterError',
+        'filterNeverRun', 'filterEnabled', 'filterPublished', 'filterClear'];
+      Object.values(dictionaries).forEach((dictionary) => keys.forEach((key) => expect(dictionary[key]).toBeTruthy()));
+      ['result', 'state', 'publication'].forEach((name) => expect(source).toContain(`data-job-filter="${name}"`));
+      expect(source).toContain('data-last-result="<%= lastResult(crontab) %>"');
+    });
+  });
+
   describe('Cron schedule tooltip', () => {
     it('hides the human description in the table and exposes it through a keyboard-focusable tooltip', () => {
       const source = fs.readFileSync(path.join(__dirname, '../views/index.ejs'), 'utf8');

@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Task list filters for last run (success, error, running, never run), schedule state (enabled, disabled) and publication (published, local changes), with a clear button.
+
 ## [0.6.0]
 
 - Release workflow fixes found by the first run: lowercase GHCR repository, pre-release flag

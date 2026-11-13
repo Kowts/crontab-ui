@@ -74,6 +74,9 @@ body.app-body {
 
 .jobs-count { display: inline-flex; align-items: center; margin-left: .5rem; padding: .2rem .6rem; border-radius: 999px; background: #e6faf4; color: var(--app-success); font-size: .78rem; font-weight: 650; }
 .jobs-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.jobs-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .75rem 1rem; padding: 1rem clamp(1rem, 2vw, 1.5rem) 0; }
+.jobs-filter { display: flex; flex-direction: column; gap: .25rem; margin: 0; font-size: .78rem; font-weight: 600; color: var(--bs-secondary-color, #6b7a90); }
+.jobs-filter .form-select { min-width: 10rem; }
 .jobs-toolbar .dropdown-menu { min-width: 14rem; padding: .5rem; border-color: var(--app-border); border-radius: 10px; box-shadow: 0 12px 30px rgba(27, 47, 78, .14); }
 .jobs-toolbar .dropdown-item { border-radius: 7px; padding: .55rem .65rem; }
 .app-card .dataTables_wrapper { padding: 1.15rem 1.5rem 0; }

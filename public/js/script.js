@@ -50,7 +50,20 @@ function initPage() {
       var pager = api.table().container().querySelector('.dt-paging');
       if (pager) pager.classList.toggle('d-none', api.page.info().pages <= 1);
     }
-    $('#main_table').DataTable({
+    var jobFilters = {};
+    $.fn.dataTable.ext.search.push(function(settings, _data, dataIndex) {
+      if (settings.nTable.id !== 'main_table') return true;
+      var row = settings.aoData[dataIndex].nTr;
+      if (!row) return true;
+      if (jobFilters.result && row.dataset.lastResult !== jobFilters.result) return false;
+      if (jobFilters.publication && row.dataset.published !== jobFilters.publication) return false;
+      if (jobFilters.state) {
+        var disabled = row.classList.contains('job-row-stopped');
+        if ((jobFilters.state === 'disabled') !== disabled) return false;
+      }
+      return true;
+    });
+    var mainTable = $('#main_table').DataTable({
       order: [[1, 'asc']], stateSave: true, stateDuration: 0,
       columns: [{ orderable: false }, null, { visible: false }, null, { orderable: false }, { orderable: true, type: 'num' }, { orderable: true, type: 'num' }, { orderable: false }],
       stateLoadParams: function(_settings, state) {
@@ -63,6 +76,22 @@ function initPage() {
         infoEmpty: tr('dataInfoEmpty'), zeroRecords: tr('dataZero'), paginate: { first: '«', last: '»', next: '›', previous: '‹' }
       }
     });
+    var filterReset = document.querySelector('[data-job-filter-reset]');
+    [].slice.call(document.querySelectorAll('[data-job-filter]')).forEach(function(select) {
+      select.addEventListener('change', function() {
+        jobFilters[select.dataset.jobFilter] = select.value;
+        if (filterReset) filterReset.hidden = !Object.keys(jobFilters).some(function(key) { return jobFilters[key]; });
+        mainTable.draw();
+      });
+    });
+    if (filterReset) {
+      filterReset.addEventListener('click', function() {
+        jobFilters = {};
+        [].slice.call(document.querySelectorAll('[data-job-filter]')).forEach(function(select) { select.value = ''; });
+        filterReset.hidden = true;
+        mainTable.draw();
+      });
+    }
   }
   var importInput = document.getElementById('import_file');
   var importForm = document.getElementById('import_form');
@@ -322,6 +351,7 @@ function updateJobStatus(_id, stopped) {
   button.classList.toggle('btn-schedule-disable', !stopped);
   setButtonIconAndLabel(button, stopped ? 'bi-power' : 'bi-stop-fill', label, stopped ? tr('enable') : tr('pause'));
   updateScheduleStateBadge(row, stopped);
+  if ($.fn.dataTable.isDataTable('#main_table')) $('#main_table').DataTable().draw(false);
 }
 
 function setButtonIconAndLabel(button, iconClass, label, actionLabel) {
