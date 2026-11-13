@@ -28,7 +28,7 @@ This fork extends the original visual crontab management interface with producti
 
 ### Task overview
 
-![Dark theme task overview in Portuguese, showing task ownership, local publication state, and operation controls](docs/images/task-list-dark.png)
+![Dark theme task overview with filters, showing task ownership, publication state, and operation controls](docs/images/task-list-dark.png)
 
 ### Create a task
 
