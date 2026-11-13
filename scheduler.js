@@ -1,10 +1,11 @@
 'use strict';
 
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const { buildTaskEnvironment } = require('./config/task-environment');
+const { restoreSchedule } = require('./lib/schedule-store');
 
 function configuredCronUser() {
   const user = process.env.CRON_USER || 'node';
@@ -88,10 +89,25 @@ function forwardSchedulerOutput(stream, destination, coordinator) {
   });
 }
 
-function startScheduler({ spawnProcess = spawn } = {}) {
+function restorePersistedSchedule(cronFile) {
+  const dataDir = process.env.CRON_DB_PATH || path.join(__dirname, 'crontabs');
+  try {
+    const outcome = restoreSchedule(dataDir, configuredCronUser(), cronFile, {
+      validate: (file) => execFileSync('supercronic', ['-test', file], { stdio: 'pipe', timeout: 30000 }),
+    });
+    if (outcome === 'restored') console.log(`Restored the published schedule from ${dataDir}`);
+    return outcome;
+  } catch (error) {
+    console.error(`Persisted schedule not restored: ${error.message}`);
+    return 'failed';
+  }
+}
+
+function startScheduler({ spawnProcess = spawn, restore = restorePersistedSchedule } = {}) {
   const cronPath = process.env.CRON_PATH;
   if (!cronPath) throw new Error('CRON_PATH is required in Docker');
   const cronFile = path.join(cronPath, configuredCronUser());
+  restore(cronFile);
   const scheduler = spawnProcess('supercronic', ['-passthrough-logs', cronFile], {
     env: schedulerEnvironment(),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -116,4 +132,4 @@ function startScheduler({ spawnProcess = spawn } = {}) {
 
 if (require.main === module) startScheduler();
 
-module.exports = { configuredCronUser, createReloadCoordinator, schedulerEnvironment, schedulerReloadStateFile, startScheduler, writeReloadState };
+module.exports = { configuredCronUser, createReloadCoordinator, restorePersistedSchedule, schedulerEnvironment, schedulerReloadStateFile, startScheduler, writeReloadState };

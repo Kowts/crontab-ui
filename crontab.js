@@ -16,6 +16,7 @@ const { redact, searchAudit } = require('./lib/audit-log');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 const { buildTaskEnvironment } = require('./config/task-environment');
 const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
+const { persistSchedule } = require('./lib/schedule-store');
 
 const humanCronLocale = process.env.HUMANCRON ?? 'en';
 
@@ -688,6 +689,13 @@ function setCrontab(environment, callback, applyCrontab) {
         if (writeError) return rollback(writeError);
         return applyCrontab(crontabFile, (applyError) => {
           if (applyError) return rollback(applyError);
+          if (isDockerScheduler()) {
+            try {
+              persistSchedule(dbFolder, dockerCronUser, crontabFile);
+            } catch (persistError) {
+              audit({ type: 'schedule_persist', status: 'failed', error: persistError.message });
+            }
+          }
           return markPublished(tabs.map((tab) => tab._id), callback);
         });
       });
