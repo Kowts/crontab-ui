@@ -3356,15 +3356,16 @@ describe('Application bootstrap', () => {
     const context = {
       require(name) {
         if (name === './crontab') return { recoverManualRuns() { events.push('recovery'); } };
-        if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
+        if (name === './app') return { createApp: () => ({ locals: {} }), startServer() { events.push('server'); return {}; } };
         if (name === './config/privileges') return { validateProductionPrivileges() {} };
         if (name === './config/file-permissions') return { validateFilePermissions() {} };
+        if (name === './lib/alerting') return { startWatchdog() { events.push('watchdog'); } };
         throw new Error('Unexpected bootstrap dependency');
       },
       process: { env: {}, once() {} },
     };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bootstrap.js'), 'utf8'), context);
-    expect(events).toEqual(['recovery', 'server']);
+    expect(events).toEqual(['recovery', 'server', 'watchdog']);
   });
 
   it('rejects startup as root in production', () => {
@@ -3375,6 +3376,7 @@ describe('Application bootstrap', () => {
         if (name === './app') return { createApp: () => ({}), startServer() { events.push('server'); return {}; } };
         if (name === './config/privileges') return { validateProductionPrivileges: () => { throw new Error('must not run as root'); } };
         if (name === './config/file-permissions') return { validateFilePermissions() {} };
+        if (name === './lib/alerting') return { startWatchdog() {} };
         throw new Error('Unexpected bootstrap dependency');
       },
       process: { env: { NODE_ENV: 'production' }, getuid: () => 0, once() {} },
@@ -3412,6 +3414,9 @@ describe('Application bootstrap', () => {
               throw new Error('Database file has overly open permissions');
             },
           };
+        }
+        if (name === './lib/alerting') {
+          return { startWatchdog() {} };
         }
         throw new Error('Unexpected bootstrap dependency');
       },

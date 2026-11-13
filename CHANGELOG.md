@@ -12,6 +12,7 @@ All notable changes to this project are documented here. The format follows
 - The published Docker schedule is persisted on the data volume and restored at scheduler start; it survives container recreation.
 - Optional read-only root filesystem (`docker-compose.readonly.yml`) and `npm run test:docker-resilience` (run in CI).
 - Automated tests for a lost scheduler reload acknowledgement, a failing external backup copy and a backup failing with `ENOSPC`.
+- Operational alerts: a watchdog reports scheduler-down and audit-write failures (stderr, audit event, optional `ALERT_WEBHOOK_URL`); `/diagnostics` exposes `audit` health and reports `degraded`.
 
 ### Changed
 

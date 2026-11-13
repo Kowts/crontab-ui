@@ -243,6 +243,8 @@ exports.get_crontab = (_id, callback) => {
   });
 };
 
+const auditState = { ok: true, failures: 0, lastError: null, lastErrorAt: null };
+
 function audit(event) {
   try {
     rotateLog(auditFile);
@@ -251,6 +253,7 @@ function audit(event) {
     for (let attempt = 0; attempt < auditWriteAttempts; attempt += 1) {
       try {
         fs.appendFileSync(auditFile, entry, { encoding: 'utf8', mode: 0o600 });
+        auditState.ok = true;
         return;
       } catch (error) {
         writeError = error;
@@ -265,11 +268,16 @@ function audit(event) {
     throw writeError;
   } catch (error) {
     // Audit failures must not make a scheduled job unavailable, but must remain visible.
+    auditState.ok = false;
+    auditState.failures += 1;
+    auditState.lastError = error.message;
+    auditState.lastErrorAt = new Date().toISOString();
     console.error('Unable to write audit record:', error.message);
   }
 }
 
 exports.audit = audit;
+exports.auditHealth = () => ({ ...auditState });
 
 exports.searchAudit = (filters, limit) => {
   const rotated = Array.from({ length: logRotationCount }, (_, index) => `${auditFile}.${index + 1}`);

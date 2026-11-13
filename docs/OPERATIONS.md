@@ -14,6 +14,7 @@ a native installation.
 | `MANUAL_RUN_CONCURRENCY` | `allow` | `forbid` rejects a second manual run of a task with 409 |
 | `BACKUP_RETENTION_COUNT` | see `.env.example` | Backups kept locally and in `BACKUP_EXTERNAL_DIR` |
 | `BACKUP_EXTERNAL_DIR` | unset | Second copy of each backup outside the data volume |
+| `ALERT_WEBHOOK_URL` | unset | JSON POST on scheduler-down / audit-write failures and on recovery |
 | `CONTAINER_CPUS`, `CONTAINER_MEMORY_LIMIT`, `CONTAINER_PIDS_LIMIT` | `2`, `1g`, `512` | Compose container limits |
 
 `.env.example` is the authoritative list.
@@ -65,6 +66,10 @@ Older versions display them as failures; no schema change is required.
 | Manual run rejected 409 | Another run is active and `MANUAL_RUN_CONCURRENCY=forbid` |
 
 Always quote the `operationId` from the UI error when searching the audit.
+
+## Alerts
+
+A watchdog checks every 30 seconds whether Supercronic is running and whether the audit log is writable. Each state change (firing, then resolved) is written to stderr as `ALERT …`, appended to the audit as an `alert` event (when the audit is writable) and, if `ALERT_WEBHOOK_URL` is set, sent as `{service, timestamp, condition, state, detail}` JSON with a 5 s timeout. Webhook failures are logged only. `/diagnostics` reports `audit.ok` and sets `status: degraded` for either condition. Native cron is not observable, so only the audit check applies there.
 
 ## Disaster recovery (new server or container)
 

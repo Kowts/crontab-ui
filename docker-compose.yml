@@ -19,6 +19,7 @@ services:
       TASK_ENV_ALLOWLIST: ${TASK_ENV_ALLOWLIST:-PATH,LANG,LC_ALL,TZ,MAILTO,COMMAND_TIMEOUT_MS}
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
       ALLOW_HTTP: ${ALLOW_HTTP:-false}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
     volumes:
       - crontab-data:/crontab-ui/crontabs
     restart: unless-stopped

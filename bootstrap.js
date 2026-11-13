@@ -4,6 +4,7 @@ const { createApp, startServer } = require('./app');
 const crontab = require('./crontab');
 const { validateProductionPrivileges } = require('./config/privileges');
 const { validateFilePermissions } = require('./config/file-permissions');
+const { startWatchdog } = require('./lib/alerting');
 
 // Rejeita configurações inseguras antes de expôr o serviço.
 validateProductionPrivileges({ nodeEnv: process.env.NODE_ENV });
@@ -15,7 +16,9 @@ validateFilePermissions({
 });
 
 crontab.recoverManualRuns();
-const server = startServer(createApp());
+const application = createApp();
+const server = startServer(application);
+startWatchdog({ health: application.locals.health, audit: crontab.audit });
 
 function shutdown(signal) {
   console.log(`Received ${signal}; stopping crontab-ui`);

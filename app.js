@@ -103,8 +103,9 @@ app.get(`${baseUrl}/diagnostics`, (req, res) => {
   }
   res.set('Cache-Control', 'no-store');
   const health = currentSchedulerHealth();
+  const auditHealth = crontab.auditHealth();
   return res.json({
-    status: health.running === false ? 'degraded' : 'ok',
+    status: health.running === false || !auditHealth.ok ? 'degraded' : 'ok',
     web: { status: 'ok' },
     version: packageJson.version,
     commit: process.env.GIT_COMMIT || 'unknown',
@@ -113,8 +114,10 @@ app.get(`${baseUrl}/diagnostics`, (req, res) => {
     pid: process.pid,
     timestamp: new Date().toISOString(),
     scheduler: health,
+    audit: auditHealth,
   });
 });
+app.locals.health = () => ({ scheduler: currentSchedulerHealth(), audit: crontab.auditHealth() });
 app.use((req, res, next) => {
   if (process.env.NODE_ENV === 'production' && !allowHttp && !req.secure) {
     return res.status(426).json({ message: 'HTTPS is required' });
@@ -672,9 +675,10 @@ app.get(routes.installed_crontab, requireRole('admin'), (req, res, next) => {
 app.get(routes.diagnostics, requireRole('viewer'), (req, res) => {
   res.set('Cache-Control', 'no-store');
   const scheduler = currentSchedulerHealth();
+  const auditHealth = crontab.auditHealth();
 
   return res.json({
-    status: scheduler.running === false ? 'degraded' : 'ok',
+    status: scheduler.running === false || !auditHealth.ok ? 'degraded' : 'ok',
     web: { status: 'ok' },
     version: packageJson.version,
     commit: process.env.GIT_COMMIT || 'unknown',
@@ -684,7 +688,7 @@ app.get(routes.diagnostics, requireRole('viewer'), (req, res) => {
     nodeEnv: process.env.NODE_ENV,
     uptime: process.uptime(),
     scheduler,
-    timestamp: new Date().toISOString(),
+    audit: auditHealth,
   });
 });
 
