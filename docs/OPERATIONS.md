@@ -71,6 +71,15 @@ Always quote the `operationId` from the UI error when searching the audit.
 
 A watchdog checks every 30 seconds whether Supercronic is running and whether the audit log is writable. Each state change (firing, then resolved) is written to stderr as `ALERT …`, appended to the audit as an `alert` event (when the audit is writable) and, if `ALERT_WEBHOOK_URL` is set, sent as `{service, timestamp, condition, state, detail}` JSON with a 5 s timeout. Webhook failures are logged only. `/diagnostics` reports `audit.ok` and sets `status: degraded` for either condition. Native cron is not observable, so only the audit check applies there.
 
+## Audit retention and export
+
+The audit log is `<CRON_DB_PATH>/logs/operations.jsonl` (JSON lines; commands appear only as SHA-256 hashes, secrets are redacted). It rotates at `LOG_MAX_BYTES` (default 10 MiB) keeping `LOG_ROTATION_COUNT` files (`operations.jsonl.1` … `.N`, default 5), so retention is bounded by roughly `LOG_MAX_BYTES × (LOG_ROTATION_COUNT + 1)`; the oldest file is deleted on rotation.
+
+- **Query:** administrators can use `GET /audit` (filters and a limit), which reads the active and rotated files.
+- **Export:** the files are plain JSON lines and can be shipped as is (copy the `logs` directory, or `docker compose cp crontab-ui:/crontab-ui/crontabs/logs ./audit-export`). Rotated files are immutable and safe to copy at any time; the active file may be appended to while copying.
+- **Compliance retention:** if you need longer history than the bounded window, raise `LOG_ROTATION_COUNT`/`LOG_MAX_BYTES` or collect the files regularly with an external log shipper, since the application never keeps rotated logs beyond the configured count.
+- **Failures:** an unwritable audit log never blocks tasks; it is reported as `audit.ok=false` in `/diagnostics` and triggers an alert (see Alerts).
+
 ## Disaster recovery (new server or container)
 
 1. Deploy the same version (or newer) with the same secrets and roles; run `npm run predeploy`.
