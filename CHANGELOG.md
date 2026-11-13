@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.2]
+
 ### Added
 
 - The published Docker schedule is persisted on the data volume and restored at scheduler start; it survives container recreation.
@@ -25,6 +27,7 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - Documentation: CHANGELOG comparison links and the README statement that the remote had no published tags.
+- An external backup copy failure is now always audited, even when removing the temporary file also fails.
 
 ## [0.6.1]
 
@@ -77,7 +80,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `ALLOW_HTTP=true` explicit exception for HTTP in production.
 
-[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Kowts/crontab-ui/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kowts/crontab-ui/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...v0.6.0
 [0.5.3]: https://github.com/Kowts/crontab-ui/compare/v0.5.2...HEAD

@@ -1,5 +1,23 @@
 # Release notes
 
+## 0.6.2
+
+### Resiliência
+- A agenda publicada em Docker é persistida no volume de dados e restaurada no arranque do scheduler; sobrevive à recriação do contentor.
+- Sistema de ficheiros raiz só de leitura opcional (`docker-compose.readonly.yml`) e deployment opcional com web e scheduler separados (`docker-compose.split.yml`), com heartbeat do scheduler.
+- Uma falha na cópia externa de backup é sempre auditada.
+
+### Observabilidade
+- Alertas para scheduler parado e falhas de escrita da auditoria (stderr, evento de auditoria e `ALERT_WEBHOOK_URL` opcional); `/diagnostics` expõe `audit` e passa a `degraded`.
+- Política de retenção, rotação e exportação da auditoria documentada em `docs/OPERATIONS.md`.
+
+### Testes e releases
+- Testes de integração com servidor SMTP real, de falha de recarga, de backup externo e de `ENOSPC`; novos passos de CI para resiliência e deployment separado.
+- A release aguarda o CI e só publica se tiver sucesso no commit etiquetado.
+
+### Atualização
+- Sem alterações de dados ou dependências; basta atualizar a imagem.
+
 ## 0.6.1
 
 ### Interface

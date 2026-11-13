@@ -776,7 +776,7 @@ function copyBackupExternally(backupFile) {
   } catch (error) {
     try {
       fs.rmSync(temporary, { force: true });
-    } catch (cleanupError) {
+    } catch {
       // The external directory may be unusable (for example ENOTDIR); the failure is audited below.
     }
     audit({ type: 'backup_external', status: 'failed', backup: name, error: error.message });
