@@ -72,7 +72,7 @@ describe('Publication and recovery failures', () => {
       out.afterFailureCron = fs.readFileSync(cronFile, 'utf8');
       out.unpublished = await new Promise((resolve) => crontab.crontabs((tabs) => resolve(tabs.filter((t) => !t.saved).length)));
       console.log(JSON.stringify(out));
-      process.exit(0);
+      process.stdout.write("", () => process.exit(0));
     })();
   `;
 
@@ -96,7 +96,7 @@ describe('Publication and recovery failures', () => {
       crontab.backup((error, name) => {
         const audit = require('fs').readFileSync(crontab.audit_file, 'utf8');
         console.log(JSON.stringify({ error: error && error.message, name, audit }));
-        process.exit(0);
+        process.stdout.write("", () => process.exit(0));
       });
     `, { CRON_DB_PATH: path.join(workDir, 'data'), CRON_PATH: path.join(workDir, 'cron'), BACKUP_EXTERNAL_DIR: path.join(blocked, 'inner') });
     expect(result.json.error).toBeFalsy();
@@ -114,7 +114,7 @@ describe('Publication and recovery failures', () => {
       fs.renameSync = (from, to) => { if (String(to).includes('backup-')) { const e = new Error('ENOSPC: no space left on device'); e.code = 'ENOSPC'; throw e; } return original(from, to); };
       crontab.backup((error) => {
         console.log(JSON.stringify({ error: error && error.message, leftovers: fs.readdirSync(crontab.db_folder).filter((f) => f.startsWith('.backup-') || f.startsWith('backup-')) }));
-        process.exit(0);
+        process.stdout.write("", () => process.exit(0));
       });
     `, { CRON_DB_PATH: data, CRON_PATH: path.join(workDir, 'cron') });
     expect(result.json.error).toContain('ENOSPC');
