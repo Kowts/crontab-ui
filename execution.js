@@ -158,7 +158,17 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
   return controller;
 }
 
-function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, cwd, killGraceMs = 5_000, onStart = null }, callback) {
+function executeStructured(executable, args, {
+  timeoutMs,
+  maxOutputBytes,
+  env,
+  cwd,
+  killGraceMs = 5_000,
+  onStart = null,
+  cgroupManager = null,
+  wrapperPath = null,
+  operationId = null,
+}, callback) {
   const startedAt = Date.now();
   const identity = effectiveIdentity();
   if (typeof executable !== 'string' || !executable || !Array.isArray(args)
@@ -169,14 +179,35 @@ function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, c
     return null;
   }
 
-  const child = spawn(executable, args, {
-    shell: false,
-    cwd,
-    env,
-    detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
+  let cgroup = null;
+  let child;
+  try {
+    if (cgroupManager) {
+      if (!wrapperPath || !operationId) throw Object.assign(new Error('Native structured execution wrapper is not configured'), { code: 'EINVAL' });
+      cgroup = cgroupManager.create(operationId);
+      child = spawn(wrapperPath, [cgroup.name, cwd, executable, ...args], {
+        shell: false,
+        cwd: '/',
+        env: { ...env, CRONTAB_UI_AGENT_CGROUP_ROOT: cgroupManager.root },
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } else {
+      child = spawn(executable, args, {
+        shell: false,
+        cwd,
+        env,
+        detached: process.platform !== 'win32',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    }
+  } catch (error) {
+    if (cgroup) cgroupManager.remove(cgroup);
+    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
+    return null;
+  }
   const output = { stdout: [], stderr: [], bytes: 0, exceeded: false };
   let terminationReason = null;
   let killTimer;
@@ -185,7 +216,10 @@ function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, c
     if (terminationReason) return;
     terminationReason = reason;
     terminate(child, 'SIGTERM');
-    killTimer = setTimeout(() => terminate(child, 'SIGKILL'), killGraceMs);
+    killTimer = setTimeout(() => {
+      terminate(child, 'SIGKILL');
+      if (cgroup) cgroupManager.kill(cgroup);
+    }, killGraceMs);
   };
   const controller = { cancel: () => terminateTree('cancelled') };
   const collect = (target) => (chunk) => {
@@ -209,6 +243,7 @@ function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, c
     settled = true;
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
+    if (cgroup) cgroupManager.remove(cgroup);
     callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
   });
   child.on('close', (exitCode, signal) => {
@@ -216,6 +251,7 @@ function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, c
     settled = true;
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
+    if (cgroup) cgroupManager.remove(cgroup);
     const result = {
       durationMs: Date.now() - startedAt,
       exitCode,

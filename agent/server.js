@@ -170,6 +170,9 @@ function readProcStartTime(pid) {
 
 function createAgentServer(options) {
   const { cgroups, logDirectory, policy, secret, socketPath, store, wrapperPath } = options;
+  const validateExecutionPath = options.fileStat || fileStat;
+  const spawnProcess = options.spawnProcess || spawn;
+  const createWriteStream = options.createWriteStream || fs.createWriteStream;
   const controllers = new Map();
   const validationRates = new Map();
   let requestWindowStarted = Date.now();
@@ -229,10 +232,10 @@ function createAgentServer(options) {
     if (requestedExecutable !== environment.executable_realpath) {
       throw Object.assign(new Error('The configured runtime does not match the host policy'), { statusCode: 409, code: 'AGENT_POLICY_REVISION_MISMATCH' });
     }
-    const executable = fileStat(environment.executable, 'file', environment.executable_owner_uids, environment.executable_realpath);
+    const executable = validateExecutionPath(environment.executable, 'file', environment.executable_owner_uids, environment.executable_realpath);
     for (const task of Object.values(environment.tasks)) {
-      fileStat(task.script_path, 'file', task.script_owner_uids);
-      fileStat(task.working_directory, 'directory', task.working_directory_owner_uids);
+      validateExecutionPath(task.script_path, 'file', task.script_owner_uids);
+      validateExecutionPath(task.working_directory, 'directory', task.working_directory_owner_uids);
     }
     const cwd = Object.values(environment.tasks)[0]?.working_directory || '/';
     return runtimeVersion(environment, cwd).then((version) => ({
@@ -281,9 +284,9 @@ function createAgentServer(options) {
       return { accepted: true, existing: true, execution: operationReply(previous) };
     }
     const { environment, task } = resolveTask(policy, body);
-    const executable = fileStat(environment.executable, 'file', environment.executable_owner_uids, environment.executable_realpath);
-    const script = fileStat(task.script_path, 'file', task.script_owner_uids);
-    const working = fileStat(task.working_directory, 'directory', task.working_directory_owner_uids);
+    const executable = validateExecutionPath(environment.executable, 'file', environment.executable_owner_uids, environment.executable_realpath);
+    const script = validateExecutionPath(task.script_path, 'file', task.script_owner_uids);
+    const working = validateExecutionPath(task.working_directory, 'directory', task.working_directory_owner_uids);
     const operation = store.acceptOperation({
       operationId: body.operation_id,
       fingerprint,
@@ -301,31 +304,51 @@ function createAgentServer(options) {
     let terminationReason = null;
     let outputBytes = 0;
     let outputTruncated = false;
+    let outputError = null;
     let finalized = false;
     let killTimer;
     const startedAt = Date.now();
     const stdoutPath = path.join(logDirectory, `${body.operation_id}.stdout`);
     const stderrPath = path.join(logDirectory, `${body.operation_id}.stderr`);
+    const closeOutputStream = (stream) => new Promise((resolve) => {
+      if (!stream || stream.closed || stream.writableFinished) return resolve();
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        stream.removeListener('finish', finish);
+        stream.removeListener('error', finish);
+        stream.removeListener('close', finish);
+        resolve();
+      };
+      stream.once('finish', finish);
+      stream.once('error', finish);
+      stream.once('close', finish);
+      if (!stream.destroyed) stream.end();
+    });
     const finish = (error, exitCode, signal) => {
       if (finalized) return;
       finalized = true;
       clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
-      stdout.end();
-      stderr.end();
+      const finalError = error || outputError;
       const status = terminationReason === 'timeout' ? 'timeout'
         : terminationReason === 'cancelled' ? 'cancelled'
           : terminationReason === 'output_limit' ? 'output_limit'
-            : error || exitCode !== 0 ? 'failed' : 'completed';
-      stdout.once('finish', () => stderr.once('finish', () => {
+            : terminationReason === 'output_error' || finalError || exitCode !== 0 ? 'failed' : 'completed';
+      Promise.all([closeOutputStream(stdout), closeOutputStream(stderr)]).then(() => {
         store.complete(body.operation_id, {
           status, exitCode, signal, terminationReason, durationMs: Date.now() - startedAt,
-          outputBytes, outputTruncated, errorCode: error ? 'EXECUTION_FAILED' : null,
+          outputBytes, outputTruncated,
+          errorCode: outputError ? 'OUTPUT_PERSISTENCE_FAILED' : finalError ? 'EXECUTION_FAILED' : null,
         });
         if (cgroup) cgroups.remove(cgroup);
         controllers.delete(body.operation_id);
         audit({ operation: 'execution_finished', operationId: body.operation_id, taskId: body.task_id, status, exitCode, signal, durationMs: Date.now() - startedAt, outputBytes, outputTruncated });
-      }));
+      }).catch((storeError) => {
+        audit({ operation: 'execution_state_persistence_failed', operationId: body.operation_id, errorCode: storeError.code || 'IO_ERROR' });
+        if (cgroup) cgroups.kill(cgroup);
+      });
     };
     const controller = {
       terminate(reason) {
@@ -338,13 +361,20 @@ function createAgentServer(options) {
         }, options.killGraceMs || 5000);
       },
     };
+    const handleOutputError = (error) => {
+      if (!outputError) outputError = error;
+      if (child?.pid) controller.terminate('output_error');
+      else finish(error, null, null);
+    };
     controllers.set(body.operation_id, controller);
 
     try {
       cgroup = cgroups.create(body.operation_id);
-      stdout = fs.createWriteStream(stdoutPath, { flags: 'wx', mode: 0o600 });
-      stderr = fs.createWriteStream(stderrPath, { flags: 'wx', mode: 0o600 });
-      child = spawn(wrapperPath, [cgroup.name, working.path, executable.path, script.path, ...body.arguments], {
+      stdout = createWriteStream(stdoutPath, { flags: 'wx', mode: 0o600 });
+      stdout.on('error', handleOutputError);
+      stderr = createWriteStream(stderrPath, { flags: 'wx', mode: 0o600 });
+      stderr.on('error', handleOutputError);
+      child = spawnProcess(wrapperPath, [cgroup.name, working.path, executable.path, script.path, ...body.arguments], {
         shell: false,
         cwd: '/',
         detached: true,

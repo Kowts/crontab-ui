@@ -11,6 +11,7 @@ All notable changes to this project are documented here. The format follows
 
 - `docs/RELEASE_CHECKLIST.md`: drill record template to keep manual validation evidence per release.
 - Execution environment catalog, structured task payloads with argv arrays, and a no-shell structured executor path; legacy `command` tasks remain unchanged.
+- `native-local` structured destination for native Linux installations, with explicit trusted-owner UIDs and per-run cgroup v2 resource limits; unavailable inside Docker.
 - Optional Ubuntu local execution agent with UDS/HMAC, independent task allowlist, durable idempotency, cgroup v2 limits, bounded logs and `unknown` recovery state.
 - `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and outstanding Linux validation gates.
 

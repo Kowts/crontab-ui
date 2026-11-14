@@ -37,6 +37,7 @@ Run on an instance that is not production, ideally on a different server.
 | Tasks actually run in the scheduler | `npm run test:docker-scheduler` (CI) | Create a test task, wait for a scheduled run and confirm it as the non-root user |
 | Logs, history and audit | - | Check the execution history, `GET /audit` and the `logs` directory |
 | Structured container execution | Unit/API tests | On Linux, execute a non-destructive sample under configured executable/root allowlists |
+| Native structured execution | Policy/API tests | On a native Ubuntu service, verify trusted-owner policy, cgroup v2 memory/CPU/PIDs, wrapper isolation, timeout and cancellation |
 | Ubuntu agent and UDS | HMAC/policy unit tests | On an independent Ubuntu VM, validate socket permissions, replay rejection, cgroup limits, cancellation and agent restart reconciliation |
 | Structured recovery | SQLite snapshot/import tests | Restore a backup and reconcile agent-local state; confirm `unknown` is never automatically resubmitted |
 

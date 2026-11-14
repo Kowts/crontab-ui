@@ -41,6 +41,7 @@ const envFile = path.join(dbFolder, 'env.db');
 const crontabDbFile = path.join(dbFolder, 'crontab.db');
 
 const db = new SqliteDatastore({ filename: crontabDbFile });
+db.updateExecutionTargetHealth('native-local', process.env.CRON_IN_DOCKER === 'true' ? 'unavailable' : 'unknown', null, null);
 
 // Every limit is read through config/limits.js. An unvalidated value was not hypothetical: a
 // non-numeric EXECUTION_HISTORY_PER_JOB reached SQLite as NULL, the retention query matched no
@@ -620,6 +621,9 @@ function executeJob(job, plan, operationId, callback) {
       killGraceMs: commandKillGraceMs,
       env: plan.structured.env,
       cwd: plan.structured.cwd,
+      cgroupManager: plan.structured.cgroupManager || null,
+      wrapperPath: plan.structured.wrapperPath || null,
+      operationId,
     }, callback);
   }
   return execute(job.command, {
@@ -739,7 +743,10 @@ function executeAgentJob(plan, operationId, callback) {
     if (cancelRequested) client.cancelExecution(operationId).catch(() => {});
     void poll();
   }).catch((error) => {
-    const dispatchStatus = error.code === 'AGENT_DISPATCH_UNKNOWN' ? 'unknown' : 'unreachable';
+    const policyRejection = Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 500;
+    const dispatchStatus = error.code === 'AGENT_DISPATCH_UNKNOWN' ? 'unknown'
+      : policyRejection ? 'rejected' : 'unreachable';
+    if (!policyRejection) updateAgentHealth('unavailable');
     finish(error, {
       dispatchStatus, exitCode: null, signal: null, durationMs: Date.now() - startedAt,
       terminationReason: null, outputExceeded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity: executionRuntime.identity,
@@ -1186,11 +1193,11 @@ function validateExecutionCatalog(catalog) {
     throw new Error('Imported execution environment catalog is invalid');
   }
   if (!catalog.targets.length && !catalog.environments.length && !catalog.validations.length) return catalog;
-  const supportedTargets = new Set(['container-local', 'ubuntu-local']);
+  const supportedTargets = new Set(['container-local', 'native-local', 'ubuntu-local']);
   const targetIds = new Set();
   const targets = catalog.targets.map((target) => {
     if (!target || !supportedTargets.has(target.id) || target.code !== target.id
-      || !['container', 'local_agent'].includes(target.type)
+      || !['container', 'local_agent', 'native_local'].includes(target.type)
       || typeof target.name !== 'string' || !target.name || target.name.length > 120
       || ![0, 1].includes(target.enabled)
       || !['unknown', 'online', 'degraded', 'unavailable'].includes(target.health_status)
@@ -1206,13 +1213,30 @@ function validateExecutionCatalog(catalog) {
     targetIds.add(target.id);
     return {
       ...target,
-      health_status: target.type === 'local_agent' ? 'unavailable' : 'unknown',
+      health_status: target.type === 'container' ? 'unknown' : 'unavailable',
       agent_version: null,
       last_seen_at: null,
     };
   });
-  for (const id of supportedTargets) {
+  for (const id of ['container-local', 'ubuntu-local']) {
     if (!targetIds.has(id)) throw new Error('Imported execution target catalog is incomplete');
+  }
+  if (!targetIds.has('native-local')) {
+    const now = Date.now();
+    targets.push({
+      id: 'native-local',
+      code: 'native-local',
+      name: 'Executor nativo',
+      type: 'native_local',
+      enabled: 1,
+      capabilities_json: '{}',
+      health_status: 'unavailable',
+      agent_version: null,
+      last_seen_at: null,
+      created_at: now,
+      updated_at: now,
+    });
+    targetIds.add('native-local');
   }
 
   const environmentIds = new Set();
@@ -1335,7 +1359,7 @@ function mergeExecutionCatalog(importedCatalog, existingCatalog) {
   return {
     targets: [...targets.values()].map((target) => ({
       ...target,
-      health_status: target.type === 'local_agent' ? 'unavailable' : 'unknown',
+      health_status: target.type === 'container' ? 'unknown' : 'unavailable',
       agent_version: null,
       last_seen_at: null,
     })),

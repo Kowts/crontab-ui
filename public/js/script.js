@@ -559,7 +559,9 @@ function loadExecutionEnvironments() {
     executionEnvironments.forEach(function(environment) {
       var option = document.createElement('option');
       option.value = environment.id;
-      option.textContent = environment.name + ' · ' + environment.runtime_type + ' · ' + tr('status' + environment.validation_status.charAt(0).toUpperCase() + environment.validation_status.slice(1));
+      var targetLabel = tr({ 'container-local': 'targetContainer', 'native-local': 'targetNative', 'ubuntu-local': 'targetUbuntu' }[environment.target_id] || 'executionTarget');
+      option.textContent = environment.name + ' · ' + environment.runtime_type + ' · ' + targetLabel
+        + ' · ' + tr('status' + environment.validation_status.charAt(0).toUpperCase() + environment.validation_status.slice(1));
       select.appendChild(option);
     });
     select.value = selectedId;
@@ -655,9 +657,12 @@ function updateStructuredPreview() {
     return;
   }
   var status = environment.enabled ? tr('status' + environment.validation_status.charAt(0).toUpperCase() + environment.validation_status.slice(1)) : tr('environmentDisabled');
-  warning.textContent = (!environment.enabled || environment.validation_status !== 'valid')
-    ? tr('taskEnvironmentWarning').replace('{status}', status)
-    : '';
+  var warnings = [];
+  if (!environment.enabled || environment.validation_status !== 'valid') {
+    warnings.push(tr('taskEnvironmentWarning').replace('{status}', status));
+  }
+  if (environment.target_id === 'native-local') warnings.push(tr('nativeExecutionTrustWarning'));
+  warning.textContent = warnings.join(' ');
 }
 
 function saveTask(payload, mode) {

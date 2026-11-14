@@ -179,6 +179,8 @@ stopped scheduler. It is opt-in and the default deployment is unchanged.
 
 Structured tasks are opt-in. The `command` mode continues to use the legacy executor. Container structured execution requires both reviewed executable and script-root allowlists; an empty configuration keeps it disabled.
 
+For native Linux installations, `native-local` runs directly under the Crontab UI service account. Configure the executable/script roots, the cgroup wrapper, and memory/CPU/PID limits, and add the cgroup delegation drop-in to the application's systemd unit. `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` is a deliberate trust exception: code owned by those UIDs runs with the service account's file access and is not sandboxed. The UI displays this warning. In Docker, `native-local` is disabled; it never escapes the container to the host.
+
 The host agent is a separate, non-root Ubuntu systemd service. Install it only after reviewing [`EXECUTION_ENVIRONMENTS.md`](EXECUTION_ENVIRONMENTS.md), creating a root-managed task allowlist, provisioning the HMAC key through a root-only systemd `EnvironmentFile`, and validating cgroup v2 `cpu`, `memory` and `pids` delegation. The Compose overlay mounts only `/run/crontab-ui-agent` read-only and grants the configured socket group; never mount all of `/run`, the Docker socket, `/`, or host PID namespace.
 
 The agent is not part of `/healthz` availability and is not required for legacy tasks. `/diagnostics` reports it as an optional component. If its socket is unavailable, structured host dispatch is recorded as unavailable/unknown and is never rerun automatically. After an agent restart, check the local operation journal and business system before deciding whether an `unknown` task should be manually submitted again.

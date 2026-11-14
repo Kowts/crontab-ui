@@ -46,8 +46,9 @@
       var targetSelect = document.getElementById('environment-target');
       targets.forEach(function(target) {
         var state = target.health_status === 'unavailable' ? tr('statusUnavailable') : tr('statusPending');
-        var label = target.name + ' (' + state + ')';
-        addOption(targetFilter, target.id, target.name);
+        var targetName = tr({ 'container-local': 'targetContainer', 'native-local': 'targetNative', 'ubuntu-local': 'targetUbuntu' }[target.code] || 'executionTarget');
+        var label = targetName + ' (' + state + ')';
+        addOption(targetFilter, target.id, targetName);
         addOption(targetSelect, target.id, label);
       });
     });
@@ -62,7 +63,8 @@
   }
 
   function targetLabel(environment) {
-    return environment.target ? environment.target.name : environment.target_id;
+    var code = environment.target ? environment.target.code : environment.target_id;
+    return tr({ 'container-local': 'targetContainer', 'native-local': 'targetNative', 'ubuntu-local': 'targetUbuntu' }[code] || 'executionTarget');
   }
 
   function addCell(row, value, className) {

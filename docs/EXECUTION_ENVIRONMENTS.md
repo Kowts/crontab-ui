@@ -4,7 +4,7 @@
 
 O catálogo central, a API administrativa, a página de gestão, as tarefas estruturadas, a validação de payload e o despacho fail-closed estão implementados. O caminho `command` existente permanece separado e continua a usar o executor legado.
 
-A execução structured no contentor só fica disponível em Linux, depois de configurar `STRUCTURED_EXECUTION_ROOTS`, criar um ambiente `container-local` e validar o runtime. A execução `ubuntu-local` exige o agente host e uma política local correspondente. O agente é opcional; sem socket/HMAC, a operação é recusada e não existe fallback para o contentor.
+A execução structured no contentor requer roots e executáveis allowlisted. `native-local` executa directamente na instalação nativa Linux, sem shell, com wrapper e limites cgroup v2 próprios; em Docker fica indisponível e nunca executa no host. `ubuntu-local` continua a usar o agente host com política independente. Sem configuração válida, todos os destinos falham fechados; não há fallback silencioso.
 
 O serviço e os wrappers C foram implementados, mas esta versão ainda requer validação operacional numa VM Ubuntu: compilação dos wrappers, permissões reais do socket, delegação cgroup v2, reinícios forçados, processos descendentes e cenário ETL de ensaio. Não activar tarefas host de produção antes desses ensaios.
 
@@ -24,6 +24,33 @@ Variáveis de ambiente definidas na tarefa não são suportadas. Não guardar pa
 O Compose mantém esta capacidade desactivada por omissão. Para a activar, definir `STRUCTURED_EXECUTION_ROOTS` como lista separada por vírgulas de directórios absolutos, root-owned e não graváveis por grupo/outros, e `STRUCTURED_EXECUTION_EXECUTABLES` como lista de paths canónicos exactos dos runtimes aprovados. O runtime e os scripts não podem pertencer ao utilizador `node`; os ficheiros e ancestrais são novamente verificados antes de cada execução.
 
 Não montar pastas ETL do host para contornar incompatibilidades de ABI. Não colocar scripts ou executáveis autorizados em directórios graváveis pelo utilizador do serviço. As raízes são uma fronteira de política, não uma sandbox; scripts aprovados executam com os privilégios do processo executor.
+
+## Execução structured nativa
+
+`native-local` só está disponível numa instalação Linux fora de Docker (`CRON_IN_DOCKER` deve estar ausente). Configurar `STRUCTURED_EXECUTION_ROOTS`, `STRUCTURED_EXECUTION_EXECUTABLES`, `STRUCTURED_EXECUTION_CGROUP_WRAPPER` e os limites `STRUCTURED_EXECUTION_MEMORY_MAX_BYTES`, `STRUCTURED_EXECUTION_CPU_QUOTA_PERCENT` e `STRUCTURED_EXECUTION_PIDS_MAX`.
+
+| Variável | Finalidade | Predefinição |
+| --- | --- | --- |
+| `STRUCTURED_EXECUTION_ROOTS` | Roots POSIX autorizadas para scripts e directórios. | vazio, desactivado |
+| `STRUCTURED_EXECUTION_EXECUTABLES` | Paths canónicos exactos dos runtimes aprovados. | vazio, desactivado |
+| `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` | UIDs confiáveis para ficheiros/root pertencentes ao utilizador da aplicação. Lista numérica separada por vírgulas. | vazio |
+| `STRUCTURED_EXECUTION_CGROUP_WRAPPER` | Path do wrapper C root-owned que coloca o processo no cgroup antes do `execve`. | vazio |
+| `STRUCTURED_EXECUTION_MEMORY_MAX_BYTES` | Memória máxima por execução. | `536870912` |
+| `STRUCTURED_EXECUTION_CPU_QUOTA_PERCENT` | Quota CPU por execução; `100` equivale a um CPU. | `100` |
+| `STRUCTURED_EXECUTION_PIDS_MAX` | Máximo de processos/threads por execução. | `64` |
+
+Por defeito, executáveis, scripts, roots e directórios pertencentes à conta do serviço são recusados. Se os ETLs existentes forem mantidos por essa mesma conta, o administrador pode definir `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` para UIDs específicos. Esta opção é uma declaração explícita de confiança: os scripts correm com a identidade e acesso a ficheiros da aplicação, não são sandbox e podem alterar outros ficheiros dessa conta. Não adicionar UIDs sem revisão do risco.
+
+O wrapper `agent/exec-wrapper.c` deve ser compilado e instalado root-owned, sem setuid/capacidades, no path configurado:
+
+```bash
+cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
+  agent/exec-wrapper.c -o /usr/local/libexec/crontab-ui-agent-exec
+```
+
+A unidade systemd da aplicação tem de delegar `cpu`, `memory` e `pids`; [crontab-ui-native-cgroup.conf.example](../deploy/systemd/crontab-ui-native-cgroup.conf.example) mostra as directivas necessárias. Sem wrapper seguro, controllers delegados ou permissões correctas, a validação e execução são recusadas.
+
+`native-local` não é apresentado como isolamento de identidade: é execução directa sem shell e com limites cgroup por processo, sob a conta do Crontab UI. Para fronteira de identidade separada, usar `ubuntu-local` e o agente dedicado.
 
 ## Agente Ubuntu
 

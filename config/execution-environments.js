@@ -3,7 +3,7 @@
 const path = require('path');
 
 const runtimeTypes = new Set(['python', 'node', 'bash', 'binary']);
-const targetIds = new Set(['container-local', 'ubuntu-local']);
+const targetIds = new Set(['container-local', 'native-local', 'ubuntu-local']);
 const writableFields = new Set([
   'name', 'runtime_type', 'target_id', 'executable_path', 'default_working_directory', 'description', 'enabled',
 ]);
