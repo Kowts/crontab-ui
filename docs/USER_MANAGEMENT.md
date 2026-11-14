@@ -29,6 +29,9 @@ Com provider SQLite e uma conta admin, abrir **Users & Permissions**.
 
 - Criar contas com username normalizado, password de pelo menos 12 caracteres e um dos quatro perfis fixos.
 - Pesquisar e filtrar por username, perfil e estado.
+- A pesquisa e os filtros de perfil/estado têm rótulos visíveis e adaptam-se a ecrãs estreitos.
+- As permissões aparecem como uma contagem; **Ver detalhes** expande a lista e as restrições de ownership, estado e execução de operadores.
+- Estados activos/inactivos usam indicadores com texto. **Editar** permanece visível; reset e activação/desactivação ficam no menu de acções da conta.
 - Editar perfil e activar/desactivar. Cada alteração exige a revisão actual da conta.
 - Repor password através de **Reset password**; todas as sessões da conta são revogadas.
 - Alteração de perfil ou estado também revoga todas as sessões existentes.
@@ -45,6 +48,18 @@ Com provider SQLite e uma conta admin, abrir **Users & Permissions**.
 | `admin` | Acesso global, gestão de utilizadores, ambientes, backups, importação e recuperação. |
 
 As verificações do servidor continuam a impor propriedade das tarefas; a UI não é a fronteira de autorização.
+
+### Verificações de regressão
+
+Os testes de gestão de utilizadores verificam:
+
+- Recusa de acesso à página e APIs com uma sessão revogada após desactivação, mesmo depois de reactivar a conta.
+- Revogação da sessão de um admin despromovido e recusa das APIs administrativas após novo login como viewer.
+- Duas ligações SQLite em processos concorrentes a desactivar/despromover os últimos admins: apenas uma alteração é aceite e permanece um admin activo.
+- Restauro de backup sem tabela `users` preserva passwords, perfis e sessões locais; backups novos substituem contas e revogam sessões.
+- Eventos administrativos incluem actor, conta alvo e timestamp, sem passwords ou hashes.
+
+Estas verificações não substituem o ensaio operacional de `native-local` ou do agente Ubuntu.
 
 ## API administrativa
 

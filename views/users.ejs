@@ -24,26 +24,32 @@
     <div class="page-actions"><button type="button" class="btn btn-primary" id="user-add"><i class="bi bi-person-plus me-1" aria-hidden="true"></i><%= t('addUser') %></button></div>
   </header>
 
-  <section class="app-card" aria-labelledby="users-heading">
-    <div class="card-heading">
+  <section class="app-card users-card" aria-labelledby="users-heading">
+    <div class="card-heading users-heading">
       <h2 id="users-heading"><%= t('usersAndPermissions') %></h2>
-      <div class="d-flex flex-wrap gap-2">
-        <label class="visually-hidden" for="user-search"><%= t('searchUsers') %></label>
-        <input id="user-search" class="form-control form-control-sm" type="search" placeholder="<%= t('searchUsers') %>">
-        <label class="visually-hidden" for="user-role-filter"><%= t('userRole') %></label>
-        <select id="user-role-filter" class="form-select form-select-sm">
-          <option value=""><%= t('filterAll') %></option>
-          <option value="viewer"><%= t('viewer') %></option>
-          <option value="executor"><%= t('executor') %></option>
-          <option value="operator"><%= t('operator') %></option>
-          <option value="admin"><%= t('admin') %></option>
-        </select>
-        <label class="visually-hidden" for="user-state-filter"><%= t('userState') %></label>
-        <select id="user-state-filter" class="form-select form-select-sm">
-          <option value=""><%= t('filterAll') %></option>
-          <option value="true"><%= t('userActive') %></option>
-          <option value="false"><%= t('userInactive') %></option>
-        </select>
+      <div class="users-filters">
+        <div class="users-filter users-filter-search">
+          <label for="user-search"><%= t('userSearchLabel') %></label>
+          <input id="user-search" class="form-control form-control-sm" type="search" placeholder="<%= t('searchUsers') %>">
+        </div>
+        <div class="users-filter">
+          <label for="user-role-filter"><%= t('userRole') %></label>
+          <select id="user-role-filter" class="form-select form-select-sm">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="viewer"><%= t('viewer') %></option>
+            <option value="executor"><%= t('executor') %></option>
+            <option value="operator"><%= t('operator') %></option>
+            <option value="admin"><%= t('admin') %></option>
+          </select>
+        </div>
+        <div class="users-filter">
+          <label for="user-state-filter"><%= t('userState') %></label>
+          <select id="user-state-filter" class="form-select form-select-sm">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="true"><%= t('userActive') %></option>
+            <option value="false"><%= t('userInactive') %></option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="card-body-app">
@@ -56,7 +62,7 @@
             <th scope="col"><%= t('userState') %></th>
             <th scope="col"><%= t('userLastLogin') %></th>
             <th scope="col"><%= t('userPermissionSummary') %></th>
-            <th scope="col"><span class="visually-hidden"><%= t('userActions') %></span></th>
+            <th scope="col" class="position-relative"><span class="visually-hidden"><%= t('userActions') %></span></th>
           </tr></thead>
           <tbody id="users-body"></tbody>
         </table>

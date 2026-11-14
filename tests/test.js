@@ -995,6 +995,70 @@ describe('Crontab UI', () => {
   });
 
   describe('SQLite user management store', () => {
+    it.each([
+      [{ active: false }, { active: false }],
+      [{ role: 'viewer' }, { role: 'viewer' }],
+      [{ active: false }, { role: 'viewer' }],
+    ])('protects the last admin across concurrent connections (%j, %j)', async (firstChange, secondChange) => {
+      const filename = path.join(testDbPath, `concurrent-users-${crypto.randomUUID()}.db`);
+      const store = new SqliteDatastore({ filename });
+      const passwordHash = await hashPassword('concurrent admin password');
+      const ids = [crypto.randomUUID(), crypto.randomUUID()];
+      ids.forEach((id, index) => store.createUser({
+        id, username: `concurrent.admin.${index}`, passwordHash, role: 'admin',
+        active: true, actor: 'migration', now: Date.now(),
+      }));
+      store.close();
+      const workers = [];
+      try {
+        const script = `
+          const { SqliteDatastore } = require(${JSON.stringify(require.resolve('../lib/database'))});
+          const store = new SqliteDatastore({ filename: process.argv[1] });
+          process.once('message', () => {
+            try {
+              const user = store.updateUser(process.argv[2], 1, JSON.parse(process.argv[3]), 'other.admin');
+              process.send({ outcome: 'updated', active: user.active, role: user.role });
+            } catch (error) {
+              process.send({ outcome: error.code, message: error.message });
+            } finally {
+              store.close();
+              process.disconnect();
+            }
+          });
+          process.send({ ready: true });
+        `;
+        [firstChange, secondChange].forEach((change, index) => {
+          const child = spawn(process.execPath, ['-e', script, filename, ids[index], JSON.stringify(change)], {
+            stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+          });
+          let result;
+          let stderr = '';
+          child.stderr.on('data', (data) => { stderr += data; });
+          const ready = new Promise((resolve, reject) => {
+            child.on('message', (message) => { if (message.ready) resolve(); else result = message; });
+            child.once('error', reject);
+            child.once('exit', () => reject(new Error(`Worker exited before ready: ${stderr}`)));
+          });
+          const done = new Promise((resolve, reject) => {
+            child.once('error', reject);
+            child.once('exit', (code) => code === 0 ? resolve(result) : reject(new Error(stderr)));
+          });
+          workers.push({ child, ready, done });
+        });
+        await Promise.all(workers.map((worker) => worker.ready));
+        workers.forEach((worker) => worker.child.send('go'));
+        const results = await Promise.all(workers.map((worker) => worker.done));
+        expect(results.map((result) => result.outcome).sort()).toEqual(['LAST_ADMIN_REQUIRED', 'updated']);
+        store.open();
+        expect(store.countActiveAdministrators()).toBe(1);
+      } finally {
+        workers.forEach(({ child }) => { if (child.exitCode === null) child.kill(); });
+        await Promise.allSettled(workers.map((worker) => worker.done));
+        store.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+
     it('never lists password hashes, revokes sessions on access changes and protects the last admin', async () => {
       const filename = path.join(testDbPath, `users-${crypto.randomUUID()}.db`);
       const store = new SqliteDatastore({ filename });
@@ -1044,6 +1108,35 @@ describe('Crontab UI', () => {
   });
 
   describe('User backup recovery', () => {
+    it('keeps local passwords, roles and sessions when restoring a legacy backup without users', async () => {
+      const backup = `backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+      const backupFile = path.join(crontab.db_folder, backup);
+      const username = `legacy.admin.${crypto.randomUUID().slice(0, 8)}`;
+      const passwordHash = await hashPassword('local admin remains unchanged');
+      const account = crontab.users.create({
+        id: crypto.randomUUID(), username, passwordHash, role: 'admin',
+        active: true, actor: 'migration', now: Date.now(),
+      });
+      const sessionId = `legacy-session-${crypto.randomUUID()}`;
+      crontab.sessions.create({
+        id: sessionId, user: username, issuedAt: Date.now(), expiresAt: Date.now() + 60000,
+      });
+      createDatabaseFile(backupFile, []);
+      const legacy = new Database(backupFile);
+      legacy.exec('DROP TABLE users');
+      legacy.close();
+      try {
+        await new Promise((resolve, reject) => crontab.restore(backup, (error) => error ? reject(error) : resolve()));
+        expect(crontab.users.getByUsername(username)).toMatchObject({
+          id: account.id, role: 'admin', active: true, revision: 1,
+        });
+        expect(crontab.users.getAuthentication(username).passwordHash).toBe(passwordHash);
+        expect(crontab.sessions.get(sessionId)).toMatchObject({ user: username, revokedAt: null });
+      } finally {
+        fs.rmSync(backupFile, { force: true });
+      }
+    });
+
     it('restores SQLite accounts and revokes sessions from the replaced account set', async () => {
       const originalBackups = new Set(crontab.get_backup_names());
       const suffix = crypto.randomUUID().slice(0, 8);
@@ -3873,6 +3966,91 @@ describe('Session authentication middleware', () => {
   });
 });
 
+describe('User management panel', () => {
+  function renderPanel(locale) {
+    function element(tag = 'div') {
+      return {
+        tag, children: [], attributes: {}, listeners: {}, value: '', textContent: '',
+        appendChild(child) { this.children.push(child); return child; },
+        replaceChildren() { this.children = []; },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        addEventListener(name, callback) { this.listeners[name] = callback; },
+        querySelectorAll() { return []; },
+      };
+    }
+    const dictionary = require('../config/i18n').dictionaries[locale];
+    const nodes = {};
+    const get = (id) => (nodes[id] ||= element());
+    get('routes-state').textContent = JSON.stringify({ users: '/base/api/users' });
+    get('i18n-state').textContent = JSON.stringify(dictionary);
+    const items = [
+      { id: 'admin', username: 'admin', role: 'admin', active: true, effective_permissions: {
+        viewOwnedTasks: true, viewAllTasks: true, executeOwnedTasks: true, manageOwnedTasks: true,
+        manageUsers: true, manageEnvironments: true,
+      } },
+      { id: 'operator', username: 'etl.operator', role: 'operator', active: false, effective_permissions: {
+        viewOwnedTasks: true,
+      } },
+    ];
+    const requests = [];
+    const jquery = {
+      ajaxSetup() {},
+      ajax(options) {
+        requests.push(options);
+        return { then(callback) { callback({ items, total: items.length }); return { catch() {} }; } };
+      },
+    };
+    const modal = { show() {}, hide() {} };
+    function Dropdown() {}
+    Dropdown.getInstance = () => null;
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/users.js'), 'utf8'), {
+      document: { cookie: '', getElementById: get, createElement: element },
+      bootstrap: { Modal: { getOrCreateInstance: () => modal }, Dropdown },
+      $: jquery, URLSearchParams, window: { confirm: () => false }, setTimeout, clearTimeout,
+    });
+    const descendants = (node) => [node, ...node.children.flatMap(descendants)];
+    return { get, dictionary, requests, descendants };
+  }
+
+  it.each(['en', 'pt'])('renders compact permissions, states and secondary actions in %s', (locale) => {
+    const { get, dictionary, descendants } = renderPanel(locale);
+    const rows = get('users-body').children;
+    const adminDetails = rows[0].children[4].children[0];
+    expect(adminDetails.tag).toBe('details');
+    expect(adminDetails.children[0].children.map((node) => node.textContent)).toEqual([
+      dictionary.userPermissionCount.replace('{count}', '6'), dictionary.userPermissionDetails,
+    ]);
+    expect(adminDetails.children[1].children).toHaveLength(6);
+    expect(adminDetails.children[2].textContent).toBe(dictionary.userAdminScope);
+    const operatorDetails = rows[1].children[4].children[0];
+    expect(operatorDetails.children[0].children[0].textContent).toBe(dictionary.userPermissionCountOne.replace('{count}', '1'));
+    expect(operatorDetails.children[2].textContent).toContain(dictionary.userOperatorDisabled);
+    expect(operatorDetails.children[2].textContent).toContain(dictionary.userInactiveAccess);
+    expect(rows[0].children[2].children[0].className).toContain('user-state-active');
+    expect(rows[1].children[2].children[0].className).toContain('user-state-inactive');
+    const actions = descendants(rows[0].children[5]);
+    const menu = actions.find((node) => node.className === 'dropdown-menu dropdown-menu-end');
+    expect(menu.children.map((node) => node.textContent)).toEqual([
+      dictionary.userResetPassword, dictionary.userDeactivate,
+    ]);
+    const toggle = actions.find((node) => node.attributes['data-bs-toggle'] === 'dropdown');
+    expect(toggle.attributes['aria-label']).toBe(`${dictionary.userActions}: admin`);
+    menu.children[0].listeners.click();
+    expect(get('user-password-description').textContent).toBe('admin');
+  });
+
+  it('keeps role and state filters applied to the configured API prefix', () => {
+    const { get, requests } = renderPanel('en');
+    get('user-role-filter').value = 'operator';
+    get('user-state-filter').value = 'false';
+    get('user-role-filter').listeners.change();
+    const url = new URL(requests.at(-1).url, 'http://localhost');
+    expect(url.pathname).toBe('/base/api/users');
+    expect(url.searchParams.get('role')).toBe('operator');
+    expect(url.searchParams.get('active')).toBe('false');
+  });
+});
+
 describe('SQLite user management API', () => {
   const originalProvider = process.env.AUTH_PROVIDER;
   const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
@@ -3952,15 +4130,48 @@ describe('SQLite user management API', () => {
     await viewerRequest('get', '/api/users').expect(401);
 
     await adminRequest('patch', `/api/users/${admin.id}`).send({ revision: 1, active: false }).expect(409);
+    const activeOperatorCookie = await cookieFor('etl.operator', 'replacement operator password');
+    await rawRequest(protectedApp).get('/').set('Cookie', activeOperatorCookie).expect(200);
     const disabled = await adminRequest('post', `/api/users/${created.body.id}/deactivate`).send({ revision: 2 }).expect(200);
     expect(disabled.body).toMatchObject({ active: false, revision: 3 });
+    await rawRequest(protectedApp).get('/api/users').set('Cookie', activeOperatorCookie).expect(401);
+    await rawRequest(protectedApp).get('/').set('Accept', 'text/html').set('Cookie', activeOperatorCookie).expect(302);
     await adminRequest('post', `/api/users/${created.body.id}/activate`).send({ revision: 3 }).expect(200);
+    await rawRequest(protectedApp).get('/api/users').set('Cookie', activeOperatorCookie).expect(401);
+
+    const secondAdmin = await adminRequest('post', '/api/users').send({
+      username: 'second.admin', password: 'second administrator password', role: 'admin',
+    }).expect(201);
+    const secondAdminCookie = await cookieFor('second.admin', 'second administrator password');
+    await rawRequest(protectedApp).get('/api/users').set('Cookie', secondAdminCookie).expect(200);
+    await adminRequest('patch', `/api/users/${secondAdmin.body.id}`).send({
+      revision: 1, role: 'viewer',
+    }).expect(200);
+    await rawRequest(protectedApp).get('/api/users').set('Cookie', secondAdminCookie).expect(401);
+    await rawRequest(protectedApp).get('/').set('Accept', 'text/html').set('Cookie', secondAdminCookie).expect(302);
+    const downgradedCookie = await cookieFor('second.admin', 'second administrator password');
+    await rawRequest(protectedApp).get('/api/users').set('Cookie', downgradedCookie).expect(403);
     const auditText = fs.readFileSync(crontab.audit_file, 'utf8');
     expect(auditText).toContain('"operation":"create_user"');
     expect(auditText).toContain('"operation":"reset_user_password"');
     expect(auditText).toContain('"operation":"deactivate_user"');
     expect(auditText).not.toContain('initial operator password');
     expect(auditText).not.toContain('replacement operator password');
+    expect(auditText).not.toContain('second administrator password');
+    const events = auditText.trim().split('\n').map((line) => JSON.parse(line));
+    for (const [operation, target] of [
+      ['reset_user_password', created.body.id], ['deactivate_user', created.body.id],
+      ['activate_user', created.body.id], ['update_user', secondAdmin.body.id],
+    ]) {
+      const event = events.find((entry) => entry.operation === operation
+        && entry.userId === target && entry.outcome === 'completed');
+      expect(event).toMatchObject({ actor: 'admin.sqlite', userId: target, status: 200 });
+      expect(Number.isFinite(Date.parse(event.timestamp))).toBe(true);
+      expect(JSON.stringify(event)).not.toMatch(/password_hash|passwordHash|scrypt:/);
+    }
+    expect(events).toContainEqual(expect.objectContaining({
+      operation: 'create_user', actor: 'admin.sqlite', username: 'second.admin', role: 'admin', status: 201,
+    }));
   });
 });
 

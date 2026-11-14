@@ -37,7 +37,7 @@
     return tr({ viewer: 'viewer', executor: 'executor', operator: 'operator', admin: 'admin' }[role] || 'userRole');
   }
 
-  function permissionSummary(user) {
+  function permissionLabels(user) {
     var permissions = user.effective_permissions || {};
     var labels = [];
     if (permissions.viewOwnedTasks) labels.push(tr('userCanViewOwned'));
@@ -46,7 +46,41 @@
     if (permissions.manageOwnedTasks) labels.push(tr('userCanManageOwned'));
     if (permissions.manageUsers) labels.push(tr('userCanManageUsers'));
     if (permissions.manageEnvironments) labels.push(tr('userCanManageEnvironments'));
-    return labels.join(' · ');
+    return labels;
+  }
+
+  function renderPermissions(cell, user) {
+    var labels = permissionLabels(user);
+    var details = document.createElement('details');
+    details.className = 'user-permissions';
+    var summary = document.createElement('summary');
+    var count = document.createElement('span');
+    count.textContent = tr(labels.length === 1 ? 'userPermissionCountOne' : 'userPermissionCount')
+      .replace('{count}', String(labels.length));
+    summary.appendChild(count);
+    var more = document.createElement('span');
+    more.className = 'user-permissions-link';
+    more.textContent = tr('userPermissionDetails');
+    summary.appendChild(more);
+    summary.setAttribute('aria-label', tr('userPermissionSummary') + ': ' + user.username);
+    details.appendChild(summary);
+    var list = document.createElement('ul');
+    labels.forEach(function(label) {
+      var item = document.createElement('li');
+      item.textContent = label;
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    var note = document.createElement('p');
+    note.className = 'small text-muted mb-0';
+    note.textContent = tr(user.role === 'admin' ? 'userAdminScope' : 'userOwnedScope');
+    if (user.role === 'operator') {
+      note.textContent += ' ' + tr(user.effective_permissions?.executeOwnedTasks
+        ? 'userOperatorEnabled' : 'userOperatorDisabled');
+    }
+    if (!user.active) note.textContent += ' ' + tr('userInactiveAccess');
+    details.appendChild(note);
+    cell.appendChild(details);
   }
 
   function textCell(row, value, className) {
@@ -65,6 +99,9 @@
 
   function renderRows() {
     var body = document.getElementById('users-body');
+    body.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(button) {
+      bootstrap.Dropdown.getInstance(button)?.dispose();
+    });
     body.replaceChildren();
     document.getElementById('users-empty').hidden = users.length > 0;
     users.forEach(function(user) {
@@ -74,31 +111,56 @@
       username.textContent = user.username;
       usernameCell.appendChild(username);
       textCell(row, roleName(user.role));
-      textCell(row, user.active ? tr('userActive') : tr('userInactive'));
+      var stateCell = textCell(row, '');
+      var badge = document.createElement('span');
+      badge.className = 'user-state ' + (user.active ? 'user-state-active' : 'user-state-inactive');
+      badge.textContent = user.active ? tr('userActive') : tr('userInactive');
+      stateCell.appendChild(badge);
       textCell(row, user.last_login_at ? new Date(user.last_login_at).toLocaleString() : tr('never'));
-      textCell(row, permissionSummary(user), 'small text-muted');
+      renderPermissions(textCell(row, ''), user);
 
       var actions = document.createElement('td');
       actions.className = 'text-end text-nowrap';
       var edit = document.createElement('button');
       edit.type = 'button';
-      edit.className = 'btn btn-sm btn-outline-secondary me-1';
+      edit.className = 'btn btn-sm btn-outline-secondary';
       edit.textContent = tr('edit');
       edit.setAttribute('aria-label', tr('userEdit') + ' ' + user.username);
       edit.addEventListener('click', function() { openUser(user); });
-      actions.appendChild(edit);
+      var actionGroup = document.createElement('div');
+      actionGroup.className = 'user-actions';
+      actionGroup.appendChild(edit);
+      var dropdown = document.createElement('div');
+      dropdown.className = 'dropdown';
+      var toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'btn btn-sm btn-outline-secondary';
+      toggle.setAttribute('data-bs-toggle', 'dropdown');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', tr('userActions') + ': ' + user.username);
+      var icon = document.createElement('i');
+      icon.className = 'bi bi-three-dots';
+      icon.setAttribute('aria-hidden', 'true');
+      toggle.appendChild(icon);
+      dropdown.appendChild(toggle);
+      var menu = document.createElement('div');
+      menu.className = 'dropdown-menu dropdown-menu-end';
       var reset = document.createElement('button');
       reset.type = 'button';
-      reset.className = 'btn btn-sm btn-outline-secondary me-1';
+      reset.className = 'dropdown-item';
       reset.textContent = tr('userResetPassword');
       reset.addEventListener('click', function() { openPasswordReset(user); });
-      actions.appendChild(reset);
+      menu.appendChild(reset);
       var state = document.createElement('button');
       state.type = 'button';
-      state.className = 'btn btn-sm btn-outline-secondary';
+      state.className = 'dropdown-item';
       state.textContent = user.active ? tr('userDeactivate') : tr('userActivate');
       state.addEventListener('click', function() { toggleUser(user); });
-      actions.appendChild(state);
+      menu.appendChild(state);
+      dropdown.appendChild(menu);
+      actionGroup.appendChild(dropdown);
+      actions.appendChild(actionGroup);
+      new bootstrap.Dropdown(toggle, { popperConfig: { strategy: 'fixed' } });
       row.appendChild(actions);
       body.appendChild(row);
     });
