@@ -681,7 +681,7 @@ describe('Crontab UI', () => {
     it('exposes translated last-run, schedule and publication filters', () => {
       const { dictionaries } = require('../config/i18n');
       const keys = ['filterLastRun', 'filterSchedule', 'filterPublication', 'filterAll', 'filterSuccess', 'filterError',
-        'filterNeverRun', 'filterEnabled', 'filterPublished', 'filterClear'];
+        'filterNeverRun', 'filterEnabled', 'filterPublished', 'filterClear', 'dataSearch', 'dataPageSize'];
       Object.values(dictionaries).forEach((dictionary) => keys.forEach((key) => expect(dictionary[key]).toBeTruthy()));
       ['result', 'state', 'publication'].forEach((name) => expect(source).toContain(`data-job-filter="${name}"`));
       expect(source).toContain('data-last-result="<%= lastResult(crontab) %>"');

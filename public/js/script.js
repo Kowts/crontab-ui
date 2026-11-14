@@ -98,11 +98,42 @@ function initPage() {
     });
     var filterReset = document.querySelector('[data-job-filter-reset]');
     var filterBar = document.querySelector('.jobs-filters');
-    var searchBox = $('#main_table').closest('.dt-container').find('.dt-search').get(0);
-    if (filterBar && searchBox) {
-      filterBar.classList.add('jobs-filters-inline');
-      searchBox.parentNode.classList.add('jobs-search-cell');
-      searchBox.parentNode.insertBefore(filterBar, searchBox);
+    var tableContainer = mainTable.table().container();
+    var lengthBox = tableContainer.querySelector('.dt-length');
+    var searchBox = tableContainer.querySelector('.dt-search');
+    if (filterBar && lengthBox && searchBox) {
+      var lengthSelect = lengthBox.querySelector('select');
+      var searchInput = searchBox.querySelector('input');
+      if (lengthSelect && searchInput) {
+        var lengthLabel = document.createElement('label');
+        lengthLabel.className = 'jobs-control-label';
+        lengthLabel.htmlFor = lengthSelect.id;
+        lengthLabel.textContent = tr('dataPageSize');
+        lengthBox.replaceChildren(lengthLabel, lengthSelect);
+        lengthBox.classList.add('jobs-page-size');
+
+        var searchLabel = document.createElement('label');
+        searchLabel.className = 'jobs-control-label';
+        searchLabel.htmlFor = searchInput.id;
+        searchLabel.textContent = tr('dataSearch');
+        searchInput.setAttribute('aria-label', tr('dataSearch'));
+        searchInput.placeholder = tr('dataSearch');
+        searchBox.replaceChildren(searchLabel, searchInput);
+        searchBox.classList.add('jobs-search-cell');
+
+        filterReset.classList.add('jobs-filter-reset');
+        var controls = document.createElement('div');
+        controls.className = 'jobs-control-bar';
+        controls.setAttribute('role', 'group');
+        controls.setAttribute('aria-label', tr('filters'));
+        var tableLayout = tableContainer.querySelector('.dt-layout-table');
+        tableContainer.insertBefore(controls, tableLayout || tableContainer.firstChild);
+        controls.append(lengthBox, filterBar, searchBox);
+
+        tableContainer.querySelectorAll('.dt-layout-cell, .dt-layout-row').forEach(function(layout) {
+          if (!layout.children.length && !layout.textContent.trim()) layout.remove();
+        });
+      }
     }
     [].slice.call(document.querySelectorAll('[data-job-filter]')).forEach(function(select) {
       select.addEventListener('change', function() {
