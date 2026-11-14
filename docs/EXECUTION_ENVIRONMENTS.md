@@ -19,6 +19,10 @@ O serviço e os wrappers C foram implementados, mas esta versão ainda requer va
 
 Variáveis de ambiente definidas na tarefa não são suportadas. Não guardar passwords, tokens ou segredos em argumentos, paths ou logs.
 
+Na página de gestão, os filtros de destino, runtime e estado têm rótulos visíveis e partilham a mesma linha em desktop. Em ecrãs estreitos, adaptam-se à largura disponível e a tabela tem deslocação horizontal própria.
+
+**Ver detalhes** expande os caminhos completos do executável e do directório de trabalho. Os estados de activação e validação têm indicadores com texto. **Editar** permanece visível; o menu de acções contém **Activar/Desactivar**, mantendo a confirmação e a revisão optimista existentes. A validação continua disponível no separador **Execução** do editor; estes indicadores não substituem a política do destino.
+
 ## Execução structured no contentor
 
 O Compose mantém esta capacidade desactivada por omissão. Para a activar, definir `STRUCTURED_EXECUTION_ROOTS` como lista separada por vírgulas de directórios absolutos, root-owned e não graváveis por grupo/outros, e `STRUCTURED_EXECUTION_EXECUTABLES` como lista de paths canónicos exactos dos runtimes aprovados. O runtime e os scripts não podem pertencer ao utilizador `node`; os ficheiros e ancestrais são novamente verificados antes de cada execução.

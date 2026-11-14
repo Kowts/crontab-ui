@@ -29,26 +29,32 @@
     </div>
   </header>
 
-  <section class="app-card" aria-labelledby="environments-heading">
-    <div class="card-heading">
+  <section class="app-card environments-card" aria-labelledby="environments-heading">
+    <div class="card-heading environments-heading">
       <h2 id="environments-heading"><%= t('executionEnvironments') %></h2>
-      <div class="d-flex flex-wrap gap-2">
-        <label class="visually-hidden" for="environment-target-filter"><%= t('executionTarget') %></label>
-        <select class="form-select form-select-sm" id="environment-target-filter"><option value=""><%= t('filterAll') %></option></select>
-        <label class="visually-hidden" for="environment-runtime-filter"><%= t('environmentRuntime') %></label>
-        <select class="form-select form-select-sm" id="environment-runtime-filter">
-          <option value=""><%= t('filterAll') %></option>
-          <option value="python"><%= t('runtimePython') %></option>
-          <option value="node"><%= t('runtimeNode') %></option>
-          <option value="bash"><%= t('runtimeBash') %></option>
-          <option value="binary"><%= t('runtimeBinary') %></option>
-        </select>
-        <label class="visually-hidden" for="environment-enabled-filter"><%= t('status') %></label>
-        <select class="form-select form-select-sm" id="environment-enabled-filter">
-          <option value=""><%= t('environmentFilterAll') %></option>
-          <option value="true"><%= t('environmentFilterEnabled') %></option>
-          <option value="false"><%= t('environmentFilterDisabled') %></option>
-        </select>
+      <div class="environments-filters">
+        <div class="environments-filter">
+          <label for="environment-target-filter"><%= t('executionTarget') %></label>
+          <select class="form-select form-select-sm" id="environment-target-filter"><option value=""><%= t('filterAll') %></option></select>
+        </div>
+        <div class="environments-filter">
+          <label for="environment-runtime-filter"><%= t('environmentRuntime') %></label>
+          <select class="form-select form-select-sm" id="environment-runtime-filter">
+            <option value=""><%= t('filterAll') %></option>
+            <option value="python"><%= t('runtimePython') %></option>
+            <option value="node"><%= t('runtimeNode') %></option>
+            <option value="bash"><%= t('runtimeBash') %></option>
+            <option value="binary"><%= t('runtimeBinary') %></option>
+          </select>
+        </div>
+        <div class="environments-filter">
+          <label for="environment-enabled-filter"><%= t('status') %></label>
+          <select class="form-select form-select-sm" id="environment-enabled-filter">
+            <option value=""><%= t('environmentFilterAll') %></option>
+            <option value="true"><%= t('environmentFilterEnabled') %></option>
+            <option value="false"><%= t('environmentFilterDisabled') %></option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="card-body-app">
@@ -63,7 +69,7 @@
             <th scope="col"><%= t('validationStatus') %></th>
             <th scope="col"><%= t('dependentTasks') %></th>
             <th scope="col"><%= t('status') %></th>
-            <th scope="col"><span class="visually-hidden"><%= t('actions') %></span></th>
+            <th scope="col" class="position-relative"><span class="visually-hidden"><%= t('actions') %></span></th>
           </tr></thead>
           <tbody id="execution-environments-body"></tbody>
         </table>

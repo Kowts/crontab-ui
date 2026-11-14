@@ -78,6 +78,9 @@
   function renderRows() {
     var body = document.getElementById('execution-environments-body');
     var empty = document.getElementById('environment-empty');
+    body.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function(button) {
+      bootstrap.Dropdown.getInstance(button)?.dispose();
+    });
     body.replaceChildren();
     empty.hidden = environments.length !== 0;
 
@@ -93,29 +96,80 @@
       nameCell.appendChild(code);
       addCell(row, runtimeLabel(environment.runtime_type));
       addCell(row, targetLabel(environment));
-      var pathCell = addCell(row, environment.executable_path, 'text-truncate');
-      pathCell.title = environment.executable_path;
-      pathCell.style.maxWidth = '20rem';
-      var validationCell = addCell(row, statusLabel(environment.validation_status));
+      var pathCell = addCell(row, '');
+      var details = document.createElement('details');
+      details.className = 'environment-path';
+      var summary = document.createElement('summary');
+      summary.textContent = tr('environmentViewDetails');
+      summary.setAttribute('aria-label', tr('executablePath') + ': ' + environment.name);
+      details.appendChild(summary);
+      var paths = document.createElement('dl');
+      [
+        [tr('executablePath'), environment.executable_path],
+        [tr('workingDirectory'), environment.default_working_directory],
+      ].forEach(function(pair) {
+        var term = document.createElement('dt');
+        term.textContent = pair[0];
+        var value = document.createElement('dd');
+        var code = document.createElement('code');
+        code.textContent = pair[1] || tr('none');
+        value.appendChild(code);
+        paths.appendChild(term);
+        paths.appendChild(value);
+      });
+      details.appendChild(paths);
+      pathCell.appendChild(details);
+      var validationCell = addCell(row, '');
       validationCell.setAttribute('data-validation-status', environment.validation_status);
+      var validation = document.createElement('span');
+      var validationState = ['pending', 'valid', 'invalid', 'unavailable'].includes(environment.validation_status)
+        ? environment.validation_status : 'unavailable';
+      validation.className = 'environment-state environment-state-' + validationState;
+      validation.textContent = statusLabel(environment.validation_status);
+      validationCell.appendChild(validation);
       addCell(row, String(environment.dependent_task_count || 0));
-      addCell(row, environment.enabled ? tr('environmentEnabled') : tr('environmentDisabled'));
+      var stateCell = addCell(row, '');
+      var state = document.createElement('span');
+      state.className = 'environment-state environment-state-' + (environment.enabled ? 'enabled' : 'disabled');
+      state.textContent = environment.enabled ? tr('environmentEnabled') : tr('environmentDisabled');
+      stateCell.appendChild(state);
 
       var actions = document.createElement('td');
       actions.className = 'text-end text-nowrap';
       var edit = document.createElement('button');
       edit.type = 'button';
-      edit.className = 'btn btn-sm btn-outline-secondary me-1';
+      edit.className = 'btn btn-sm btn-outline-secondary';
       edit.textContent = tr('edit');
       edit.setAttribute('aria-label', tr('edit') + ' ' + environment.name);
       edit.addEventListener('click', function() { openEnvironment(environment); });
-      actions.appendChild(edit);
+      var actionGroup = document.createElement('div');
+      actionGroup.className = 'environment-actions';
+      actionGroup.appendChild(edit);
+      var dropdown = document.createElement('div');
+      dropdown.className = 'dropdown';
       var toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = 'btn btn-sm btn-outline-secondary';
-      toggle.textContent = environment.enabled ? tr('environmentDisabled') : tr('environmentEnabled');
-      toggle.addEventListener('click', function() { toggleEnvironment(environment); });
-      actions.appendChild(toggle);
+      toggle.setAttribute('data-bs-toggle', 'dropdown');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', tr('actions') + ': ' + environment.name);
+      var icon = document.createElement('i');
+      icon.className = 'bi bi-three-dots';
+      icon.setAttribute('aria-hidden', 'true');
+      toggle.appendChild(icon);
+      dropdown.appendChild(toggle);
+      var menu = document.createElement('div');
+      menu.className = 'dropdown-menu dropdown-menu-end';
+      var stateAction = document.createElement('button');
+      stateAction.type = 'button';
+      stateAction.className = 'dropdown-item';
+      stateAction.textContent = tr(environment.enabled ? 'environmentDisableAction' : 'environmentEnableAction');
+      stateAction.addEventListener('click', function() { toggleEnvironment(environment); });
+      menu.appendChild(stateAction);
+      dropdown.appendChild(menu);
+      actionGroup.appendChild(dropdown);
+      actions.appendChild(actionGroup);
+      new bootstrap.Dropdown(toggle, { popperConfig: { strategy: 'fixed' } });
       row.appendChild(actions);
       body.appendChild(row);
     });
