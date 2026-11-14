@@ -1,0 +1,14 @@
+# Optional local-host execution client. The host agent must be installed and running first.
+# Use with docker-compose.yml; no socket or secret is mounted in the default deployment.
+services:
+  crontab-ui:
+    environment:
+      CRONTAB_UI_AGENT_SOCKET: /run/crontab-ui-agent/agent.sock
+      CRONTAB_UI_AGENT_HMAC_SECRET: ${CRONTAB_UI_AGENT_HMAC_SECRET:?Configure the matching 256-bit host-agent key}
+    group_add:
+      - "${CRONTAB_UI_AGENT_GID:?Configure the host socket client group ID}"
+    volumes:
+      - type: bind
+        source: ${CRONTAB_UI_AGENT_RUNTIME_DIR:-/run/crontab-ui-agent}
+        target: /run/crontab-ui-agent
+        read_only: true

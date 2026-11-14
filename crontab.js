@@ -11,11 +11,21 @@ const { getProfile } = require('./config/mail-profiles');
 const { useBoundedNumber, useCommandTimeoutMs, useResourceLimit } = require('./config/limits');
 const { normaliseMailing, failureAlertDue } = require('./config/alert-policy');
 const { EXECUTION_STATES, resolveTerminalState } = require('./config/execution-states');
-const { execute } = require('./execution');
+const { execute, executeStructured } = require('./execution');
+const { prepareStructuredExecution } = require('./lib/structured-execution');
+const { LocalAgentClient } = require('./lib/agent-client');
 const { redact, searchAudit } = require('./lib/audit-log');
 const { parseEnvironment, serialiseEnvironment } = require('./config/environment');
 const { buildTaskEnvironment } = require('./config/task-environment');
-const { SqliteDatastore, createDatabaseFile, isSqliteFile, readJobsFromFile } = require('./lib/database');
+const {
+  SqliteDatastore,
+  createDatabaseFile,
+  isSqliteFile,
+  readExecutionCatalogFromFile,
+  readJobsFromFile,
+} = require('./lib/database');
+const { validateStructuredTask } = require('./config/structured-tasks');
+const { validateEnvironmentPayload: validateExecutionEnvironmentPayload } = require('./config/execution-environments');
 const { persistSchedule } = require('./lib/schedule-store');
 const { createLogThrottle } = require('./lib/log-throttle');
 
@@ -90,10 +100,12 @@ db.loadDatabase((err) => {
 fs.mkdirSync(logFolder, { recursive: true, mode: 0o700 });
 fs.mkdirSync(cronPath, { recursive: true, mode: 0o700 });
 
-function buildCrontab(name, command, schedule, stopped, logging, mailing, ownership = {}) {
+function buildCrontab(name, command, schedule, stopped, logging, mailing, ownership = {}, execution = null) {
   return {
     name,
     command,
+    execution_mode: execution?.mode === 'structured' ? 'structured' : undefined,
+    structured_execution: execution?.mode === 'structured' ? execution.definition : undefined,
     schedule,
     ...(stopped !== null && { stopped }),
     timestamp: new Date().toString(),
@@ -179,8 +191,29 @@ exports.crontab_db_file = crontabDbFile;
 exports.apply_docker_crontab = applyDockerCrontab;
 exports.scheduler_reload_state_file = schedulerReloadStateFile;
 
-exports.create_new = (name, command, schedule, logging, mailing, ownership = {}, callback = () => {}) => {
-  const tab = buildCrontab(name, command, schedule, false, logging, mailing, ownership);
+exports.listExecutionTargets = () => db.listExecutionTargets();
+exports.updateExecutionTargetHealth = (id, status, version, lastSeenAt) => db.updateExecutionTargetHealth(id, status, version, lastSeenAt);
+exports.listExecutionEnvironments = (filters) => db.listExecutionEnvironments(filters);
+exports.countExecutionEnvironments = (filters) => db.countExecutionEnvironments(filters);
+exports.getExecutionCatalog = () => db.getExecutionCatalog();
+exports.countStructuredTasksByEnvironment = () => {
+  const counts = {};
+  for (const job of db.getAllData()) {
+    const environmentId = job.execution_mode === 'structured' ? job.structured_execution?.environment_id : null;
+    if (environmentId) counts[environmentId] = (counts[environmentId] || 0) + 1;
+  }
+  return counts;
+};
+exports.getExecutionEnvironment = (id) => db.getExecutionEnvironment(id);
+exports.createExecutionEnvironment = (environment) => db.createExecutionEnvironment(environment);
+exports.updateExecutionEnvironment = (id, revision, changes, actor) => db.updateExecutionEnvironment(id, revision, changes, actor);
+exports.setExecutionEnvironmentEnabled = (id, enabled, actor, revision) => db.setExecutionEnvironmentEnabled(id, enabled, actor, revision);
+exports.addEnvironmentValidation = (id, validation) => db.addEnvironmentValidation(id, validation);
+exports.listEnvironmentValidations = (id, limit) => db.listEnvironmentValidations(id, limit);
+
+exports.create_new = (name, command, schedule, logging, mailing, ownership = {}, callback = () => {}, structuredExecution = null) => {
+  const execution = structuredExecution ? { mode: 'structured', definition: structuredExecution } : null;
+  const tab = buildCrontab(name, command, schedule, false, logging, mailing, ownership, execution);
   tab._id = crypto.randomUUID();
   tab.created = Date.now();
   tab.saved = false;
@@ -191,7 +224,10 @@ exports.update = (_id, data, callback = () => {}) => {
   if (typeof _id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(_id)) {
     return callback(new Error('Invalid job id'));
   }
-  const tab = buildCrontab(data.name, data.command, data.schedule, null, data.logging, data.mailing);
+  const execution = data.execution_mode === 'structured'
+    ? { mode: 'structured', definition: data.structured_execution }
+    : null;
+  const tab = buildCrontab(data.name, data.command, data.schedule, null, data.logging, data.mailing, {}, execution);
   tab.saved = false;
   db.update({ _id }, { $set: tab }, callback);
 };
@@ -339,7 +375,7 @@ function recordOutput(tab, result, operationId) {
 
 // The execution history is diagnostic, never operational: a failure to store it must not turn a
 // completed run into a failed one, so the error is surfaced in the audit log instead of thrown.
-function recordExecution({ job, operationId, trigger, actor, startedAt, status, result }) {
+function recordExecution({ job, operationId, trigger, actor, startedAt, status, result, runtime = executionRuntime }) {
   try {
     db.createExecution({
       operationId,
@@ -354,7 +390,7 @@ function recordExecution({ job, operationId, trigger, actor, startedAt, status, 
       durationMs: result.durationMs,
       terminationReason: result.terminationReason,
       outputExceeded: result.outputExceeded,
-      runtime: executionRuntime,
+      runtime,
     });
   } catch (error) {
     audit({ operationId, type: 'execution_history', jobId: job._id, status: 'failed', error: error.message });
@@ -412,8 +448,11 @@ function deliverMail(tab, operationId, result, failed) {
 }
 
 function defaultMailerSpawn(args) {
+  const mailerEnvironment = { ...process.env };
+  delete mailerEnvironment.CRONTAB_UI_AGENT_HMAC_SECRET;
   return spawn(process.execPath, [path.join(__dirname, 'bin', 'crontab-ui-mailer.js'), ...args], {
     detached: false,
+    env: mailerEnvironment,
     stdio: 'ignore',
   });
 }
@@ -497,41 +536,223 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
   db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
-    let configuredEnvironment;
-    try {
-      configuredEnvironment = parseEnvironment(exports.get_env());
-    } catch (environmentError) {
-      return callback(environmentError);
-    }
-    let jobEnvironment;
-    try {
-      jobEnvironment = buildTaskEnvironment(configuredEnvironment);
-    } catch (environmentError) {
-      return callback(environmentError);
-    }
-    const cmd = res.command;
-
     const operationId = crypto.randomUUID();
-    audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext, runtime: executionRuntime });
+    let plan;
+    try {
+      plan = prepareJobExecution(res);
+    } catch (dispatchError) {
+      audit({
+        operationId, type: 'execution_dispatch', jobId: _id, trigger: 'scheduled',
+        status: dispatchError.code === 'EXECUTOR_UNAVAILABLE' ? 'unreachable' : 'rejected',
+        errorCode: dispatchError.code || 'DISPATCH_REJECTED', ...auditContext,
+      });
+      return callback(dispatchError);
+    }
+    audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext, runtime: plan.runtime });
 
     const startedAt = Date.now();
-    execute(cmd, { timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs, env: jobEnvironment, resourceLimits: { memoryLimitKb: commandMemoryLimitMb * 1024, cpuSeconds: commandCpuSeconds, maxProcesses: commandMaxProcesses } }, (error, result) => {
+    executeJob(res, plan, operationId, (error, result) => {
       const failed = Boolean(error);
-      const output = recordOutput(res, result, operationId);
+      const output = result.dispatchStatus ? null : recordOutput(res, result, operationId);
       // The execution is recorded before the notification decision, because the number of
       // consecutive failures is what that decision depends on.
-      recordExecution({
-        job: res, operationId, trigger: 'scheduled', startedAt,
-        status: resolveTerminalState(error, result), result,
-      });
-      if (output) deliverMail(res, operationId, result, failed);
-      else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
-      applyRetention();
-      audit({ operationId, type: 'runjob', jobId: _id, status: error ? 'failed' : 'completed', exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits, error: error?.message, ...auditContext, runtime: executionRuntime });
+      if (!result.dispatchStatus) {
+        recordExecution({
+          job: res, operationId, trigger: 'scheduled', startedAt,
+          status: resolveTerminalState(error, result), result, runtime: plan.runtime,
+        });
+        if (output) deliverMail(res, operationId, result, failed);
+        else if (shouldSendMail(res.mailing, failed)) audit({ operationId, type: 'mail', jobId: res._id, status: 'skipped', reason: 'output_unavailable' });
+        applyRetention();
+      }
+      audit({ operationId, type: result.dispatchStatus ? 'execution_dispatch' : 'runjob', jobId: _id, status: error ? 'failed' : 'completed', dispatchStatus: result.dispatchStatus, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits, error: error?.message, ...auditContext, runtime: plan.runtime });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
   });
 };
+
+function prepareJobExecution(job) {
+  if (job.execution_mode === 'structured') {
+    const environmentId = job.structured_execution?.environment_id;
+    const environment = typeof environmentId === 'string' ? db.getExecutionEnvironment(environmentId) : null;
+    if (environment?.targetId === 'ubuntu-local') {
+      if (!environment.enabled) throw Object.assign(new Error('Execution environment is disabled'), { statusCode: 409, code: 'ENVIRONMENT_DISABLED' });
+      const target = db.listExecutionTargets().find((item) => item.id === environment.targetId);
+      if (!target || target.healthStatus !== 'online') {
+        throw Object.assign(new Error('The local execution agent is unavailable'), { statusCode: 503, code: 'EXECUTOR_UNAVAILABLE' });
+      }
+      if (environment.validationStatus !== 'valid') {
+        throw Object.assign(new Error('Execution environment must be validated before use'), { statusCode: 409, code: 'ENVIRONMENT_NOT_VALIDATED' });
+      }
+      const definition = job.structured_execution;
+      return {
+        agent: {
+          taskId: job._id,
+          environmentCode: environment.code,
+          environmentRevision: environment.revision,
+          scriptPath: definition.script_path,
+          workingDirectory: definition.working_directory || environment.defaultWorkingDirectory || path.posix.dirname(definition.script_path),
+          arguments: definition.arguments,
+          timeoutMs: definition.timeout_ms,
+        },
+        runtime: Object.freeze({ ...executionRuntime, executionMode: 'structured', environmentId: environment.id,
+          environmentRevision: environment.revision, runtimeType: environment.runtimeType, scriptPath: definition.script_path }),
+      };
+    }
+    const structured = prepareStructuredExecution(job, environment, { maximumTimeoutMs: commandTimeoutMs });
+    return { structured, runtime: Object.freeze({ ...executionRuntime, ...structured.runtime }) };
+  }
+  let configuredEnvironment;
+  try {
+    configuredEnvironment = parseEnvironment(exports.get_env());
+  } catch (error) {
+    throw error;
+  }
+  return { environment: buildTaskEnvironment(configuredEnvironment), structured: null, runtime: executionRuntime };
+}
+
+function executeJob(job, plan, operationId, callback) {
+  if (plan.agent) return executeAgentJob(plan.agent, operationId, callback);
+  if (plan.structured) {
+    return executeStructured(plan.structured.executable, plan.structured.args, {
+      timeoutMs: plan.structured.timeoutMs,
+      maxOutputBytes: commandMaxBuffer,
+      killGraceMs: commandKillGraceMs,
+      env: plan.structured.env,
+      cwd: plan.structured.cwd,
+    }, callback);
+  }
+  return execute(job.command, {
+    timeoutMs: commandTimeoutMs,
+    maxOutputBytes: commandMaxBuffer,
+    killGraceMs: commandKillGraceMs,
+    env: plan.environment,
+    resourceLimits: { memoryLimitKb: commandMemoryLimitMb * 1024, cpuSeconds: commandCpuSeconds, maxProcesses: commandMaxProcesses },
+  }, callback);
+}
+
+function executeAgentJob(plan, operationId, callback) {
+  const client = new LocalAgentClient();
+  const request = {
+    operation_id: operationId,
+    task_id: plan.taskId,
+    environment_code: plan.environmentCode,
+    environment_revision: plan.environmentRevision,
+    script_path: plan.scriptPath,
+    working_directory: plan.workingDirectory,
+    arguments: plan.arguments,
+    timeout_ms: plan.timeoutMs,
+  };
+  let completed = false;
+  let cancelRequested = false;
+  let pollFailures = 0;
+  let pollTimer;
+  let stdout = Buffer.alloc(0);
+  let stderr = Buffer.alloc(0);
+  const startedAt = Date.now();
+  const finish = (error, result) => {
+    if (completed) return;
+    completed = true;
+    if (pollTimer) clearTimeout(pollTimer);
+    callback(error, result);
+  };
+  const updateAgentHealth = (status) => {
+    try {
+      const target = db.listExecutionTargets().find((item) => item.id === 'ubuntu-local');
+      db.updateExecutionTargetHealth('ubuntu-local', status, target?.agentVersion || null, Date.now());
+    } catch (error) {
+      audit({ operationId, type: 'execution_target_health', status: 'failed', error: error.message });
+    }
+  };
+  const loadLogs = async (stream) => {
+    let cursor = 0;
+    const chunks = [];
+    for (let count = 0; count < 1024; count += 1) {
+      const page = await client.getLogs(operationId, stream, cursor);
+      if (page.content_base64) chunks.push(Buffer.from(page.content_base64, 'base64'));
+      if (!Number.isSafeInteger(page.next_cursor) || page.next_cursor <= cursor) break;
+      cursor = page.next_cursor;
+      if (page.content_base64.length < 4) break;
+    }
+    return Buffer.concat(chunks);
+  };
+  const poll = async () => {
+    if (completed) return;
+    try {
+      const execution = await client.getExecution(operationId);
+      pollFailures = 0;
+      if (['completed', 'failed', 'timeout', 'cancelled', 'output_limit', 'unknown'].includes(execution.status)) {
+        try {
+          [stdout, stderr] = await Promise.all([loadLogs('stdout'), loadLogs('stderr')]);
+        } catch (_error) {
+          stdout = Buffer.alloc(0);
+          stderr = Buffer.alloc(0);
+        }
+        if (execution.status === 'unknown') {
+          return finish(Object.assign(new Error('Agent execution outcome is unknown; automatic retry is disabled'), { code: 'AGENT_EXECUTION_UNKNOWN' }), {
+            dispatchStatus: 'unknown', exitCode: null, signal: null, durationMs: Date.now() - startedAt,
+            terminationReason: 'agent_restart', outputExceeded: execution.output_truncated,
+            stdout, stderr, identity: executionRuntime.identity,
+          });
+        }
+        const terminationReason = execution.termination_reason || null;
+        const error = execution.status === 'completed' ? null
+          : Object.assign(new Error(`Agent execution ${execution.status}`), { code: terminationReason || execution.status });
+        return finish(error, {
+          exitCode: execution.exit_code,
+          signal: execution.signal,
+          durationMs: execution.duration_ms,
+          terminationReason,
+          outputExceeded: execution.output_truncated || execution.status === 'output_limit',
+          stdout,
+          stderr,
+          identity: executionRuntime.identity,
+        });
+      }
+      if (cancelRequested) await client.cancelExecution(operationId).catch(() => {});
+      pollTimer = setTimeout(poll, 500);
+    } catch (error) {
+      pollFailures += 1;
+      if (pollFailures < 20) {
+        pollTimer = setTimeout(poll, 500);
+        return;
+      }
+      updateAgentHealth('unavailable');
+      return finish(Object.assign(new Error('Agent execution outcome is unknown; automatic retry is disabled'), {
+        code: error.code || 'AGENT_EXECUTION_UNKNOWN',
+      }), {
+        dispatchStatus: 'unknown', exitCode: null, signal: null, durationMs: Date.now() - startedAt,
+        terminationReason: 'dispatch_unknown', outputExceeded: false,
+        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity: executionRuntime.identity,
+      });
+    }
+  };
+
+  client.submitExecution(request).then((response) => {
+    if (!response.accepted) {
+      return finish(Object.assign(new Error('Agent rejected the execution request'), { code: 'AGENT_DISPATCH_REJECTED' }), {
+        dispatchStatus: 'rejected', exitCode: null, signal: null, durationMs: Date.now() - startedAt,
+        terminationReason: null, outputExceeded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity: executionRuntime.identity,
+      });
+    }
+    updateAgentHealth('online');
+    if (cancelRequested) client.cancelExecution(operationId).catch(() => {});
+    void poll();
+  }).catch((error) => {
+    const dispatchStatus = error.code === 'AGENT_DISPATCH_UNKNOWN' ? 'unknown' : 'unreachable';
+    finish(error, {
+      dispatchStatus, exitCode: null, signal: null, durationMs: Date.now() - startedAt,
+      terminationReason: null, outputExceeded: false, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity: executionRuntime.identity,
+    });
+  });
+
+  return {
+    cancel() {
+      cancelRequested = true;
+      if (client.configured()) client.cancelExecution(operationId).catch(() => {});
+    },
+  };
+}
 
 function pruneManualRuns() {
   const cutoff = Date.now() - (24 * 60 * 60 * 1000);
@@ -573,21 +794,20 @@ exports.getLatestExecutions = () => db.listLatestExecutions();
 exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
   return db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
-    let configuredEnvironment;
-    try {
-      configuredEnvironment = parseEnvironment(exports.get_env());
-    } catch (environmentError) {
-      return callback(environmentError);
-    }
-    let jobEnvironment;
-    try {
-      jobEnvironment = buildTaskEnvironment(configuredEnvironment);
-    } catch (environmentError) {
-      return callback(environmentError);
-    }
     const job = docs[0];
     const operationId = crypto.randomUUID();
     const actor = auditContext.actor || 'local';
+    let plan;
+    try {
+      plan = prepareJobExecution(job);
+    } catch (dispatchError) {
+      audit({
+        operationId, type: 'execution_dispatch', jobId: _id, trigger: 'manual', actor,
+        status: dispatchError.code === 'EXECUTOR_UNAVAILABLE' ? 'unreachable' : 'rejected',
+        errorCode: dispatchError.code || 'DISPATCH_REJECTED', ...auditContext,
+      });
+      return callback(dispatchError);
+    }
     if (manualRunConcurrency === 'forbid' && db.findActiveManualRun(_id)) {
       return callback(Object.assign(new Error('This task already has an active manual execution'), { statusCode: 409 }));
     }
@@ -599,25 +819,40 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       }
       return callback(error);
     }
-    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext, runtime: executionRuntime });
+    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext, runtime: plan.runtime });
     callback(null, exports.getManualRun(operationId));
     const startedAt = Date.now();
-    const controller = execute(job.command, {
-      timeoutMs: commandTimeoutMs, maxOutputBytes: commandMaxBuffer, killGraceMs: commandKillGraceMs,
-      env: jobEnvironment,
-      resourceLimits: { memoryLimitKb: commandMemoryLimitMb * 1024, cpuSeconds: commandCpuSeconds, maxProcesses: commandMaxProcesses },
-    }, (error, result) => {
+    const controller = executeJob(job, plan, operationId, (error, result) => {
+      if (result.dispatchStatus) {
+        const dispatchResult = {
+          dispatchStatus: result.dispatchStatus,
+          terminationReason: result.dispatchStatus === 'unknown' ? 'dispatch_unknown' : 'agent_unavailable',
+        };
+        db.completeManualRun(operationId, 'failed', Date.now(), dispatchResult);
+        manualRunControllers.delete(operationId);
+        audit({
+          operationId,
+          type: 'execution_dispatch',
+          jobId: _id,
+          status: result.dispatchStatus,
+          errorCode: error?.code || null,
+          ...auditContext,
+          runtime: plan.runtime,
+        });
+        pruneManualRuns();
+        return;
+      }
       const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
       const status = resolveTerminalState(error, result);
-      recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result });
+      recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result, runtime: plan.runtime });
       if (output) deliverMail(job, operationId, result, failed);
       else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
       manualRunControllers.delete(operationId);
-      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, runtime: executionRuntime });
+      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, runtime: plan.runtime });
       pruneManualRuns();
     });
     manualRunControllers.set(operationId, controller);
@@ -843,7 +1078,7 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function validateImportedJob(document, { preserveMetadata = false } = {}) {
+function validateImportedJob(document, { preserveMetadata = false, environmentIds = new Set() } = {}) {
   if (!isPlainObject(document)) throw new Error('Imported record must be an object');
   for (const key of Object.keys(document)) {
     if (['__proto__', 'constructor', 'prototype'].includes(key)) {
@@ -851,7 +1086,10 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
     }
   }
 
-  const accepted = new Set(['_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved', 'hook', 'owner', 'createdBy', 'needsPublishReview']);
+  const accepted = new Set([
+    '_id', 'name', 'command', 'schedule', 'stopped', 'logging', 'mailing', 'timestamp', 'created', 'saved',
+    'hook', 'owner', 'createdBy', 'needsPublishReview', 'execution_mode', 'structured_execution',
+  ]);
   for (const key of Object.keys(document)) {
     if (!accepted.has(key)) throw new Error(`Unsupported imported field: ${key}`);
   }
@@ -859,8 +1097,22 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
   if (typeof document.name !== 'string' || document.name.length > 128 || /[\r\n]/.test(document.name)) {
     throw new Error('Imported job has an invalid name');
   }
-  if (typeof document.command !== 'string' || !document.command.trim() || document.command.length > 2000 || /[\r\n]/.test(document.command)) {
-    throw new Error('Imported job has an invalid command');
+  const executionMode = document.execution_mode || 'command';
+  let structuredExecution;
+  if (!['command', 'structured'].includes(executionMode)) throw new Error('Imported job has an invalid execution mode');
+  if (executionMode === 'command') {
+    if (typeof document.command !== 'string' || !document.command.trim() || document.command.length > 2000 || /[\r\n]/.test(document.command)
+      || document.structured_execution !== undefined) throw new Error('Imported job has an invalid command');
+  } else {
+    if (document.command !== undefined) throw new Error('Imported structured job must not include a command');
+    try {
+      structuredExecution = validateStructuredTask(document.structured_execution, useCommandTimeoutMs());
+    } catch (error) {
+      throw new Error(`Imported structured job is invalid: ${error.message}`);
+    }
+    if (!environmentIds.has(structuredExecution.environment_id)) {
+      throw new Error('Imported structured job references an unknown execution environment');
+    }
   }
   if (typeof document.schedule !== 'string' || document.schedule.length > 128 || /[\r\n]/.test(document.schedule)) {
     throw new Error('Imported job has an invalid schedule');
@@ -884,7 +1136,10 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
 
   const normalised = {
     name: document.name,
-    command: document.command,
+    ...(executionMode === 'command' ? { command: document.command } : {
+      execution_mode: 'structured',
+      structured_execution: structuredExecution,
+    }),
     schedule: document.schedule,
     stopped: document.stopped === true,
     logging: document.logging === true || document.logging === 'true',
@@ -925,15 +1180,106 @@ function validateImportedJob(document, { preserveMetadata = false } = {}) {
   };
 }
 
+function validateExecutionCatalog(catalog) {
+  if (!catalog || typeof catalog !== 'object' || !Array.isArray(catalog.targets)
+    || !Array.isArray(catalog.environments) || !Array.isArray(catalog.validations)) {
+    throw new Error('Imported execution environment catalog is invalid');
+  }
+  if (!catalog.targets.length && !catalog.environments.length && !catalog.validations.length) return catalog;
+  const supportedTargets = new Set(['container-local', 'ubuntu-local']);
+  const targetIds = new Set();
+  const targets = catalog.targets.map((target) => {
+    if (!target || !supportedTargets.has(target.id) || target.code !== target.id
+      || !['container', 'local_agent'].includes(target.type)
+      || typeof target.name !== 'string' || !target.name || target.name.length > 120
+      || ![0, 1].includes(target.enabled)
+      || !['unknown', 'online', 'degraded', 'unavailable'].includes(target.health_status)
+      || !Number.isSafeInteger(target.created_at) || !Number.isSafeInteger(target.updated_at)) {
+      throw new Error('Imported execution target is invalid');
+    }
+    let capabilities;
+    try { capabilities = JSON.parse(target.capabilities_json); } catch (_error) {
+      throw new Error('Imported execution target capabilities are invalid');
+    }
+    if (!isPlainObject(capabilities)) throw new Error('Imported execution target capabilities are invalid');
+    if (targetIds.has(target.id)) throw new Error('Imported execution target is duplicated');
+    targetIds.add(target.id);
+    return {
+      ...target,
+      health_status: target.type === 'local_agent' ? 'unavailable' : 'unknown',
+      agent_version: null,
+      last_seen_at: null,
+    };
+  });
+  for (const id of supportedTargets) {
+    if (!targetIds.has(id)) throw new Error('Imported execution target catalog is incomplete');
+  }
+
+  const environmentIds = new Set();
+  const codes = new Set();
+  const environments = catalog.environments.map((environment) => {
+    if (!environment || !/^[0-9a-f-]{36}$/i.test(environment.id || '')
+      || !targetIds.has(environment.target_id)
+      || !Number.isSafeInteger(environment.revision) || environment.revision < 1
+      || !['pending', 'valid', 'invalid', 'unavailable'].includes(environment.validation_status)
+      || ![0, 1].includes(environment.enabled)
+      || !Number.isSafeInteger(environment.created_at) || !Number.isSafeInteger(environment.updated_at)
+      || typeof environment.created_by !== 'string' || environment.created_by.length > 128
+      || typeof environment.updated_by !== 'string' || environment.updated_by.length > 128) {
+      throw new Error('Imported execution environment is invalid');
+    }
+    const payload = validateExecutionEnvironmentPayload({
+      code: environment.code,
+      name: environment.name,
+      runtime_type: environment.runtime_type,
+      target_id: environment.target_id,
+      executable_path: environment.executable_path,
+      default_working_directory: environment.default_working_directory,
+      description: environment.description,
+      enabled: Boolean(environment.enabled),
+    });
+    if (environmentIds.has(environment.id) || codes.has(environment.code)) {
+      throw new Error('Imported execution environment is duplicated');
+    }
+    environmentIds.add(environment.id);
+    codes.add(environment.code);
+    return {
+      ...environment,
+      ...payload,
+      runtime_type: payload.runtimeType,
+      target_id: payload.targetId,
+      executable_path: payload.executablePath,
+      default_working_directory: payload.defaultWorkingDirectory || null,
+      description: payload.description || null,
+      enabled: payload.enabled ? 1 : 0,
+    };
+  });
+  const validations = catalog.validations.map((validation) => {
+    if (!validation || !/^[0-9a-f-]{36}$/i.test(validation.id || '')
+      || !environmentIds.has(validation.environment_id)
+      || typeof validation.actor !== 'string' || !validation.actor || validation.actor.length > 128
+      || !['pending', 'valid', 'invalid', 'unavailable'].includes(validation.status)
+      || (validation.message !== null && (typeof validation.message !== 'string' || validation.message.length > 512))
+      || (validation.runtime_version !== null && (typeof validation.runtime_version !== 'string' || validation.runtime_version.length > 120))
+      || !Number.isSafeInteger(validation.validated_at)) {
+      throw new Error('Imported environment validation record is invalid');
+    }
+    return validation;
+  });
+  return { targets, environments, validations };
+}
+
 exports.normalise_database = (temporaryFile, callback, options = {}) => {
   setImmediate(() => {
     const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
     try {
+      const catalog = validateExecutionCatalog(readExecutionCatalogFromFile(temporaryFile));
+      const environmentIds = new Set(catalog.environments.map((environment) => environment.id));
       const jobs = readJobsFromFile(temporaryFile).map((document) => {
-        const job = validateImportedJob(document, options);
+        const job = validateImportedJob(document, { ...options, environmentIds });
         return options.preserveMetadata ? job : { ...job, _id: crypto.randomUUID() };
       });
-      createDatabaseFile(normalisedFile, jobs);
+      createDatabaseFile(normalisedFile, jobs, catalog);
       fs.rmSync(temporaryFile, { force: true });
       fs.renameSync(normalisedFile, temporaryFile);
       callback(null);
@@ -947,7 +1293,7 @@ exports.normalise_database = (temporaryFile, callback, options = {}) => {
 function importFingerprint(job) {
   return JSON.stringify([
     String(job.name || '').trim(),
-    String(job.command || '').trim(),
+    job.execution_mode === 'structured' ? job.structured_execution : String(job.command || '').trim(),
     String(job.schedule || '').trim(),
   ]);
 }
@@ -956,12 +1302,55 @@ function importName(job) {
   return String(job.name || '').trim().toLocaleLowerCase('en-US');
 }
 
-function buildImportPlan(importedJobs, existingJobs, mode) {
+function mergeExecutionCatalog(importedCatalog, existingCatalog) {
+  const targets = new Map((existingCatalog.targets || []).map((target) => [target.id, target]));
+  for (const target of importedCatalog.targets || []) {
+    if (!targets.has(target.id)) targets.set(target.id, target);
+  }
+  const environments = new Map((existingCatalog.environments || []).map((environment) => [environment.id, environment]));
+  const codes = new Map([...environments.values()].map((environment) => [environment.code, environment]));
+  for (const environment of importedCatalog.environments || []) {
+    const sameId = environments.get(environment.id);
+    const sameCode = codes.get(environment.code);
+    if (sameId) {
+      const currentDefinition = [sameId.code, sameId.runtime_type, sameId.target_id, sameId.executable_path,
+        sameId.default_working_directory, sameId.revision];
+      const importedDefinition = [environment.code, environment.runtime_type, environment.target_id, environment.executable_path,
+        environment.default_working_directory, environment.revision];
+      if (JSON.stringify(currentDefinition) !== JSON.stringify(importedDefinition)) {
+        throw Object.assign(new Error(`Imported environment conflicts with existing environment ${environment.code}`), { statusCode: 409 });
+      }
+      continue;
+    }
+    if (sameCode) {
+      throw Object.assign(new Error(`Imported environment code already exists: ${environment.code}`), { statusCode: 409 });
+    }
+    environments.set(environment.id, environment);
+    codes.set(environment.code, environment);
+  }
+  const validations = new Map((existingCatalog.validations || []).map((validation) => [validation.id, validation]));
+  for (const validation of importedCatalog.validations || []) {
+    if (environments.has(validation.environment_id)) validations.set(validation.id, validation);
+  }
+  return {
+    targets: [...targets.values()].map((target) => ({
+      ...target,
+      health_status: target.type === 'local_agent' ? 'unavailable' : 'unknown',
+      agent_version: null,
+      last_seen_at: null,
+    })),
+    environments: [...environments.values()],
+    validations: [...validations.values()],
+  };
+}
+
+function buildImportPlan(importedJobs, existingJobs, mode, importedCatalog = { targets: [], environments: [], validations: [] }, existingCatalog = db.getExecutionCatalog()) {
   if (!['merge', 'replace'].includes(mode)) throw new Error('Invalid import mode');
 
   if (mode === 'replace') {
     return {
       jobs: importedJobs,
+      catalog: importedCatalog,
       summary: {
         mode,
         existing: existingJobs.length,
@@ -993,8 +1382,17 @@ function buildImportPlan(importedJobs, existingJobs, mode) {
     additions.push(job);
   }
 
+  const catalog = mergeExecutionCatalog(importedCatalog, existingCatalog);
+  const environmentIds = new Set(catalog.environments.map((environment) => environment.id));
+  for (const job of additions) {
+    if (job.execution_mode === 'structured' && !environmentIds.has(job.structured_execution.environment_id)) {
+      throw new Error('Imported structured job references an unknown execution environment');
+    }
+  }
+
   return {
     jobs: existingJobs.concat(additions),
+    catalog,
     summary: {
       mode,
       existing: existingJobs.length,
@@ -1008,7 +1406,8 @@ function buildImportPlan(importedJobs, existingJobs, mode) {
 }
 
 function readImportPlan(temporaryFile, mode) {
-  return buildImportPlan(readJobsFromFile(temporaryFile), db.getAllData(), mode);
+  return buildImportPlan(readJobsFromFile(temporaryFile), db.getAllData(), mode,
+    validateExecutionCatalog(readExecutionCatalogFromFile(temporaryFile)), db.getExecutionCatalog());
 }
 
 exports.inspect_import = (temporaryFile, mode, callback = () => {}) => {
@@ -1025,7 +1424,7 @@ exports.apply_import = (temporaryFile, mode, callback = () => {}) => withDatabas
   let plan;
   try {
     plan = readImportPlan(temporaryFile, mode);
-    if (mode === 'merge') createDatabaseFile(temporaryFile, plan.jobs);
+    if (mode === 'merge') createDatabaseFile(temporaryFile, plan.jobs, plan.catalog);
   } catch (error) {
     return done(error);
   }
@@ -1054,7 +1453,7 @@ function replaceDatabase(temporaryFile, done) {
         // replaceDocuments is atomic on its own, so it removes the need for a rollback file and
         // makes import and restore behave identically everywhere.
         try {
-          db.replaceDocuments(readJobsFromFile(temporaryFile));
+          db.replaceDocuments(readJobsFromFile(temporaryFile), readExecutionCatalogFromFile(temporaryFile));
           db.dropOrphanedRunState();
         } catch (error) {
           return removeTemporaryFile(temporaryFile, () => done(error));

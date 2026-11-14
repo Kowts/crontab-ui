@@ -17,12 +17,16 @@ function configuredCronUser() {
 
 function schedulerEnvironment() {
   const user = configuredCronUser();
-  return {
+  const environment = {
     ...buildTaskEnvironment(),
     HOME: '/home/node',
     LOGNAME: user,
     USER: user,
   };
+  if (/^[0-9a-f]{64,}$/i.test(process.env.CRONTAB_UI_AGENT_HMAC_SECRET || '')) {
+    environment.CRONTAB_UI_AGENT_HMAC_SECRET = process.env.CRONTAB_UI_AGENT_HMAC_SECRET;
+  }
+  return environment;
 }
 
 function schedulerReloadStateFile(cronFile) {

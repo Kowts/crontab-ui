@@ -158,4 +158,81 @@ function execute(command, { timeoutMs, maxOutputBytes, env = process.env, killGr
   return controller;
 }
 
-module.exports = { execute };
+function executeStructured(executable, args, { timeoutMs, maxOutputBytes, env, cwd, killGraceMs = 5_000, onStart = null }, callback) {
+  const startedAt = Date.now();
+  const identity = effectiveIdentity();
+  if (typeof executable !== 'string' || !executable || !Array.isArray(args)
+    || args.some((argument) => typeof argument !== 'string' || argument.includes('\0'))
+    || typeof cwd !== 'string' || !cwd) {
+    const error = Object.assign(new Error('Invalid structured execution input'), { code: 'EINVAL' });
+    callback(error, { durationMs: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
+    return null;
+  }
+
+  const child = spawn(executable, args, {
+    shell: false,
+    cwd,
+    env,
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  const output = { stdout: [], stderr: [], bytes: 0, exceeded: false };
+  let terminationReason = null;
+  let killTimer;
+  let settled = false;
+  const terminateTree = (reason) => {
+    if (terminationReason) return;
+    terminationReason = reason;
+    terminate(child, 'SIGTERM');
+    killTimer = setTimeout(() => terminate(child, 'SIGKILL'), killGraceMs);
+  };
+  const controller = { cancel: () => terminateTree('cancelled') };
+  const collect = (target) => (chunk) => {
+    const available = Math.max(0, maxOutputBytes - output.bytes);
+    if (available) {
+      const kept = chunk.subarray(0, available);
+      target.push(kept);
+      output.bytes += kept.length;
+    }
+    if (chunk.length > available) {
+      output.exceeded = true;
+      terminateTree('output_limit');
+    }
+  };
+
+  const timeout = timeoutMs === 0 ? null : setTimeout(() => terminateTree('timeout'), timeoutMs);
+  child.stdout.on('data', collect(output.stdout));
+  child.stderr.on('data', collect(output.stderr));
+  child.on('error', (error) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    if (killTimer) clearTimeout(killTimer);
+    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
+  });
+  child.on('close', (exitCode, signal) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    if (killTimer) clearTimeout(killTimer);
+    const result = {
+      durationMs: Date.now() - startedAt,
+      exitCode,
+      signal,
+      terminationReason,
+      stdout: Buffer.concat(output.stdout),
+      stderr: Buffer.concat(output.stderr),
+      outputExceeded: output.exceeded,
+      identity,
+    };
+    const error = terminationReason
+      ? Object.assign(new Error(`Structured execution terminated: ${terminationReason}`), { code: terminationReason, signal })
+      : exitCode === 0 ? null : Object.assign(new Error(`Structured execution exited with code ${exitCode}`), { code: exitCode, signal });
+    callback(error, result);
+  });
+  if (typeof onStart === 'function') onStart(controller);
+  return controller;
+}
+
+module.exports = { execute, executeStructured };

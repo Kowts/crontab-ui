@@ -8,6 +8,7 @@
     "start:env": "node --env-file=.env bootstrap.js",
     "start:test": "node --env-file=.env.test bootstrap.js",
     "start:production": "node --env-file=.env.production bootstrap.js",
+    "start:agent": "node bin/crontab-ui-agent.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:docker-scheduler": "node scripts/test-docker-scheduler.js",

@@ -142,6 +142,9 @@ body.app-body {
 .form-label { color: var(--app-ink); font-weight: 680; font-size: .88rem; }
 .form-control { border-color: #cfdced; border-radius: 9px; padding: .68rem .8rem; }
 .form-control:focus { border-color: #8cb7f7; box-shadow: 0 0 0 .2rem rgba(23,105,224,.12); }
+.structured-argument-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 40px); gap: .5rem; align-items: center; }
+.structured-argument-action { width: 40px; height: 40px; padding: 0; }
+.structured-execution-preview { min-height: 5rem; max-height: 12rem; overflow: auto; padding: .75rem; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-subtle); color: var(--app-ink); font-size: .82rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .job-status { display: flex; align-items: center; min-height: 42px; padding: .65rem .8rem; border: 1px solid #cfdced; border-radius: 9px; color: var(--app-ink); background: #fbfdff; }
 .job-status::before { content: ""; width: .48rem; height: .48rem; margin-right: .55rem; border-radius: 50%; background: var(--app-success); }
 .schedule-section { margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid var(--app-border); }

@@ -16,6 +16,9 @@ replace the other.
 - [ ] `package.json` and `package-lock.json` version equals the planned tag (`npm version X.Y.Z --no-git-tag-version`).
 - [ ] `npm run lint`, `npm test`, `npm run test:coverage`, `npm audit --omit=dev --audit-level=high` pass.
 - [ ] CI is green for the exact commit that will be tagged (including the Docker scheduler, recovery, resilience and split jobs).
+- [ ] Structured execution is disabled by default; if included in the release, container allowlists and Linux no-shell tests pass.
+- [ ] If the Ubuntu agent is included/enabled, its independent host policy, HMAC/UDS, cgroup v2 limits, restart/unknown recovery, cancellation and ownership adversarial tests pass on an Ubuntu VM.
+- [ ] Structured task catalog, import/restore and legacy command compatibility are verified with a production-like backup.
 - [ ] A pre-release backup of the running instance exists and is also in `BACKUP_EXTERNAL_DIR`.
 - [ ] A reviewer is available to approve the `production` environment deployment.
 
@@ -33,6 +36,9 @@ Run on an instance that is not production, ideally on a different server.
 | Scheduled tasks recovered | `npm run test:docker-resilience` (CI) | Confirm the tasks are listed, review them and republish the schedule |
 | Tasks actually run in the scheduler | `npm run test:docker-scheduler` (CI) | Create a test task, wait for a scheduled run and confirm it as the non-root user |
 | Logs, history and audit | - | Check the execution history, `GET /audit` and the `logs` directory |
+| Structured container execution | Unit/API tests | On Linux, execute a non-destructive sample under configured executable/root allowlists |
+| Ubuntu agent and UDS | HMAC/policy unit tests | On an independent Ubuntu VM, validate socket permissions, replay rejection, cgroup limits, cancellation and agent restart reconciliation |
+| Structured recovery | SQLite snapshot/import tests | Restore a backup and reconcile agent-local state; confirm `unknown` is never automatically resubmitted |
 
 Record the result, date, environment and who ran the drill (for example in the release pull
 request or issue). If anything fails, fix it and repeat the affected steps.
@@ -85,6 +91,12 @@ re-run the failed workflow; delete and re-push the tag (`git push --delete origi
 the tagged commit changes.
 
 ## 6. Drill records
+
+### v0.7.0 execution-environment gate
+
+- Status: **not approved for production**
+- Required before release: an independent Ubuntu VM drill covering the rows above, with environment, image digest, date, operator and outputs recorded.
+- The Windows development session validates JavaScript, API, SQLite, HMAC and policy logic only; it does not prove Linux UDS permissions, C wrapper compilation, systemd delegation or cgroup behaviour.
 
 ### Drill record - v0.6.3
 

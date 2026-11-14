@@ -31,13 +31,20 @@ const {
 } = require('./middleware/validate');
 const { getProfile, listProfileIds, validateAllProfiles, validateProfileId } = require('./config/mail-profiles');
 const { normaliseMailing } = require('./config/alert-policy');
-const { requireBoundedNumber } = require('./config/limits');
+const { requireBoundedNumber, useCommandTimeoutMs } = require('./config/limits');
+const { validateStructuredTask } = require('./config/structured-tasks');
+const { probeExecutionEnvironment } = require('./lib/structured-execution');
+const { LocalAgentClient } = require('./lib/agent-client');
 const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
 const { dictionaries, localeFromRequest, normalizeLocale, translate } = require('./config/i18n');
 const { configuredCronUser, schedulerHeartbeatFile } = require('./scheduler');
 const { schedulerHealth } = require('./lib/scheduler-health');
+const {
+  validateEnvironmentPayload: validateExecutionEnvironmentPayload,
+  validateEnvironmentFilters,
+} = require('./config/execution-environments');
 
 dayjs.extend(relativeTime);
 
@@ -116,6 +123,7 @@ app.get(`${baseUrl}/diagnostics`, (req, res) => {
   res.set('Cache-Control', 'no-store');
   const health = currentSchedulerHealth();
   const auditHealth = crontab.auditHealth();
+  const agentTarget = crontab.listExecutionTargets().find((target) => target.id === 'ubuntu-local');
   return res.json({
     status: health.running === false || !auditHealth.ok ? 'degraded' : 'ok',
     web: { status: 'ok' },
@@ -126,6 +134,12 @@ app.get(`${baseUrl}/diagnostics`, (req, res) => {
     pid: process.pid,
     timestamp: new Date().toISOString(),
     scheduler: health,
+    agent: {
+      required: false,
+      status: agentTarget?.healthStatus || 'unavailable',
+      version: agentTarget?.agentVersion || null,
+      lastSeenAt: agentTarget?.lastSeenAt || null,
+    },
     audit: auditHealth,
   });
 });
@@ -328,6 +342,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       backups: isAdmin ? crontab.get_backup_names() : [],
       env: serializeForHtml(isAdmin ? crontab.get_env() : ''),
       currentRole,
+      currentPage: 'tasks',
       canManageTasks: canManageTasks(req),
       canExecuteTasks: canExecuteTasks(req),
       dayjs,
@@ -335,6 +350,19 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       mailProfileIds: listProfileIds(),
       csrfToken: req.csrfToken || '',
     });
+  });
+});
+
+app.get(routes.execution_environments_ui, requireRole('admin'), (req, res) => {
+  return res.render('execution-environments', {
+    routes: serializeForHtml(routes),
+    currentRole: 'admin',
+    currentPage: 'environments',
+    backups: crontab.get_backup_names(),
+    authEnabled: app.locals.authEnabled,
+    csrfToken: req.csrfToken || '',
+    locale: res.locals.locale,
+    messages: serializeForHtml(dictionaries[res.locals.locale]),
   });
 });
 
@@ -353,9 +381,12 @@ app.post(routes.locale, requireRole('viewer'), (req, res) => {
 app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation('save_job', (req) => ({
   jobId: typeof req.body._id === 'string' ? req.body._id : null,
   commandSha256: commandFingerprint(req.body.command),
+  executionMode: req.body.execution_mode === 'structured' ? 'structured' : 'command',
 })), (req, res) => {
   const { name, command, schedule } = req.body;
+  const executionMode = req.body.execution_mode === undefined ? 'command' : req.body.execution_mode;
   let mailing = req.body.mailing === undefined ? {} : req.body.mailing;
+  let structuredExecution = null;
   if (typeof mailing === 'string') {
     try {
       mailing = JSON.parse(mailing);
@@ -369,11 +400,25 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
   if (!isCreate && !isUpdate) {
     return res.status(400).json({ message: 'Invalid job id' });
   }
+  if (!['command', 'structured'].includes(executionMode)) {
+    return res.status(400).json({ message: 'Invalid execution mode' });
+  }
   if (typeof name !== 'string' || name.length > 128 || /[\r\n]/.test(name)
-    || typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)
+    || (executionMode === 'command' && (typeof command !== 'string' || !command.trim() || command.length > 2000 || /[\r\n]/.test(command)))
+    || (executionMode === 'structured' && command !== undefined)
     || typeof schedule !== 'string' || schedule.length > 128 || /[\r\n]/.test(schedule)
     || typeof mailing !== 'object' || mailing === null) {
     return res.status(400).json({ message: 'Invalid job payload' });
+  }
+  if (executionMode === 'structured') {
+    try {
+      structuredExecution = validateStructuredTask(req.body.structured_execution, useCommandTimeoutMs());
+    } catch (error) {
+      return res.status(error.statusCode || 422).json({ message: error.message });
+    }
+    if (!crontab.getExecutionEnvironment(structuredExecution.environment_id)) {
+      return res.status(422).json({ message: 'Execution environment does not exist' });
+    }
   }
   // The accepted fields, the bounds and the stored shape all come from one place, so a task can
   // never be saved with a notification setting the run path would not honour.
@@ -392,12 +437,18 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
   }
   if (isCreate) {
     const owner = req.auth?.user || 'local';
-    crontab.create_new(req.body.name, req.body.command, req.body.schedule, req.body.logging, mailing, { owner, createdBy: owner }, (err) => {
+    crontab.create_new(name, executionMode === 'command' ? command : undefined, schedule, req.body.logging, mailing, { owner, createdBy: owner }, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
-    });
+    }, structuredExecution);
   } else {
-    crontab.update(req.body._id, { ...req.body, mailing }, (err) => {
+    crontab.update(req.body._id, {
+      ...req.body,
+      command: executionMode === 'command' ? command : undefined,
+      execution_mode: executionMode,
+      structured_execution: structuredExecution,
+      mailing,
+    }, (err) => {
       if (err) return res.status(500).json({ message: 'Unable to save job' });
       return res.end();
     });
@@ -445,6 +496,216 @@ app.get(routes.run_status, requireRole('viewer'), (req, res) => {
     if (!job || !canAccessJob(req, job, 'read')) return res.status(403).json({ message: 'Not authorized for this job' });
     return res.json(run);
   });
+});
+
+function executionEnvironmentActor(req) {
+  return req.auth?.user || (app.locals.authEnabled ? null : 'local');
+}
+
+function auditExecutionEnvironment(operation) {
+  return (req, res, next) => {
+    res.once('finish', () => crontab.audit({
+      type: 'execution_environment',
+      operationId: req.requestId,
+      requestId: req.requestId,
+      operation,
+      environmentId: req.params.id || req.executionEnvironmentId || null,
+      actor: executionEnvironmentActor(req),
+      sourceIp: req.ip,
+      status: res.statusCode,
+      outcome: res.statusCode < 400 ? 'completed' : 'failed',
+    }));
+    next();
+  };
+}
+
+function serializeExecutionEnvironment(environment) {
+  return {
+    id: environment.id,
+    code: environment.code,
+    name: environment.name,
+    runtime_type: environment.runtimeType,
+    target_id: environment.targetId,
+    target: environment.target,
+    executable_path: environment.executablePath,
+    default_working_directory: environment.defaultWorkingDirectory,
+    description: environment.description,
+    enabled: environment.enabled,
+    validation_status: environment.validationStatus,
+    runtime_version: environment.runtimeVersion,
+    validated_at: environment.validatedAt,
+    revision: environment.revision,
+    created_by: environment.createdBy,
+    updated_by: environment.updatedBy,
+    created_at: environment.createdAt,
+    updated_at: environment.updatedAt,
+  };
+}
+
+function environmentError(res, error) {
+  const status = error.statusCode || (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 409 : 500);
+  return res.status(status).json({ message: status >= 500 ? 'Unable to process execution environment' : error.message });
+}
+
+app.get(routes.execution_targets, requireRole('viewer'), (req, res) => {
+  try {
+    return res.json(crontab.listExecutionTargets().map((target) => ({
+      id: target.id,
+      code: target.code,
+      name: target.name,
+      type: target.type,
+      enabled: target.enabled,
+      capabilities: target.capabilities,
+      health_status: target.healthStatus,
+      agent_version: target.agentVersion,
+      last_seen_at: target.lastSeenAt,
+    })));
+  } catch (error) {
+    return environmentError(res, error);
+  }
+});
+
+app.get(routes.execution_environments, requireRole('viewer'), (req, res) => {
+  try {
+    const filters = validateEnvironmentFilters(req.query);
+    const environments = crontab.listExecutionEnvironments(filters);
+    const dependentTaskCounts = crontab.countStructuredTasksByEnvironment();
+    return res.json({
+      items: environments.map((environment) => ({
+        id: environment.id,
+        code: environment.code,
+        name: environment.name,
+        runtime_type: environment.runtimeType,
+        target_id: environment.targetId,
+        target: environment.target,
+        executable_path: environment.executablePath,
+        default_working_directory: environment.defaultWorkingDirectory,
+        description: environment.description,
+        enabled: environment.enabled,
+        validation_status: environment.validationStatus,
+        runtime_version: environment.runtimeVersion,
+        validated_at: environment.validatedAt,
+        revision: environment.revision,
+        dependent_task_count: dependentTaskCounts[environment.id] || 0,
+        created_at: environment.createdAt,
+        updated_at: environment.updatedAt,
+      })),
+      limit: filters.limit,
+      offset: filters.offset,
+      total: crontab.countExecutionEnvironments(filters),
+    });
+  } catch (error) {
+    return environmentError(res, error);
+  }
+});
+
+app.post(`${routes.execution_environments}`, requireRole('admin'), auditExecutionEnvironment('create'), (req, res) => {
+  try {
+    const payload = validateExecutionEnvironmentPayload(req.body);
+    const target = crontab.listExecutionTargets().find((item) => item.id === payload.targetId && item.enabled);
+    if (!target) return res.status(422).json({ message: 'Execution target is not enabled' });
+    const environment = crontab.createExecutionEnvironment({
+      ...payload,
+      id: crypto.randomUUID(),
+      actor: executionEnvironmentActor(req),
+      now: Date.now(),
+    });
+    req.executionEnvironmentId = environment.id;
+    return res.status(201).json({
+      id: environment.id,
+      code: environment.code,
+      revision: environment.revision,
+      validation_status: environment.validationStatus,
+      created_at: environment.createdAt,
+    });
+  } catch (error) {
+    return environmentError(res, error);
+  }
+});
+
+app.get(`${routes.execution_environments}/:id`, requireRole('viewer'), (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid environment id' });
+  const environment = crontab.getExecutionEnvironment(req.params.id);
+  if (!environment) return res.status(404).json({ message: 'Execution environment not found' });
+  return res.json(serializeExecutionEnvironment(environment));
+});
+
+app.patch(`${routes.execution_environments}/:id`, requireRole('admin'), auditExecutionEnvironment('update'), (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid environment id' });
+  try {
+    const payload = validateExecutionEnvironmentPayload(req.body, { partial: true });
+    if (payload.targetId && !crontab.listExecutionTargets().some((target) => target.id === payload.targetId && target.enabled)) {
+      return res.status(422).json({ message: 'Execution target is not enabled' });
+    }
+    const { revision, ...changes } = payload;
+    const environment = crontab.updateExecutionEnvironment(req.params.id, revision, changes, executionEnvironmentActor(req));
+    if (!environment) return res.status(409).json({ message: 'Environment revision is stale or no longer exists' });
+    return res.json(serializeExecutionEnvironment(environment));
+  } catch (error) {
+    return environmentError(res, error);
+  }
+});
+
+for (const [action, enabled] of [['disable', false], ['enable', true]]) {
+  app.post(`${routes.execution_environments}/:id/${action}`, requireRole('admin'), auditExecutionEnvironment(action), (req, res) => {
+    if (!/^[0-9a-f-]{36}$/i.test(req.params.id) || !Number.isSafeInteger(req.body.revision)) {
+      return res.status(400).json({ message: 'A valid environment id and revision are required' });
+    }
+    const environment = crontab.setExecutionEnvironmentEnabled(
+      req.params.id, enabled, executionEnvironmentActor(req), req.body.revision,
+    );
+    if (!environment) return res.status(409).json({ message: 'Environment revision is stale or no longer exists' });
+    return res.json(serializeExecutionEnvironment(environment));
+  });
+}
+
+app.post(`${routes.execution_environments}/:id/validate`, requireRole('admin'), auditExecutionEnvironment('validate'), (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid environment id' });
+  const environment = crontab.getExecutionEnvironment(req.params.id);
+  if (!environment) return res.status(404).json({ message: 'Execution environment not found' });
+  const recordValidation = (error, result) => {
+    const status = error ? (error.statusCode === 503 ? 'unavailable' : 'invalid') : 'valid';
+    const message = error ? error.message : result.message;
+    try {
+      crontab.addEnvironmentValidation(environment.id, {
+        actor: executionEnvironmentActor(req), status, message,
+        runtimeVersion: result?.runtimeVersion,
+      });
+      crontab.updateExecutionTargetHealth(environment.targetId,
+        status === 'valid' ? 'online' : status === 'unavailable' ? 'unavailable' : 'degraded',
+        result?.agentVersion || null);
+    } catch (_databaseError) {
+      return res.status(500).json({ message: 'Unable to record environment validation' });
+    }
+    if (error) return res.status(error.statusCode || 422).json({ validation_status: status, message });
+    return res.json({ validation_status: status, runtime_version: result.runtimeVersion, message });
+  };
+  if (environment.targetId === 'ubuntu-local') {
+    const client = new LocalAgentClient();
+    return client.validateEnvironment(environment.code, environment.revision, environment.executablePath)
+      .then((result) => recordValidation(null, {
+        runtimeVersion: result.runtime_version,
+        agentVersion: result.agent_version,
+        message: 'Runtime validation completed by the local execution agent.',
+      }))
+      .catch((error) => recordValidation(error));
+  }
+  return probeExecutionEnvironment(environment, recordValidation);
+});
+
+app.get(`${routes.execution_environments}/:id/tasks`, requireRole('viewer'), (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid environment id' });
+  if (!crontab.getExecutionEnvironment(req.params.id)) return res.status(404).json({ message: 'Execution environment not found' });
+  return crontab.crontabs((jobs) => res.json(jobs
+    .filter((job) => job.execution_mode === 'structured'
+      && job.structured_execution?.environment_id === req.params.id && canAccessJob(req, job, 'read'))
+    .map(({ _id, name, schedule, stopped }) => ({ id: _id, name, schedule, stopped }))));
+});
+
+app.get(`${routes.execution_environments}/:id/validations`, requireRole('admin'), (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(400).json({ message: 'Invalid environment id' });
+  if (!crontab.getExecutionEnvironment(req.params.id)) return res.status(404).json({ message: 'Execution environment not found' });
+  return res.json(crontab.listEnvironmentValidations(req.params.id));
 });
 
 app.post(routes.cancel_run, requireRole('executor'), (req, res) => {

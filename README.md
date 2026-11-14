@@ -236,6 +236,10 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `BACKUP_EXTERNAL_DIR` | Optional directory (ideally another volume) that receives a copy of every backup, pruned to `BACKUP_RETENTION_COUNT`. Each backup is integrity-checked before publication; an external copy failure is audited and does not fail the backup. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limits for `crontab -l` reads. Defaults: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Comma-separated, reviewed UI-managed variables passed to task processes. Default: `PATH,LANG,LC_ALL,TZ,MAILTO`. Service secrets and unsafe loader variables are always denied. |
+| `STRUCTURED_EXECUTION_ROOTS` | Reviewed absolute POSIX roots for `container-local` structured tasks; empty by default, so structured execution stays disabled until validated in a Linux container. |
+| `STRUCTURED_EXECUTION_EXECUTABLES` | Comma-separated list of exact canonical paths for approved container runtimes; empty by default. |
+| `CRONTAB_UI_AGENT_HMAC_SECRET` | Hexadecimal key of at least 256 bits for the optional Ubuntu agent overlay. It must match the root-only key read by the systemd service; never commit it. |
+| `CRONTAB_UI_AGENT_GID`, `CRONTAB_UI_AGENT_RUNTIME_DIR` | Numeric group allowed to open the UDS and the host socket directory; used only by the opt-in agent overlays. |
 | `ALLOW_OPERATOR_TASK_EXECUTION` | Enables operators to create, modify, and execute arbitrary commands. Default: `false`. Set only after accepting that an operator is a highly privileged role without process/filesystem isolation. |
 | `ENABLE_AUTOSAVE` | Enables automatic publishing after changes; use only after accepting the operational risk. |
 
@@ -254,6 +258,14 @@ Environment variables entered through the interface accept only `NAME=value` lin
 Every manual or scheduled execution has a timeout, a combined output limit, and SIGTERM/SIGKILL shutdown. Crontab import and publishing use execution without a shell; importing is bounded, deduplicated, mutex-protected, and responds only after completion. On Linux, the executor terminates the process group and falls back to killing individual descendants; on Windows, it uses taskkill /T to terminate the entire process tree. SIGTERM is followed by SIGKILL after a configurable grace period.
 
 Every completed execution, manual or scheduled, is recorded in the database with its trigger, outcome, exit code, signal, duration, and termination reason. A run that timed out, was cancelled, or was stopped by the output limit counts as a failure, because the command did not do its job. The history is diagnostic only: a failure to store a record is audited and never turns a completed run into a failed one, and reading the panel requires the same task access as reading that task's logs. The panel never returns the command or its output.
+
+## Execution environments and structured tasks
+
+The administrative catalog registers runtimes and destinations. **Structured** tasks store the script and each argument separately and never turn arguments into a shell command. Existing `command` tasks remain on the legacy executor.
+
+The container executor requires configured `STRUCTURED_EXECUTION_ROOTS` and a validated runtime. The Ubuntu agent is optional and is connected only through `docker-compose.agent.yml` or `docker-compose.split-agent.yml`; without the socket, matching key, and explicit host policy, Ubuntu tasks are rejected without fallback. The agent enforces an independent allowlist by task ID, revision, script, arguments, timeout, and file ownership; it uses UDS/HMAC, its own SQLite state, cgroup v2, and an `unknown` outcome with no automatic retry after restart.
+
+The agent and structured executor still require an operational test on an Ubuntu VM before production use. See [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) for configuration, permissions, systemd installation, logs, recovery, and known validation limits.
 
 ## Backups, recovery, and audit
 

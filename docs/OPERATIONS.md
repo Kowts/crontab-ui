@@ -16,6 +16,8 @@ a native installation.
 | `BACKUP_EXTERNAL_DIR` | unset | Second copy of each backup outside the data volume |
 | `ALERT_WEBHOOK_URL` | unset | JSON POST on scheduler-down / audit-write failures and on recovery |
 | `CONTAINER_CPUS`, `CONTAINER_MEMORY_LIMIT`, `CONTAINER_PIDS_LIMIT` | `2`, `1g`, `512` | Compose container limits |
+| `STRUCTURED_EXECUTION_ROOTS`, `STRUCTURED_EXECUTION_EXECUTABLES` | unset | Both are required to enable structured execution inside the Linux container; paths must be reviewed and canonical |
+| `CRONTAB_UI_AGENT_HMAC_SECRET`, `CRONTAB_UI_AGENT_GID`, `CRONTAB_UI_AGENT_RUNTIME_DIR` | unset | Required only when enabling the optional Ubuntu agent Compose overlay |
 
 `.env.example` is the authoritative list.
 
@@ -118,11 +120,12 @@ fix the problem and re-run the failed workflow once CI is green, or delete and r
 
 ## Task resource isolation
 
-Per-task limits (`ulimit` for CPU time, address space and processes) are a safety net, not a
-sandbox: `ulimit -v` bounds virtual address space rather than resident memory, and `ulimit -u`
-counts processes of the whole `node` user, not of one execution. CPU, memory and PID limits set
-in Docker apply to the container as a whole, so tasks share them. Run mutually untrusted tasks
-in separate containers; cgroup-based per-task isolation is not part of 0.6.x.
+Legacy command task limits (`ulimit` for CPU time, address space and processes) are a safety net,
+not a sandbox: `ulimit -v` bounds virtual address space rather than resident memory, and
+`ulimit -u` counts processes of the whole `node` user, not of one execution. CPU, memory and PID
+limits set in Docker apply to the container as a whole, so legacy tasks share them. Structured
+executions use separate cgroup v2 limits, but remain privileged scripts rather than a sandbox.
+The host cgroup implementation is not production-approved until its Ubuntu drill passes.
 
 ## Manually validated scenarios
 
@@ -171,6 +174,16 @@ across containers, the scheduler writes a heartbeat file every 5 s and the web s
 tasks run in the scheduler container, so it receives the task limits and `MAIL_PROFILES_JSON`.
 `npm run test:docker-split` (run in CI) verifies publication across containers and detection of a
 stopped scheduler. It is opt-in and the default deployment is unchanged.
+
+## Structured execution and Ubuntu agent
+
+Structured tasks are opt-in. The `command` mode continues to use the legacy executor. Container structured execution requires both reviewed executable and script-root allowlists; an empty configuration keeps it disabled.
+
+The host agent is a separate, non-root Ubuntu systemd service. Install it only after reviewing [`EXECUTION_ENVIRONMENTS.md`](EXECUTION_ENVIRONMENTS.md), creating a root-managed task allowlist, provisioning the HMAC key through a root-only systemd `EnvironmentFile`, and validating cgroup v2 `cpu`, `memory` and `pids` delegation. The Compose overlay mounts only `/run/crontab-ui-agent` read-only and grants the configured socket group; never mount all of `/run`, the Docker socket, `/`, or host PID namespace.
+
+The agent is not part of `/healthz` availability and is not required for legacy tasks. `/diagnostics` reports it as an optional component. If its socket is unavailable, structured host dispatch is recorded as unavailable/unknown and is never rerun automatically. After an agent restart, check the local operation journal and business system before deciding whether an `unknown` task should be manually submitted again.
+
+The agent and structured container executor have not yet passed an Ubuntu operational drill in this development environment. Do not enable them for production until the UDS permissions, HMAC replay protection, wrapper compilation, systemd restart, cgroup limits, descendant cancellation, backup/restore and a non-destructive ETL scenario have all been verified on Linux.
 
 ## Scheduling behaviour and examples
 

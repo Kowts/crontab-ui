@@ -10,10 +10,14 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - `docs/RELEASE_CHECKLIST.md`: drill record template to keep manual validation evidence per release.
+- Execution environment catalog, structured task payloads with argv arrays, and a no-shell structured executor path; legacy `command` tasks remain unchanged.
+- Optional Ubuntu local execution agent with UDS/HMAC, independent task allowlist, durable idempotency, cgroup v2 limits, bounded logs and `unknown` recovery state.
+- `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and outstanding Linux validation gates.
 
 ### Changed
 
 - `docs/OPERATIONS.md`: the rollback procedure now separates application rollback (keep the volume) from backup restore, matching the release checklist.
+- SQLite backups/imports now retain execution environments and structured-task references; legacy databases without a catalog remain importable.
 
 ## [0.6.3]
 

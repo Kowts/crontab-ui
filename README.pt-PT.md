@@ -235,6 +235,10 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `BACKUP_EXTERNAL_DIR` | Diretório opcional (idealmente noutro volume) que recebe uma cópia de cada backup, limitado a `BACKUP_RETENTION_COUNT`. Cada backup é verificado quanto à integridade antes de publicado; uma falha na cópia externa é auditada e não faz falhar o backup. |
 | `SYSTEM_CRONTAB_IMPORT_TIMEOUT_MS`, `SYSTEM_CRONTAB_IMPORT_MAX_BUFFER` | Limites da leitura `crontab -l`. Predefinições: `30000`, `262144`. |
 | `TASK_ENV_ALLOWLIST` | Variáveis geridas pela interface, revistas e separadas por vírgulas, passadas aos processos de tarefas. Predefinição: `PATH,LANG,LC_ALL,TZ,MAILTO`. Segredos do serviço e variáveis inseguras de carregamento são sempre recusados. |
+| `STRUCTURED_EXECUTION_ROOTS` | Roots POSIX absolutos e revistos para tarefas estruturadas `container-local`; vazio por omissão, pelo que a execução structured fica desactivada até validação num contentor Linux. |
+| `STRUCTURED_EXECUTION_EXECUTABLES` | Lista separada por vírgulas dos paths canónicos exactos dos runtimes aprovados no contentor; vazia por omissão. |
+| `CRONTAB_UI_AGENT_HMAC_SECRET` | Chave hexadecimal de pelo menos 256 bits para o overlay opcional do agente Ubuntu. Tem de coincidir com a chave root-only lida pelo serviço systemd; nunca versionar. |
+| `CRONTAB_UI_AGENT_GID`, `CRONTAB_UI_AGENT_RUNTIME_DIR` | Grupo numérico autorizado a abrir a UDS e directório do socket no host; usados apenas pelos overlays opt-in do agente. |
 | `ALLOW_OPERATOR_TASK_EXECUTION` | Permite aos operadores criar, alterar e executar comandos arbitrários. Predefinição: `false`. Defina apenas após aceitar que um operador é um papel altamente privilegiado sem isolamento de processo/sistema de ficheiros. |
 | `ENABLE_AUTOSAVE` | Ativa publicação automática após alterações; só use quando o risco operacional tiver sido aceite. |
 
@@ -253,6 +257,14 @@ As variáveis de ambiente introduzidas na interface aceitam apenas linhas `NOME=
 Cada execução manual ou agendada tem timeout, limite conjunto de output e encerramento SIGTERM/SIGKILL. A importação e publicação do crontab usam execução sem shell; a importação é limitada, deduplicada, protegida por bloqueio e só responde depois de terminar. Em Linux, o executor termina o grupo de processos e recorre à eliminação individual de descendentes; em Windows, utiliza taskkill /T para terminar toda a árvore de processos. O SIGTERM é seguido de SIGKILL após um período de graça configurável.
 
 Cada execução concluída, manual ou agendada, é registada na base de dados com a origem, o resultado, o código de saída, o sinal, a duração e o motivo de terminação. Uma execução que esgotou o tempo, foi cancelada ou foi interrompida pelo limite de output conta como falha, porque o comando não fez o seu trabalho. O histórico é apenas diagnóstico: uma falha ao guardar um registo é auditada e nunca transforma uma execução concluída numa falha, e a leitura do painel exige o mesmo acesso à tarefa que a leitura dos seus logs. O painel nunca devolve o comando nem o seu output.
+
+## Ambientes de execução e tarefas estruturadas
+
+O catálogo administrativo permite registar runtimes e destinos. O modo **Estruturado** guarda o script e cada argumento separadamente; não converte argumentos em comando shell. As tarefas `command` existentes continuam no executor legado.
+
+O executor do contentor exige `STRUCTURED_EXECUTION_ROOTS` configurado e runtime validado. O agente Ubuntu é opcional e só é ligado pelos overlays `docker-compose.agent.yml` ou `docker-compose.split-agent.yml`; sem socket, chave correspondente e política host explícita, tarefas Ubuntu são recusadas sem fallback. O agente aplica allowlist independente por ID de tarefa, revisão, script, argumentos, timeout e propriedade dos ficheiros; usa UDS/HMAC, estado SQLite próprio, cgroup v2 e estado `unknown` sem repetição automática após reinício.
+
+O agente e o executor structured ainda precisam de ensaio operacional numa VM Ubuntu antes de serem usados em produção. Consulte [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) para configuração, permissões, instalação systemd, logs, recuperação e limitações conhecidas.
 
 ## Backups, recuperação e auditoria
 

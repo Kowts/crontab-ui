@@ -2,8 +2,12 @@
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
 
 WORKDIR /crontab-ui
+RUN apk add --no-cache build-base python3
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
+COPY agent/secure-exec.c agent/exec-wrapper.c ./agent/
+RUN cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now agent/secure-exec.c -o /crontab-ui/secure-exec \
+      && cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now agent/exec-wrapper.c -o /crontab-ui/agent-exec
 
 FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 
@@ -33,6 +37,8 @@ LABEL maintainer="@alseambusher"
 LABEL description="Crontab-UI docker"
 
 COPY --from=build /crontab-ui/node_modules ./node_modules
+COPY --from=build /crontab-ui/secure-exec /usr/local/bin/crontab-ui-secure-exec
+COPY --from=build /crontab-ui/agent-exec /usr/local/libexec/crontab-ui-agent-exec
 COPY --chown=node:node . .
 RUN mkdir -p /crontab-ui/crontabs/logs && chown -R node:node /crontab-ui/crontabs && chmod -R go-rwx /crontab-ui/crontabs
 

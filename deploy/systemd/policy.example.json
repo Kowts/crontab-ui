@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "agent_id": "ubuntu-local",
+  "max_concurrent": 3,
+  "max_timeout_ms": 1800000,
+  "max_output_bytes": 1048576,
+  "log_retention_days": 30,
+  "memory_max_bytes": 536870912,
+  "cpu_quota_percent": 100,
+  "pids_max": 64,
+  "environments": {
+    "python-etl-main": {
+      "revision": 1,
+      "runtime_type": "python",
+      "executable": "/opt/etl-processes/main-env/bin/python",
+      "executable_realpath": "/usr/bin/python3.12",
+      "executable_owner_uids": [0],
+      "tasks": {
+        "replace-with-job-id": {
+          "script_path": "/opt/etl-processes/pagamentos-siebel/main.py",
+          "working_directory": "/opt/etl-processes/pagamentos-siebel",
+          "script_owner_uids": [0],
+          "working_directory_owner_uids": [0],
+          "argument_patterns": ["^--date$", "^\\d{4}-\\d{2}$"],
+          "max_timeout_ms": 1800000
+        }
+      }
+    }
+  }
+}

@@ -12,6 +12,7 @@ const { spawn, spawnSync } = require('child_process');
 const { EventEmitter } = require('events');
 const cronstrue = require('cronstrue/i18n');
 const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
+const Database = require('better-sqlite3');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
 fs.mkdirSync(testDbPath, { recursive: true });
@@ -57,7 +58,7 @@ const { requireRole, validateRoleAssignments } = require('../middleware/authoriz
 const setupAuth = require('../middleware/auth');
 const { configuredUsers } = setupAuth;
 const { getProfile } = require('../config/mail-profiles');
-const { execute } = require('../execution');
+const { execute, executeStructured } = require('../execution');
 const { parseEnvironment } = require('../config/environment');
 const { buildTaskEnvironment, configuredTaskEnvironmentNames } = require('../config/task-environment');
 const { createReloadCoordinator, schedulerEnvironment } = require('../scheduler');
@@ -65,6 +66,14 @@ const { collectOutputAttachments } = require('../bin/crontab-ui-mailer');
 const { validateAllProfiles, validateProfileId } = require('../config/mail-profiles');
 const { categoriseFailure } = require('../config/mail-probe');
 const { validateProductionTransport } = require('../config/transport');
+const { validateEnvironmentPayload, validateEnvironmentFilters } = require('../config/execution-environments');
+const { validateStructuredTask } = require('../config/structured-tasks');
+const { prepareStructuredExecution, probeExecutionEnvironment } = require('../lib/structured-execution');
+const { signAgentRequest, verifyAgentRequest } = require('../lib/agent-protocol');
+const { resolveTask, validateAgentPolicy } = require('../lib/local-agent-policy');
+const { LocalAgentStore } = require('../lib/agent-store');
+const { LocalAgentClient } = require('../lib/agent-client');
+const { createAgentServer } = require('../agent/server');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
 const { useBoundedNumber, requireBoundedNumber, useCommandTimeoutMs } = require('../config/limits');
@@ -74,6 +83,356 @@ const csrfProtection = require('../middleware/csrf');
 // Requiring app.js must not build an application, so the shared instance used
 // by the HTTP suite is created explicitly here. Every other test builds its own.
 const app = createApp();
+
+describe('Execution environment validation', () => {
+  it('accepts destination paths only when absolute and normalised', () => {
+    expect(validateEnvironmentPayload({
+      code: 'python-etl-main', name: 'Python ETL', runtime_type: 'python', target_id: 'ubuntu-local',
+      executable_path: '/opt/etl/main-env/bin/python', default_working_directory: '/opt/etl',
+    })).toMatchObject({ executablePath: '/opt/etl/main-env/bin/python', targetId: 'ubuntu-local' });
+    for (const executablePath of ['python', '/opt/../bin/python', '/opt//python', '/opt/etl\\python', '/opt/etl\npython']) {
+      expect(() => validateEnvironmentPayload({
+        code: 'python-etl-main', name: 'Python ETL', runtime_type: 'python', target_id: 'ubuntu-local', executable_path: executablePath,
+      })).toThrow();
+    }
+    expect(() => validateEnvironmentPayload({ revision: 1 }, { partial: true })).toThrow('At least one environment field');
+    expect(() => validateEnvironmentFilters({ limit: '101' })).toThrow('Invalid pagination');
+  });
+});
+
+describe('Structured process execution', () => {
+  it('passes argument boundaries exactly without invoking a shell', async () => {
+    const expected = ['value with spaces', 'quote "inside"', ''];
+    const args = ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', ...expected];
+    const result = await new Promise((resolve, reject) => {
+      executeStructured(process.execPath, args, {
+        timeoutMs: 5000, maxOutputBytes: 4096, env: process.env, cwd: process.cwd(),
+      }, (error, output) => error ? reject(error) : resolve(output));
+    });
+    expect(JSON.parse(result.stdout.toString('utf8'))).toEqual(expected);
+    expect(result.exitCode).toBe(0);
+  });
+});
+
+describe('Structured task validation', () => {
+  const validTask = {
+    environment_id: 'a7e8f74f-9459-4ad0-9a68-2dce2c4a0f40',
+    script_path: '/opt/etl/main.py',
+    working_directory: '/opt/etl',
+    arguments: ['--date', '2026-11', 'value with spaces', ''],
+    timeout_ms: 60000,
+    environment_variables: {},
+  };
+
+  it('accepts JSON argument arrays and rejects shell-like or unrestricted inputs', () => {
+    expect(validateStructuredTask(validTask, 120000).arguments).toEqual(validTask.arguments);
+    expect(() => validateStructuredTask({ ...validTask, script_path: '/opt/../etc/passwd' }, 120000)).toThrow();
+    expect(() => validateStructuredTask({ ...validTask, arguments: '--date 2026-11' }, 120000)).toThrow();
+    expect(() => validateStructuredTask({ ...validTask, environment_variables: { PYTHONPATH: '/tmp' } }, 120000)).toThrow();
+    expect(() => validateStructuredTask({ ...validTask, timeout_ms: 120001 }, 120000)).toThrow();
+  });
+});
+
+describe('Structured execution policy', () => {
+  it('fails closed for missing agents and unvalidated container environments', () => {
+    expect(() => prepareStructuredExecution({ structured_execution: {} }, {
+      id: 'host-env', enabled: true, targetId: 'ubuntu-local', validationStatus: 'valid',
+    })).toThrow(expect.objectContaining({ statusCode: 503, code: 'EXECUTOR_UNAVAILABLE' }));
+    expect(() => prepareStructuredExecution({ structured_execution: {} }, {
+      id: 'container-env', enabled: true, targetId: 'container-local', validationStatus: 'pending',
+    })).toThrow(expect.objectContaining({ statusCode: 409, code: 'ENVIRONMENT_NOT_VALIDATED' }));
+    probeExecutionEnvironment({ targetId: 'ubuntu-local' }, (error) => {
+      expect(error).toMatchObject({ statusCode: 503, code: 'EXECUTOR_UNAVAILABLE' });
+    });
+  });
+});
+
+describe('Local agent request authentication', () => {
+  it('authenticates the exact body and rejects stale signed requests', () => {
+    const secret = Buffer.alloc(32, 19);
+    const body = JSON.stringify({ operation: 'health', protocol_version: 1 });
+    const signed = signAgentRequest(secret, body, 100000, 'a7e8f74f-9459-4ad0-9a68-2dce2c4a0f40');
+    const headers = { timestamp: String(signed.timestamp), nonce: signed.nonce, signature: signed.signature };
+    expect(verifyAgentRequest(secret, body, headers, { now: 100001 })).toBe(true);
+    expect(verifyAgentRequest(secret, `${body} `, headers, { now: 100001 })).toBe(false);
+    expect(verifyAgentRequest(secret, body, headers, { now: 140001 })).toBe(false);
+  });
+
+  it('sends signed requests over a local socket without a TCP listener', async () => {
+    const secret = Buffer.alloc(32, 27);
+    const socketPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\crontab-ui-agent-test-${crypto.randomUUID()}`
+      : path.join(os.tmpdir(), `crontab-ui-agent-test-${crypto.randomUUID()}.sock`);
+    const server = require('http').createServer((incoming, response) => {
+      const chunks = [];
+      incoming.on('data', (chunk) => chunks.push(chunk));
+      incoming.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const headers = {
+          timestamp: incoming.headers['x-agent-timestamp'],
+          nonce: incoming.headers['x-agent-nonce'],
+          signature: incoming.headers['x-agent-signature'],
+        };
+        const authenticated = verifyAgentRequest(secret, body, headers);
+        response.writeHead(authenticated ? 200 : 401, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify(authenticated ? { status: 'online', transport: 'local-socket' } : { error: 'invalid' }));
+      });
+    });
+    try {
+      await new Promise((resolve) => server.listen(socketPath, resolve));
+      const client = new LocalAgentClient({ secret, socketPath });
+      await expect(client.health()).resolves.toMatchObject({ status: 'online', transport: 'local-socket' });
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      if (process.platform !== 'win32') fs.rmSync(socketPath, { force: true });
+    }
+  });
+
+  it('reconciles a lost submit response by operation ID without resubmitting', async () => {
+    const secret = Buffer.alloc(32, 31);
+    const socketPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\crontab-ui-agent-reconcile-${crypto.randomUUID()}`
+      : path.join(os.tmpdir(), `crontab-ui-agent-reconcile-${crypto.randomUUID()}.sock`);
+    const operationId = crypto.randomUUID();
+    let submits = 0;
+    const server = require('http').createServer((incoming, response) => {
+      const chunks = [];
+      incoming.on('data', (chunk) => chunks.push(chunk));
+      incoming.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const authenticated = verifyAgentRequest(secret, body, {
+          timestamp: incoming.headers['x-agent-timestamp'],
+          nonce: incoming.headers['x-agent-nonce'],
+          signature: incoming.headers['x-agent-signature'],
+        });
+        if (!authenticated) return response.writeHead(401).end();
+        if (incoming.url === '/v1/submit-execution') {
+          submits += 1;
+          response.socket.destroy();
+          return;
+        }
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ operation_id: operationId, status: 'completed', exit_code: 0 }));
+      });
+    });
+    try {
+      await new Promise((resolve) => server.listen(socketPath, resolve));
+      const client = new LocalAgentClient({ secret, socketPath });
+      const result = await client.submitExecution({ operation_id: operationId });
+      expect(result).toMatchObject({ accepted: true, existing: true, execution: { status: 'completed' } });
+      expect(submits).toBe(1);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      if (process.platform !== 'win32') fs.rmSync(socketPath, { force: true });
+    }
+  });
+});
+
+describe('Local agent UDS service', () => {
+  it('authenticates health requests and rejects replayed nonces', async () => {
+    const secret = Buffer.alloc(32, 41);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-agent-service-'));
+    const socketPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\crontab-ui-agent-service-${crypto.randomUUID()}`
+      : path.join(directory, 'agent.sock');
+    const store = new LocalAgentStore({ filename: path.join(directory, 'agent.db') });
+    const policy = { agent_id: 'ubuntu-local', max_concurrent: 1, environments: {} };
+    const agent = createAgentServer({
+      cgroups: { create() {}, kill() {}, remove() {} },
+      logDirectory: path.join(directory, 'logs'),
+      policy,
+      secret,
+      socketPath,
+      store,
+      wrapperPath: '/unused',
+    });
+    const server = agent.listen();
+    const nonce = crypto.randomUUID();
+    const timestamp = Date.now();
+    const body = '{}';
+    const signature = signAgentRequest(secret, body, timestamp, nonce).signature;
+
+    function signedRequest(pathname) {
+      return new Promise((resolve, reject) => {
+        const request = require('http').request({
+          socketPath,
+          path: pathname,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            'X-Agent-Timestamp': String(timestamp),
+            'X-Agent-Nonce': nonce,
+            'X-Agent-Signature': signature,
+          },
+        }, (response) => {
+          const chunks = [];
+          response.on('data', (chunk) => chunks.push(chunk));
+          response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
+        });
+        request.once('error', reject);
+        request.end(body);
+      });
+    }
+
+    try {
+      await new Promise((resolve) => server.once('listening', resolve));
+      await expect(signedRequest('/v1/health')).resolves.toMatchObject({ status: 200, body: { status: 'online' } });
+      await expect(signedRequest('/v1/health')).resolves.toMatchObject({ status: 409, body: { error: 'AGENT_REPLAY_REJECTED' } });
+    } finally {
+      await new Promise((resolve) => agent.close(resolve));
+      store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Local agent execution policy', () => {
+  const policy = {
+    version: 1,
+    agent_id: 'ubuntu-local',
+    max_concurrent: 2,
+    max_timeout_ms: 1800000,
+    max_output_bytes: 1048576,
+    log_retention_days: 30,
+    memory_max_bytes: 536870912,
+    cpu_quota_percent: 100,
+    pids_max: 64,
+    environments: {
+      'python-etl-main': {
+        revision: 1,
+        runtime_type: 'python',
+        executable: '/opt/etl/venv/bin/python',
+        executable_realpath: '/usr/bin/python3.12',
+        executable_owner_uids: [0],
+        tasks: {
+          'task-1': {
+            script_path: '/opt/etl/jobs/monthly.py',
+            working_directory: '/opt/etl/jobs',
+            script_owner_uids: [0],
+            working_directory_owner_uids: [0],
+            argument_patterns: ['^--date$', '^\\d{4}-\\d{2}$'],
+            max_timeout_ms: 900000,
+          },
+        },
+      },
+    },
+  };
+
+  it('requires an exact task mapping, runtime revision and approved argv', () => {
+    validateAgentPolicy(policy);
+    const requestBody = {
+      environment_code: 'python-etl-main', environment_revision: 1, task_id: 'task-1',
+      script_path: '/opt/etl/jobs/monthly.py', working_directory: '/opt/etl/jobs',
+      arguments: ['--date', '2026-11'], timeout_ms: 60000,
+    };
+    expect(resolveTask(policy, requestBody).task.script_path).toBe(requestBody.script_path);
+    expect(() => resolveTask(policy, { ...requestBody, task_id: 'other' })).toThrow();
+    expect(() => resolveTask(policy, { ...requestBody, environment_revision: 2 })).toThrow();
+    expect(() => resolveTask(policy, { ...requestBody, arguments: ['--delete', '2026-11'] })).toThrow();
+    expect(() => resolveTask(policy, { ...requestBody, executable: '/bin/sh' })).toThrow();
+  });
+});
+
+describe('Local agent durable state', () => {
+  it('persists nonces, idempotent operations and unknown state across restart', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-agent-store-'));
+    const filename = path.join(directory, 'agent.db');
+    let store = new LocalAgentStore({ filename });
+    const operation = {
+      operationId: 'a7e8f74f-9459-4ad0-9a68-2dce2c4a0f40', fingerprint: 'f'.repeat(64),
+      taskId: 'task-1', environmentCode: 'python-etl-main', environmentRevision: 1, maxConcurrent: 2, now: 100,
+    };
+    try {
+      expect(store.recordNonce(operation.operationId, 100)).toBe(true);
+      expect(store.recordNonce(operation.operationId, 101)).toBe(false);
+      expect(store.acceptOperation(operation)).toMatchObject({ existing: false });
+      expect(store.acceptOperation(operation)).toMatchObject({ existing: true });
+      expect(() => store.acceptOperation({ ...operation, fingerprint: 'a'.repeat(64) })).toThrow(expect.objectContaining({ statusCode: 409 }));
+      expect(store.setRunning(operation.operationId, { pid: 123, stdoutPath: '/opaque/out', stderrPath: '/opaque/err' })).toBe(true);
+      store.close();
+      store = new LocalAgentStore({ filename });
+      expect(store.markActiveUnknown(200)).toBe(1);
+      expect(store.getOperation(operation.operationId)).toMatchObject({ status: 'unknown', terminationReason: 'agent_restart' });
+      expect(store.acceptOperation(operation)).toMatchObject({ existing: true, execution: { status: 'unknown' } });
+      expect(store.pruneCompleted(1000)).toBe(0);
+      expect(store.getOperation(operation.operationId)).toMatchObject({ status: 'unknown' });
+    } finally {
+      store.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('Execution environment API', () => {
+  it('creates, updates, disables, validates and lists a catalog entry without running it', async () => {
+    const page = await request(app).get('/execution-environments').expect(200);
+    expect(page.text).toContain('id="execution-environments-table"');
+    expect(page.text).toContain('data-environment-tab="review"');
+
+    const code = `python-${crypto.randomUUID().slice(0, 8)}`;
+    const created = await request(app).post('/api/execution-environments').send({
+      code, name: 'Python ETL de teste', runtime_type: 'python', target_id: 'ubuntu-local',
+      executable_path: '/opt/etl/main-env/bin/python',
+    }).expect(201);
+    const { id } = created.body;
+    expect(created.body).toMatchObject({ code, revision: 1, validation_status: 'pending' });
+
+    const taskPayload = {
+      _id: '-1', name: 'Structured catalog task', schedule: '0 2 * * *', logging: false, mailing: {},
+      execution_mode: 'structured',
+      structured_execution: {
+        environment_id: id, script_path: '/opt/etl/main.py', working_directory: '/opt/etl',
+        arguments: ['--date', '2026-11', ''], timeout_ms: 60000, environment_variables: {},
+      },
+    };
+    await request(app).post('/save').send(taskPayload).expect(200);
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    const structuredJob = jobs.find((job) => job.name === taskPayload.name);
+    expect(structuredJob).toMatchObject({ execution_mode: 'structured', structured_execution: taskPayload.structured_execution });
+    expect(structuredJob.command).toBeUndefined();
+    expect((await request(app).get(`/api/execution-environments/${id}/tasks`).expect(200)).body)
+      .toContainEqual({ id: structuredJob._id, name: taskPayload.name, schedule: taskPayload.schedule, stopped: false });
+    await request(app).post('/runjob').send({ _id: structuredJob._id }).expect(503);
+    const scheduledError = await new Promise((resolve) => crontab.runjob(structuredJob._id, (_error, _result) => resolve(_error)));
+    expect(scheduledError).toMatchObject({ statusCode: 503, code: 'EXECUTOR_UNAVAILABLE' });
+    expect(crontab.getExecutionPanel(structuredJob).history).toHaveLength(0);
+    await request(app).post('/remove').send({ _id: structuredJob._id }).expect(200);
+
+    const update = await request(app).patch(`/api/execution-environments/${id}`).send({
+      revision: 1, executable_path: '/opt/etl/main-env/bin/python3',
+    }).expect(200);
+    expect(update.body).toMatchObject({ revision: 2, validation_status: 'pending' });
+    await request(app).patch(`/api/execution-environments/${id}`).send({ revision: 1, name: 'stale' }).expect(409);
+    await request(app).post(`/api/execution-environments/${id}/disable`).send({ revision: 2 }).expect(200);
+    await request(app).post(`/api/execution-environments/${id}/enable`).send({ revision: 3 }).expect(200);
+    await request(app).post(`/api/execution-environments/${id}/validate`).send({}).expect(503);
+
+    const listed = await request(app).get('/api/execution-environments?target_id=ubuntu-local').expect(200);
+    expect(listed.body.items.some((environment) => environment.id === id)).toBe(true);
+    const validations = await request(app).get(`/api/execution-environments/${id}/validations`).expect(200);
+    expect(validations.body[0]).toMatchObject({ status: 'unavailable', actor: 'local' });
+    expect((await request(app).get('/api/execution-targets').expect(200)).body).toHaveLength(2);
+  });
+
+  it('denies catalog writes to authenticated viewers', async () => {
+    const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+    const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ viewer: 'viewer-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ viewer: 'viewer' });
+    try {
+      const protectedApp = createApp();
+      const client = request.agent(protectedApp);
+      await client.post('/login').send({ username: 'viewer', password: 'viewer-secret' }).expect(302);
+      await client.post('/api/execution-environments').send({}).expect(403);
+    } finally {
+      if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+      else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+      if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+      else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+    }
+  });
+});
 
 describe('Crontab UI', () => {
   describe('Publication status tooltips', () => {
@@ -304,6 +663,71 @@ describe('Crontab UI', () => {
     });
   });
 
+  describe('Execution environment schema migration', () => {
+    it('adds the versioned catalog schema without changing existing jobs', () => {
+      const filename = path.join(testDbPath, `environment-migration-${crypto.randomUUID()}.db`);
+      const legacy = new Database(filename);
+      const job = { _id: 'legacy-job', name: 'Legacy', command: 'echo legacy', schedule: '* * * * *' };
+      legacy.exec('CREATE TABLE jobs (id TEXT PRIMARY KEY, document TEXT NOT NULL, created_at INTEGER NOT NULL)');
+      legacy.prepare('INSERT INTO jobs (id, document, created_at) VALUES (?, ?, ?)')
+        .run(job._id, JSON.stringify(job), 1);
+      legacy.close();
+
+      const datastore = new SqliteDatastore({ filename });
+      try {
+        expect(datastore.getAllData()).toEqual([job]);
+        expect(datastore.database.prepare('SELECT version FROM schema_migrations').all())
+          .toEqual([{ version: '0001_execution_environments' }]);
+        expect(datastore.listExecutionTargets().map((target) => [target.id, target.healthStatus]))
+          .toEqual([['container-local', 'unknown'], ['ubuntu-local', 'unavailable']]);
+      } finally {
+        datastore.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+
+    it('creates, filters and updates environments with optimistic revisions', async () => {
+      const filename = path.join(testDbPath, `environment-crud-${crypto.randomUUID()}.db`);
+      const datastore = new SqliteDatastore({ filename });
+      try {
+        const environment = datastore.createExecutionEnvironment({
+          id: crypto.randomUUID(), code: 'python-etl-main', name: 'Python ETL', runtimeType: 'python',
+          targetId: 'ubuntu-local', executablePath: '/opt/etl/python', defaultWorkingDirectory: '/opt/etl',
+          description: 'ETL runtime', enabled: true, actor: 'admin', now: Date.now(),
+        });
+        expect(environment).toMatchObject({ code: 'python-etl-main', revision: 1, validationStatus: 'pending' });
+        expect(datastore.listExecutionEnvironments({ targetId: 'ubuntu-local' })).toHaveLength(1);
+        expect(datastore.updateExecutionEnvironment(environment.id, 1, { executablePath: '/opt/etl/python3' }, 'admin'))
+          .toMatchObject({ revision: 2, validationStatus: 'pending', executablePath: '/opt/etl/python3' });
+        expect(datastore.updateExecutionEnvironment(environment.id, 1, { name: 'stale' }, 'admin')).toBeNull();
+        const job = {
+          _id: 'structured-backup-job', name: 'Structured backup', schedule: '0 2 * * *',
+          execution_mode: 'structured',
+          structured_execution: {
+            environment_id: environment.id, script_path: '/opt/etl/main.py', working_directory: '/opt/etl',
+            arguments: ['--date', '2026-11'], timeout_ms: 60000, environment_variables: {},
+          },
+        };
+        await new Promise((resolve, reject) => datastore.insert(job, (error) => error ? reject(error) : resolve()));
+        const backup = path.join(testDbPath, `environment-backup-${crypto.randomUUID()}.db`);
+        datastore.snapshotTo(backup);
+        const restored = new SqliteDatastore({ filename: backup });
+        try {
+          expect(restored.getExecutionEnvironment(environment.id)).toMatchObject({
+            code: 'python-etl-main', revision: 2, executablePath: '/opt/etl/python3',
+          });
+          expect(restored.getAllData()).toEqual([job]);
+        } finally {
+          restored.close();
+          fs.rmSync(backup, { force: true });
+        }
+      } finally {
+        datastore.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+  });
+
   describe('Execution state machine', () => {
     const { isValidTransition, resolveTerminalState } = require('../config/execution-states');
 
@@ -336,6 +760,21 @@ describe('Crontab UI', () => {
         expect(store.recoverManualRuns(5)).toBe(1);
         expect(store.completeManualRun('b', 'completed', 6, {})).toBe(false);
         expect(store.getManualRun('b').status).toBe('interrupted');
+      } finally {
+        store.close();
+      }
+    });
+  });
+
+  describe('Consecutive execution failures', () => {
+    it('counts failures after the latest success when completion timestamps tie', () => {
+      const store = new SqliteDatastore({ filename: path.join(testDbPath, `failure-order-${crypto.randomUUID()}.db`) });
+      const base = { jobId: 'failure-order-job', trigger: 'scheduled', startedAt: 1, completedAt: 100 };
+      try {
+        store.createExecution({ ...base, operationId: 'failure-before-success', status: 'failed' });
+        store.createExecution({ ...base, operationId: 'success', status: 'completed', startedAt: 2 });
+        store.createExecution({ ...base, operationId: 'failure-after-success', status: 'failed', startedAt: 3 });
+        expect(store.countConsecutiveFailures(base.jobId)).toBe(1);
       } finally {
         store.close();
       }
@@ -1382,6 +1821,40 @@ describe('Crontab UI', () => {
       expect(records(file)).toEqual([]);
     });
 
+    it('preserves execution environments and structured task references', async () => {
+      const file = path.join(testDbPath, `normalise-structured-${crypto.randomUUID()}.db`);
+      createDatabaseFile(file, []);
+      let datastore = new SqliteDatastore({ filename: file });
+      const environment = datastore.createExecutionEnvironment({
+        id: crypto.randomUUID(), code: 'python-etl-main', name: 'Python ETL', runtimeType: 'python',
+        targetId: 'ubuntu-local', executablePath: '/opt/etl/python', defaultWorkingDirectory: '/opt/etl',
+        description: '', enabled: true, actor: 'admin', now: Date.now(),
+      });
+      const job = {
+        _id: 'structured-import-job', name: 'Structured import', schedule: '0 2 * * *',
+        execution_mode: 'structured',
+        structured_execution: {
+          environment_id: environment.id, script_path: '/opt/etl/main.py', working_directory: '/opt/etl',
+          arguments: ['--month', '2026-11'], timeout_ms: 60000, environment_variables: {},
+        },
+      };
+      await new Promise((resolve, reject) => datastore.insert(job, (error) => error ? reject(error) : resolve()));
+      datastore.close();
+
+      await normalise(file);
+      datastore = new SqliteDatastore({ filename: file });
+      try {
+        expect(datastore.getExecutionEnvironment(environment.id)).toMatchObject({ code: 'python-etl-main' });
+        expect(datastore.getAllData()).toEqual([expect.objectContaining({
+          execution_mode: 'structured',
+          structured_execution: job.structured_execution,
+        })]);
+      } finally {
+        datastore.close();
+        fs.rmSync(file, { force: true });
+      }
+    });
+
     it('migrates an existing NeDB database to SQLite while retaining the legacy source', () => {
       const folder = path.join(testDbPath, `legacy-migration-${Date.now()}`);
       const file = path.join(folder, 'crontab.db');
@@ -1631,14 +2104,23 @@ describe('Crontab publication', () => {
 
   it('restores the environment and staged crontab when applying it fails', async () => {
     const stagedCrontab = path.join(testDbPath, 'crontab');
-    fs.writeFileSync(crontab.env_file, 'PATH=/before');
-    fs.writeFileSync(stagedCrontab, '# previous crontab');
+    const previousEnvironment = fs.existsSync(crontab.env_file) ? fs.readFileSync(crontab.env_file, 'utf8') : null;
+    const previousCrontab = fs.existsSync(stagedCrontab) ? fs.readFileSync(stagedCrontab, 'utf8') : null;
+    try {
+      fs.writeFileSync(crontab.env_file, 'PATH=/before');
+      fs.writeFileSync(stagedCrontab, '# previous crontab');
 
-    await expect(publish({ PATH: '/after' }, (_file, callback) => callback(new Error('apply failed'))))
-      .rejects.toThrow('apply failed');
+      await expect(publish({ PATH: '/after' }, (_file, callback) => callback(new Error('apply failed'))))
+        .rejects.toThrow('apply failed');
 
-    expect(fs.readFileSync(crontab.env_file, 'utf8')).toBe('PATH=/before');
-    expect(fs.readFileSync(stagedCrontab, 'utf8')).toBe('# previous crontab');
+      expect(fs.readFileSync(crontab.env_file, 'utf8')).toBe('PATH=/before');
+      expect(fs.readFileSync(stagedCrontab, 'utf8')).toBe('# previous crontab');
+    } finally {
+      if (previousEnvironment === null) fs.rmSync(crontab.env_file, { force: true });
+      else fs.writeFileSync(crontab.env_file, previousEnvironment);
+      if (previousCrontab === null) fs.rmSync(stagedCrontab, { force: true });
+      else fs.writeFileSync(stagedCrontab, previousCrontab);
+    }
   });
 });
 
@@ -3142,8 +3624,11 @@ describe('Alert behaviour across a real run sequence', () => {
     await setCommand(job, 'echo recovered');
     await runJob(job);
     expect(spawned).toHaveLength(1);
+    expect(crontab.getExecutionPanel(job).lastRun.status).toBe('completed');
+    expect(crontab.getExecutionPanel(job).alert).toBeNull();
     await setCommand(job, 'exit 1');
     await runJob(job);
+    expect(crontab.getExecutionPanel(job).lastRun.status).toBe('failed');
     expect(spawned).toHaveLength(2);
   });
 

@@ -38,6 +38,26 @@ function initPage() {
   }
 
   $.ajaxSetup({ headers: { 'X-CSRF-Token': csrfToken() } });
+  loadExecutionEnvironments();
+  var executionMode = document.getElementById('job-execution-mode');
+  if (executionMode) executionMode.addEventListener('change', function() { setJobExecutionMode(executionMode.value); });
+  var executionEnvironment = document.getElementById('job-execution-environment');
+  if (executionEnvironment) executionEnvironment.addEventListener('change', function() {
+    selectedExecutionEnvironmentId = executionEnvironment.value;
+    updateStructuredPreview();
+  });
+  ['job-script-path', 'job-working-directory', 'job-timeout'].forEach(function(id) {
+    var input = document.getElementById(id);
+    if (input) input.addEventListener('input', updateStructuredPreview);
+  });
+  var addArgumentButton = document.getElementById('job-add-argument');
+  if (addArgumentButton) addArgumentButton.addEventListener('click', function() {
+    var args = readStructuredArguments();
+    args.push('');
+    renderStructuredArguments(args);
+    var inputs = document.querySelectorAll('#job-arguments input');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  });
   try {
     var pendingRun = JSON.parse(sessionStorage.getItem('crontab_ui_manual_run') || 'null');
     if (pendingRun && pendingRun.jobId && pendingRun.operationId) trackManualRun(pendingRun.jobId, pendingRun.operationId);
@@ -487,7 +507,7 @@ function editJob(_id) {
     document.getElementById('job-title').textContent = tr('edit') + ' ' + tr('tasks').toLowerCase().replace(/s$/, '');
     getModal('job').show();
     $('#job-name').val(job.name);
-    $('#job-command').val(job.command);
+    $('#job-command').val(job.command || '');
     if (job.schedule.indexOf('@') !== 0) {
       var components = job.schedule.split(' ');
       $('#job-minute').val(components[0]);
@@ -497,10 +517,13 @@ function editJob(_id) {
       $('#job-week').val(components[4]);
     }
     schedule = job.schedule;
-    job_command = job.command;
+    job_command = job.command || '';
     $('#job-mail-profile').val(job.mailing && job.mailing.profileId ? job.mailing.profileId : '');
     $('#job-mail-policy').val(job.mailing && job.mailing.policy ? job.mailing.policy : 'onFailure');
     fillAlertFields(job.mailing || {});
+    $('#job-execution-mode').val(job.execution_mode === 'structured' ? 'structured' : 'command');
+    setJobExecutionMode(job.execution_mode === 'structured' ? 'structured' : 'command');
+    fillStructuredExecution(job.structured_execution || {});
     if (job.logging && job.logging !== 'false')
       $('#job-logging').prop('checked', true);
     job_string();
@@ -514,11 +537,153 @@ function editJob(_id) {
     var name = $('#job-name').val();
     var mailing = mailingFromForm();
     var logging = $('#job-logging').prop('checked');
-    $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing}, function() {
-      location.reload();
-    }).fail(handleOperationFailure);
-    getModal('job').hide();
+    saveTask({ name: name, command: collapsedCommand(), schedule: schedule, _id: _id, logging: logging, mailing: mailing });
   });
+}
+
+var executionEnvironments = [];
+var selectedExecutionEnvironmentId = '';
+
+function loadExecutionEnvironments() {
+  if (!routes.execution_environments) return;
+  $.getJSON(routes.execution_environments, { limit: 100 }).done(function(result) {
+    executionEnvironments = result.items || [];
+    var select = document.getElementById('job-execution-environment');
+    if (!select) return;
+    var selectedId = selectedExecutionEnvironmentId || select.value;
+    select.replaceChildren();
+    var empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = tr('structuredNoEnvironments');
+    select.appendChild(empty);
+    executionEnvironments.forEach(function(environment) {
+      var option = document.createElement('option');
+      option.value = environment.id;
+      option.textContent = environment.name + ' · ' + environment.runtime_type + ' · ' + tr('status' + environment.validation_status.charAt(0).toUpperCase() + environment.validation_status.slice(1));
+      select.appendChild(option);
+    });
+    select.value = selectedId;
+    selectedExecutionEnvironmentId = select.value;
+    updateStructuredPreview();
+  });
+}
+
+function setJobExecutionMode(mode) {
+  var structured = mode === 'structured';
+  $('#job-legacy-execution').toggleClass('d-none', structured);
+  $('#job-structured-execution').toggleClass('d-none', !structured);
+  $('#job-command').prop('required', !structured);
+  $('#job-script-path').prop('required', structured);
+  $('#job-execution-environment').prop('required', structured);
+  if (structured) updateStructuredPreview();
+}
+
+function readStructuredArguments() {
+  return Array.prototype.map.call(document.querySelectorAll('#job-arguments input'), function(input) { return input.value; });
+}
+
+function renderStructuredArguments(args) {
+  var container = document.getElementById('job-arguments');
+  if (!container) return;
+  container.replaceChildren();
+  args.forEach(function(argument, index) {
+    var row = document.createElement('div');
+    row.className = 'structured-argument-row';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control font-monospace';
+    input.value = argument;
+    input.setAttribute('aria-label', tr('argumentPlaceholder') + ' ' + (index + 1));
+    input.placeholder = tr('argumentPlaceholder');
+    input.addEventListener('input', updateStructuredPreview);
+    row.appendChild(input);
+    [
+      ['bi-arrow-up', tr('moveArgumentUp'), -1],
+      ['bi-arrow-down', tr('moveArgumentDown'), 1],
+      ['bi-x-lg', tr('removeArgument'), 0],
+    ].forEach(function(action) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-outline-secondary structured-argument-action';
+      button.setAttribute('aria-label', action[1]);
+      button.title = action[1];
+      var icon = document.createElement('i');
+      icon.className = 'bi ' + action[0];
+      icon.setAttribute('aria-hidden', 'true');
+      button.appendChild(icon);
+      button.addEventListener('click', function() {
+        var current = readStructuredArguments();
+        if (action[2] === 0) current.splice(index, 1);
+        else {
+          var target = index + action[2];
+          if (target < 0 || target >= current.length) return;
+          var moved = current.splice(index, 1)[0];
+          current.splice(target, 0, moved);
+        }
+        renderStructuredArguments(current);
+        updateStructuredPreview();
+      });
+      row.appendChild(button);
+    });
+    container.appendChild(row);
+  });
+  updateStructuredPreview();
+}
+
+function fillStructuredExecution(execution) {
+  selectedExecutionEnvironmentId = execution.environment_id || '';
+  $('#job-execution-environment').val(execution.environment_id || '');
+  $('#job-script-path').val(execution.script_path || '');
+  $('#job-working-directory').val(execution.working_directory || '');
+  $('#job-timeout').val(execution.timeout_ms === undefined ? 300000 : execution.timeout_ms);
+  renderStructuredArguments(Array.isArray(execution.arguments) ? execution.arguments : []);
+  updateStructuredPreview();
+}
+
+function updateStructuredPreview() {
+  var output = document.getElementById('job-structured-preview');
+  if (!output) return;
+  var environmentId = $('#job-execution-environment').val();
+  var environment = executionEnvironments.find(function(item) { return item.id === environmentId; });
+  var script = $('#job-script-path').val();
+  var args = readStructuredArguments();
+  output.textContent = JSON.stringify(environment ? [environment.executable_path, script].concat(args) : [script].concat(args), null, 2);
+  var warning = document.getElementById('job-environment-warning');
+  if (!warning) return;
+  if (!environment) {
+    warning.textContent = executionEnvironments.length ? '' : tr('structuredNoEnvironments');
+    return;
+  }
+  var status = environment.enabled ? tr('status' + environment.validation_status.charAt(0).toUpperCase() + environment.validation_status.slice(1)) : tr('environmentDisabled');
+  warning.textContent = (!environment.enabled || environment.validation_status !== 'valid')
+    ? tr('taskEnvironmentWarning').replace('{status}', status)
+    : '';
+}
+
+function saveTask(payload, mode) {
+  if ((mode || $('#job-execution-mode').val()) === 'structured') {
+    if (!payload.structured_execution) {
+      payload.structured_execution = {
+        environment_id: $('#job-execution-environment').val(),
+        script_path: $('#job-script-path').val(),
+        working_directory: $('#job-working-directory').val() || null,
+        arguments: readStructuredArguments(),
+        timeout_ms: Number($('#job-timeout').val()),
+        environment_variables: {},
+      };
+    }
+    payload.execution_mode = 'structured';
+    delete payload.command;
+    $.ajax({
+      url: routes.save,
+      method: 'POST',
+      contentType: 'application/json',
+      data: JSON.stringify(payload),
+    }).done(function() { location.reload(); }).fail(handleOperationFailure);
+    return;
+  }
+  payload.execution_mode = 'command';
+  $.post(routes.save, payload, function() { location.reload(); }).fail(handleOperationFailure);
 }
 
 // The alert threshold and cooldown only apply to a task that has a profile to alert through.
@@ -550,6 +715,9 @@ function toggleAlertFields() {
 function newJob() {
   schedule = '';
   job_command = '';
+  $('#job-execution-mode').val('command');
+  setJobExecutionMode('command');
+  fillStructuredExecution({});
   $('#job-minute').val('*');
   $('#job-hour').val('*');
   $('#job-day').val('*');
@@ -574,10 +742,7 @@ function newJob() {
     var name = $('#job-name').val();
     var mailing = mailingFromForm();
     var logging = $('#job-logging').prop('checked');
-    $.post(routes.save, {name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing}, function() {
-      location.reload();
-    }).fail(handleOperationFailure);
-    getModal('job').hide();
+    saveTask({name: name, command: collapsedCommand(), schedule: schedule, _id: -1, logging: logging, mailing: mailing});
   });
 }
 
@@ -592,16 +757,19 @@ function duplicateJob(_id) {
   var logging = (job.logging && job.logging !== 'false') ? job.logging : 'false';
   var mailing = job.mailing || {};
 
-  $.post(routes.save, {
+  var payload = {
     name: name,
     command: job.command,
     schedule: job.schedule,
     _id: -1,
     logging: logging,
     mailing: mailing
-  }, function() {
-    location.reload();
-  }).fail(handleOperationFailure);
+  };
+  if (job.execution_mode === 'structured') {
+    payload.execution_mode = 'structured';
+    payload.structured_execution = JSON.parse(JSON.stringify(job.structured_execution || {}));
+  }
+  saveTask(payload, job.execution_mode === 'structured' ? 'structured' : 'command');
 }
 
 function openMailProfileTest() {

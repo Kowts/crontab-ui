@@ -1,0 +1,46 @@
+[Unit]
+Description=Crontab UI Local Execution Agent
+After=local-fs.target
+ConditionPathExists=/etc/crontab-ui-agent/policy.json
+
+[Service]
+Type=simple
+User=svc-crontab-ui-agent
+Group=crontab-ui-clients
+SupplementaryGroups=svc-crontab-ui-agent
+WorkingDirectory=/opt/crontab-ui
+RuntimeDirectory=crontab-ui-agent
+RuntimeDirectoryMode=0750
+StateDirectory=crontab-ui-agent
+StateDirectoryMode=0700
+LogsDirectory=crontab-ui-agent
+LogsDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+Delegate=cpu memory pids
+ProtectControlGroups=no
+KillMode=control-group
+TimeoutStopSec=15s
+EnvironmentFile=/etc/crontab-ui-agent/agent.env
+Environment=CRONTAB_UI_AGENT_POLICY_FILE=/etc/crontab-ui-agent/policy.json
+Environment=CRONTAB_UI_AGENT_STATE_DIR=/var/lib/crontab-ui-agent
+Environment=CRONTAB_UI_AGENT_LOG_DIR=/var/log/crontab-ui-agent
+Environment=CRONTAB_UI_AGENT_SOCKET=/run/crontab-ui-agent/agent.sock
+Environment=CRONTAB_UI_AGENT_EXEC_WRAPPER=/usr/local/libexec/crontab-ui-agent-exec
+ExecStart=/usr/local/libexec/crontab-ui-secure-exec /usr/bin/node /opt/crontab-ui/bin/crontab-ui-agent.js
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target
