@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
 - `native-local` structured destination for native Linux installations, with explicit trusted-owner UIDs and per-run cgroup v2 resource limits; unavailable inside Docker.
 - Optional Ubuntu local execution agent with UDS/HMAC, independent task allowlist, durable idempotency, cgroup v2 limits, bounded logs and `unknown` recovery state.
 - `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and outstanding Linux validation gates.
+- SQLite user and access management with fixed roles, scrypt migration, session revocation, last-admin protection and a local recovery CLI.
+- `docs/USER_MANAGEMENT.md`: provider migration, administration, recovery and rollback procedure.
+- SQLite user and access management with fixed roles, scrypt migration, session revocation, last-admin protection and a local recovery CLI.
+- `docs/USER_MANAGEMENT.md`: provider migration, operations, recovery and rollback procedure.
 
 ### Changed
 

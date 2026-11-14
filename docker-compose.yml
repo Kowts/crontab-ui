@@ -9,8 +9,9 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      BASIC_AUTH_USERS_JSON: ${BASIC_AUTH_USERS_JSON:?Configure authenticated users}
-      AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:?Configure user roles}
+      AUTH_PROVIDER: ${AUTH_PROVIDER:-env}
+      BASIC_AUTH_USERS_JSON: ${BASIC_AUTH_USERS_JSON:-}
+      AUTHZ_ROLE_MAP_JSON: ${AUTHZ_ROLE_MAP_JSON:-}
       CSRF_SECRET: ${CSRF_SECRET:?Configure CSRF secret}
       COMMAND_TIMEOUT_MS: ${COMMAND_TIMEOUT_MS:-300000}
       COMMAND_MEMORY_LIMIT_MB: ${COMMAND_MEMORY_LIMIT_MB:-0}

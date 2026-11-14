@@ -3,6 +3,8 @@
 // Validates the deployment environment before the service starts or is upgraded.
 // Usage: node scripts/predeploy-check.js   (reads the process environment)
 const { validateProductionTransport } = require('../config/transport');
+const path = require('path');
+const Database = require('better-sqlite3');
 
 const env = process.env;
 const problems = [];
@@ -15,17 +17,31 @@ function check(name, fn) {
   }
 }
 
-check('BASIC_AUTH_USERS_JSON', () => {
-  if (!env.BASIC_AUTH_USERS_JSON) throw new Error('is required');
-  const users = JSON.parse(env.BASIC_AUTH_USERS_JSON);
-  if (!users || typeof users !== 'object' || Array.isArray(users) || !Object.keys(users).length) {
-    throw new Error('must be a non-empty JSON object');
+check('AUTH_PROVIDER', () => {
+  const provider = env.AUTH_PROVIDER || 'env';
+  if (!['env', 'sqlite'].includes(provider)) throw new Error('must be env or sqlite');
+  if (provider === 'env') {
+    if (!env.BASIC_AUTH_USERS_JSON) throw new Error('BASIC_AUTH_USERS_JSON is required for AUTH_PROVIDER=env');
+    const users = JSON.parse(env.BASIC_AUTH_USERS_JSON);
+    if (!users || typeof users !== 'object' || Array.isArray(users) || !Object.keys(users).length) {
+      throw new Error('BASIC_AUTH_USERS_JSON must be a non-empty JSON object');
+    }
+    if (!env.AUTHZ_ROLE_MAP_JSON) throw new Error('AUTHZ_ROLE_MAP_JSON is required for AUTH_PROVIDER=env');
+    JSON.parse(env.AUTHZ_ROLE_MAP_JSON);
+    return;
   }
-});
 
-check('AUTHZ_ROLE_MAP_JSON', () => {
-  if (!env.AUTHZ_ROLE_MAP_JSON) throw new Error('is required');
-  JSON.parse(env.AUTHZ_ROLE_MAP_JSON);
+  const dbDirectory = env.CRON_DB_PATH || path.join(__dirname, '..', 'crontabs');
+  const filename = path.join(dbDirectory, 'crontab.db');
+  const database = new Database(filename, { readonly: true, fileMustExist: true });
+  try {
+    const hasUsers = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+    if (!hasUsers) throw new Error('users table is missing; run the user migration CLI first');
+    const admins = database.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_active = 1").get().count;
+    if (admins < 1) throw new Error('at least one active SQLite administrator is required');
+  } finally {
+    database.close();
+  }
 });
 
 check('CSRF_SECRET', () => {

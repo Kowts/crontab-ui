@@ -8,6 +8,7 @@ a native installation.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `BASIC_AUTH_USERS_JSON`, `AUTHZ_ROLE_MAP_JSON`, `CSRF_SECRET` | required | Authentication, roles, CSRF (secret ≥ 32 chars) |
+| `AUTH_PROVIDER` | `env` | `env` keeps legacy credentials; use `sqlite` only after CLI migration and admin verification |
 | `TRUSTED_PROXY` / `SSL_CERT`+`SSL_KEY` | none | One is required in production unless `ALLOW_HTTP=true` |
 | `COMMAND_TIMEOUT_MS` | `300000` | Task timeout; `0` disables it |
 | `COMMAND_MEMORY_LIMIT_MB`, `COMMAND_CPU_SECONDS`, `COMMAND_MAX_PROCESSES` | `0` (off) | Per-task limits |
@@ -20,6 +21,8 @@ a native installation.
 | `CRONTAB_UI_AGENT_HMAC_SECRET`, `CRONTAB_UI_AGENT_GID`, `CRONTAB_UI_AGENT_RUNTIME_DIR` | unset | Required only when enabling the optional Ubuntu agent Compose overlay |
 
 `.env.example` is the authoritative list.
+
+For user-account migration and day-to-day administration, use the [user management guide](USER_MANAGEMENT.md). Keep `AUTH_PROVIDER=env` until the backup-backed CLI migration succeeds and an active SQLite administrator is verified; `AUTH_PROVIDER=sqlite` deliberately refuses startup otherwise.
 
 ## Compatibility
 

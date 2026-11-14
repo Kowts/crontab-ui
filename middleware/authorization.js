@@ -34,6 +34,15 @@ function configuredRoles() {
   return roles;
 }
 
+function roleForRequest(req) {
+  if (!req?.app?.locals?.authEnabled) return 'admin';
+  if (typeof req.auth?.role === 'string') return req.auth.role;
+  if (req.app.locals.userStore && req.auth?.user) {
+    return req.app.locals.userStore.getByUsername(req.auth.user)?.role || null;
+  }
+  return configuredRoles()[req.auth?.user] || null;
+}
+
 function requireRole(requiredRole) {
   if (!Object.hasOwn(ROLE_LEVEL, requiredRole)) {
     throw new Error(`Unknown required role: ${requiredRole}`);
@@ -44,7 +53,7 @@ function requireRole(requiredRole) {
     // In that mode there is no authenticated identity on which to base RBAC.
     if (!req.app.locals.authEnabled) return next();
 
-    const role = configuredRoles()[req.auth?.user];
+    const role = roleForRequest(req);
     if (!role || ROLE_LEVEL[role] < ROLE_LEVEL[requiredRole]) {
       return res.status(403).json({ message: 'Insufficient role for this operation' });
     }
@@ -61,4 +70,4 @@ function validateRoleAssignments(users, roles) {
   }
 }
 
-module.exports = { configuredRoles, requireRole, validateRoleAssignments, operatorTaskPrivilegesEnabled };
+module.exports = { configuredRoles, requireRole, roleForRequest, validateRoleAssignments, operatorTaskPrivilegesEnabled };

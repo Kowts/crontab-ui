@@ -72,6 +72,24 @@ module.exports = [
     },
   },
   {
+    files: ['public/js/users.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.jquery,
+        bootstrap: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      'no-var': 'off',
+      'prefer-const': 'off',
+      'strict': 'off',
+    },
+  },
+  {
     files: ['config/mailconfig.js'],
     languageOptions: {
       ecmaVersion: 2022,

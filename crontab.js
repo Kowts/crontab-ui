@@ -23,6 +23,8 @@ const {
   isSqliteFile,
   readExecutionCatalogFromFile,
   readJobsFromFile,
+  readUsersFromFile,
+  validateUserRecords,
 } = require('./lib/database');
 const { validateStructuredTask } = require('./config/structured-tasks');
 const { validateEnvironmentPayload: validateExecutionEnvironmentPayload } = require('./config/execution-environments');
@@ -486,6 +488,20 @@ exports.sessions = {
   revoke: (id, at) => db.revokeSession(id, at),
   revokeUser: (user, at) => db.revokeUserSessions(user, at),
   prune: (now) => db.pruneSessions(now),
+};
+
+exports.users = {
+  list: () => db.listUsers(),
+  get: (id) => db.getUser(id),
+  getByUsername: (username) => db.getUserByUsername(username),
+  getAuthentication: (username) => db.getUserAuthentication(username),
+  countActiveAdministrators: () => db.countActiveAdministrators(),
+  createAuthenticatedSession: (userId, session) => db.createAuthenticatedUserSession(userId, session),
+  create: (user) => db.createUser(user),
+  update: (id, revision, changes) => db.updateUser(id, revision, changes),
+  recordLogin: (id, at) => db.recordUserLogin(id, at),
+  import: (rows) => db.importUsers(rows),
+  recoverAdministrator: (user) => db.recoverAdministrator(user),
 };
 
 exports.should_send_mail = shouldSendMail;
@@ -1298,12 +1314,14 @@ exports.normalise_database = (temporaryFile, callback, options = {}) => {
     const normalisedFile = `${temporaryFile}.normalised-${crypto.randomUUID()}`;
     try {
       const catalog = validateExecutionCatalog(readExecutionCatalogFromFile(temporaryFile));
+      const sourceUsers = options.preserveUsers ? readUsersFromFile(temporaryFile) : null;
+      const userRecords = sourceUsers === null ? null : validateUserRecords(sourceUsers);
       const environmentIds = new Set(catalog.environments.map((environment) => environment.id));
       const jobs = readJobsFromFile(temporaryFile).map((document) => {
         const job = validateImportedJob(document, { ...options, environmentIds });
         return options.preserveMetadata ? job : { ...job, _id: crypto.randomUUID() };
       });
-      createDatabaseFile(normalisedFile, jobs, catalog);
+      createDatabaseFile(normalisedFile, jobs, catalog, userRecords);
       fs.rmSync(temporaryFile, { force: true });
       fs.renameSync(normalisedFile, temporaryFile);
       callback(null);
@@ -1457,7 +1475,7 @@ exports.apply_import = (temporaryFile, mode, callback = () => {}) => withDatabas
 
 exports._build_import_plan = buildImportPlan;
 
-function replaceDatabase(temporaryFile, done) {
+function replaceDatabase(temporaryFile, done, { replaceUsers = false } = {}) {
   validateDatabaseFile(temporaryFile, (validationError) => {
     if (validationError) {
       fs.rm(temporaryFile, { force: true }, () => done(validationError));
@@ -1477,7 +1495,14 @@ function replaceDatabase(temporaryFile, done) {
         // replaceDocuments is atomic on its own, so it removes the need for a rollback file and
         // makes import and restore behave identically everywhere.
         try {
-          db.replaceDocuments(readJobsFromFile(temporaryFile), readExecutionCatalogFromFile(temporaryFile));
+          const userRecords = replaceUsers ? validateUserRecords(readUsersFromFile(temporaryFile) || []) : undefined;
+          if (replaceUsers && process.env.AUTH_PROVIDER === 'sqlite'
+            && !userRecords.some((user) => user.role === 'admin' && user.is_active === 1)) {
+            throw Object.assign(new Error('Restored database must contain an active administrator'), {
+              statusCode: 409, code: 'ACTIVE_ADMIN_REQUIRED',
+            });
+          }
+          db.replaceDocuments(readJobsFromFile(temporaryFile), readExecutionCatalogFromFile(temporaryFile), userRecords);
           db.dropOrphanedRunState();
         } catch (error) {
           return removeTemporaryFile(temporaryFile, () => done(error));
@@ -1503,16 +1528,22 @@ exports.restore = (dbName, callback = () => {}) => withDatabaseLock((done) => {
     return done(error);
   }
   const source = path.join(dbFolder, dbName);
+  let replaceUsers;
+  try {
+    replaceUsers = readUsersFromFile(source) !== null;
+  } catch (error) {
+    return done(error);
+  }
   const temporaryFile = path.join(dbFolder, `.restore-${crypto.randomUUID()}.db`);
   fs.copyFile(source, temporaryFile, (copyError) => {
     if (copyError) return done(copyError);
-    return exports.normalise_database(temporaryFile, (normaliseError) => {
+      return exports.normalise_database(temporaryFile, (normaliseError) => {
       if (normaliseError) return done(normaliseError);
-      return replaceDatabase(temporaryFile, (error) => {
+        return replaceDatabase(temporaryFile, (error) => {
         if (error) fs.unlink(temporaryFile, () => {});
         done(error);
-      });
-    }, { preserveMetadata: true });
+        }, { replaceUsers });
+      }, { preserveMetadata: true, preserveUsers: replaceUsers });
   });
 }, callback);
 

@@ -1,23 +1,23 @@
 'use strict';
 
 const crontab = require('../crontab');
-const { configuredRoles, operatorTaskPrivilegesEnabled } = require('./authorization');
+const { roleForRequest, operatorTaskPrivilegesEnabled } = require('./authorization');
 
 function canManageTasks(req) {
   if (!req.app.locals.authEnabled) return true;
-  const role = configuredRoles()[req.auth?.user];
+  const role = roleForRequest(req);
   return role === 'admin' || (role === 'operator' && operatorTaskPrivilegesEnabled());
 }
 
 function canExecuteTasks(req) {
   if (!req.app.locals.authEnabled) return true;
-  const role = configuredRoles()[req.auth?.user];
+  const role = roleForRequest(req);
   return role === 'admin' || role === 'executor' || (role === 'operator' && operatorTaskPrivilegesEnabled());
 }
 
 function canAccessJob(req, job, action) {
   if (!req.app.locals.authEnabled) return true;
-  const role = configuredRoles()[req.auth?.user];
+  const role = roleForRequest(req);
   if (role === 'admin') return true;
   if (!job.owner) return false;
   if (job.owner !== req.auth?.user) return false;

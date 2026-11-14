@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="<%= locale === 'pt' ? 'pt-PT' : 'en' %>">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= t('usersAndPermissions') %> — Crontab UI</title>
+<link rel="icon" href="<%= JSON.parse(routes).root %>images/crontab-ui.svg" type="image/svg+xml">
+<script src="<%= JSON.parse(routes).root %>js/theme.js"></script>
+<link href="<%= JSON.parse(routes).root %>css/bootstrap.min.css" rel="stylesheet">
+<link href="<%= JSON.parse(routes).root %>css/bootstrap-icons.min.css" rel="stylesheet">
+<link href="<%= JSON.parse(routes).root %>css/app.css" rel="stylesheet">
+<script src="<%= JSON.parse(routes).root %>js/jquery.min.js"></script>
+<script src="<%= JSON.parse(routes).root %>js/bootstrap.bundle.min.js"></script>
+<script defer src="<%= JSON.parse(routes).root %>js/users.js"></script>
+<script id="routes-state" type="application/json"><%- routes %></script>
+<script id="i18n-state" type="application/json"><%- messages %></script>
+</head>
+<body class="app-body">
+<%- include('navbar.ejs') -%>
+<main class="app-shell">
+  <div class="breadcrumb-lite"><%= t('administration') %> <span>/</span> <%= t('usersAndPermissions') %></div>
+  <header class="page-heading">
+    <div><h1><%= t('usersAndPermissions') %></h1><p><%= t('usersDescription') %></p></div>
+    <div class="page-actions"><button type="button" class="btn btn-primary" id="user-add"><i class="bi bi-person-plus me-1" aria-hidden="true"></i><%= t('addUser') %></button></div>
+  </header>
+
+  <section class="app-card" aria-labelledby="users-heading">
+    <div class="card-heading">
+      <h2 id="users-heading"><%= t('usersAndPermissions') %></h2>
+      <div class="d-flex flex-wrap gap-2">
+        <label class="visually-hidden" for="user-search"><%= t('searchUsers') %></label>
+        <input id="user-search" class="form-control form-control-sm" type="search" placeholder="<%= t('searchUsers') %>">
+        <label class="visually-hidden" for="user-role-filter"><%= t('userRole') %></label>
+        <select id="user-role-filter" class="form-select form-select-sm">
+          <option value=""><%= t('filterAll') %></option>
+          <option value="viewer"><%= t('viewer') %></option>
+          <option value="executor"><%= t('executor') %></option>
+          <option value="operator"><%= t('operator') %></option>
+          <option value="admin"><%= t('admin') %></option>
+        </select>
+        <label class="visually-hidden" for="user-state-filter"><%= t('userState') %></label>
+        <select id="user-state-filter" class="form-select form-select-sm">
+          <option value=""><%= t('filterAll') %></option>
+          <option value="true"><%= t('userActive') %></option>
+          <option value="false"><%= t('userInactive') %></option>
+        </select>
+      </div>
+    </div>
+    <div class="card-body-app">
+      <p id="users-status" class="text-muted" role="status" aria-live="polite"></p>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0" id="users-table">
+          <thead><tr>
+            <th scope="col"><%= t('userUsername') %></th>
+            <th scope="col"><%= t('userRole') %></th>
+            <th scope="col"><%= t('userState') %></th>
+            <th scope="col"><%= t('userLastLogin') %></th>
+            <th scope="col"><%= t('userPermissionSummary') %></th>
+            <th scope="col"><span class="visually-hidden"><%= t('userActions') %></span></th>
+          </tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+      <p id="users-empty" class="text-muted mb-0" hidden><%= t('noUsers') %></p>
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <span id="users-page-status" class="small text-muted"></span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="<%= t('usersAndPermissions') %>">
+          <button type="button" class="btn btn-outline-secondary" id="users-previous" aria-label="<%= t('previous') %>" disabled><i class="bi bi-chevron-left" aria-hidden="true"></i></button>
+          <button type="button" class="btn btn-outline-secondary" id="users-next" aria-label="<%= t('next') %>" disabled><i class="bi bi-chevron-right" aria-hidden="true"></i></button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal fade" id="user-modal" tabindex="-1" aria-labelledby="user-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><div><h2 class="modal-title" id="user-modal-title"><%= t('userCreate') %></h2><p class="modal-subtitle"><%= t('userAccessHelp') %></p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div>
+    <div class="modal-body">
+      <div id="user-form-error" class="alert alert-danger py-2" role="alert" hidden></div>
+      <div class="mb-3"><label class="form-label" for="user-username"><%= t('userUsername') %> *</label><input id="user-username" class="form-control" autocomplete="username" minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}" required></div>
+      <div class="mb-3" id="user-password-field"><label class="form-label" for="user-password"><%= t('userPassword') %> *</label><input id="user-password" class="form-control" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div>
+      <div class="mb-3"><label class="form-label" for="user-role"><%= t('userRole') %> *</label><select id="user-role" class="form-select" required><option value="viewer"><%= t('viewer') %></option><option value="executor"><%= t('executor') %></option><option value="operator"><%= t('operator') %></option><option value="admin"><%= t('admin') %></option></select><p id="user-role-description" class="form-text mb-0" aria-live="polite"></p></div>
+      <div class="form-check" id="user-active-field"><input class="form-check-input" id="user-active" type="checkbox" checked><label class="form-check-label" for="user-active"><%= t('userActive') %></label></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><%= t('cancel') %></button><button type="button" class="btn btn-primary" id="user-save"><%= t('userCreate') %></button></div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="user-password-modal" tabindex="-1" aria-labelledby="user-password-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><div><h2 class="modal-title" id="user-password-title"><%= t('userResetPassword') %></h2><p class="modal-subtitle" id="user-password-description"></p></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<%= t('close') %>"></button></div>
+    <div class="modal-body"><div id="user-password-error" class="alert alert-danger py-2" role="alert" hidden></div><label class="form-label" for="user-new-password"><%= t('userNewPassword') %> *</label><input id="user-new-password" class="form-control" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div>
+    <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><%= t('cancel') %></button><button type="button" class="btn btn-primary" id="user-password-save"><%= t('userResetPassword') %></button></div>
+  </div></div>
+</div>
+</body>
+</html>

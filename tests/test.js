@@ -11,7 +11,13 @@ const vm = require('vm');
 const { spawn, spawnSync } = require('child_process');
 const { EventEmitter } = require('events');
 const cronstrue = require('cronstrue/i18n');
-const { SqliteDatastore, createDatabaseFile, readJobsFromFile, isSqliteFile } = require('../lib/database');
+const {
+  SqliteDatastore,
+  createDatabaseFile,
+  isSqliteFile,
+  readJobsFromFile,
+  readUsersFromFile,
+} = require('../lib/database');
 const Database = require('better-sqlite3');
 
 const testDbPath = path.join(os.tmpdir(), `crontab-ui-test-${Date.now()}`);
@@ -23,6 +29,11 @@ process.env.CRON_PATH = testDbPath;
 process.env.PORT = '0';
 process.env.HOST = '127.0.0.1';
 process.env.NODE_ENV = 'test';
+process.env.AUTH_PROVIDER = 'env';
+delete process.env.BASIC_AUTH_USERS_JSON;
+delete process.env.BASIC_AUTH_USER;
+delete process.env.BASIC_AUTH_PWD;
+delete process.env.AUTHZ_ROLE_MAP_JSON;
 process.env.CSRF_SECRET = 'test-csrf-secret';
 process.env.MAIL_PROFILES_JSON = JSON.stringify({
   operations: {
@@ -78,6 +89,7 @@ const { resolveTask, validateAgentPolicy } = require('../lib/local-agent-policy'
 const { LocalAgentStore } = require('../lib/agent-store');
 const { LocalAgentClient } = require('../lib/agent-client');
 const { createAgentServer } = require('../agent/server');
+const { migrateLegacyUsers } = require('../lib/user-migration');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
 const { useBoundedNumber, requireBoundedNumber, useCommandTimeoutMs } = require('../config/limits');
@@ -868,7 +880,9 @@ describe('Crontab UI', () => {
           .toEqual([
             { version: '0001_execution_environments' },
             { version: '0002_native_local_target' },
+            { version: '0003_sqlite_users' },
           ]);
+
         expect(datastore.listExecutionTargets().map((target) => [target.id, target.healthStatus]))
           .toEqual([
             ['container-local', 'unknown'],
@@ -976,6 +990,181 @@ describe('Crontab UI', () => {
       } finally {
         datastore.close();
         fs.rmSync(filename, { force: true });
+      }
+    });
+  });
+
+  describe('SQLite user management store', () => {
+    it('never lists password hashes, revokes sessions on access changes and protects the last admin', async () => {
+      const filename = path.join(testDbPath, `users-${crypto.randomUUID()}.db`);
+      const store = new SqliteDatastore({ filename });
+      const adminHash = await hashPassword('admin password');
+      const operatorHash = await hashPassword('operator password');
+      const adminId = crypto.randomUUID();
+      const operatorId = crypto.randomUUID();
+      const now = Date.now();
+      try {
+        store.createUser({
+          id: adminId, username: 'admin', passwordHash: adminHash, role: 'admin', active: true, actor: 'migration', now,
+        });
+        store.createUser({
+          id: operatorId, username: 'etl.operator', passwordHash: operatorHash, role: 'operator', active: true, actor: 'admin', now,
+        });
+        expect(store.listUsers()).not.toContainEqual(expect.objectContaining({ passwordHash: expect.any(String) }));
+        store.createSession({ id: 'admin-session-0123456789', user: 'admin', issuedAt: now, expiresAt: now + 60000 });
+        store.createSession({ id: 'operator-session-1234567', user: 'etl.operator', issuedAt: now, expiresAt: now + 60000 });
+
+        expect(() => store.updateUser(adminId, 1, { active: false })).toThrow(expect.objectContaining({
+          statusCode: 409, code: 'LAST_ADMIN_REQUIRED',
+        }));
+        expect(() => store.updateUser(adminId, 1, { role: 'viewer' })).toThrow(expect.objectContaining({
+          statusCode: 409, code: 'LAST_ADMIN_REQUIRED',
+        }));
+        expect(store.updateUser(operatorId, 1, { role: 'viewer' })).toMatchObject({ role: 'viewer', revision: 2 });
+        expect(store.getSession('operator-session-1234567').revokedAt).not.toBeNull();
+        expect(store.updateUser(operatorId, 1, { active: false })).toBeNull();
+
+        const newPasswordHash = await hashPassword('replacement password');
+        expect(store.updateUser(operatorId, 2, { passwordHash: newPasswordHash })).toMatchObject({ revision: 3 });
+        expect(store.updateUser(operatorId, 3, { active: false })).toMatchObject({ active: false, revision: 4 });
+        expect(store.createAuthenticatedUserSession(operatorId, {
+          id: 'late-session-0123456789', user: 'etl.operator', issuedAt: now + 1, expiresAt: now + 60001,
+        })).toBe(false);
+        store.createSession({ id: 'recovery-session-0123456', user: 'admin', issuedAt: now, expiresAt: now + 60000 });
+        const recoveryHash = await hashPassword('recovered administrator password');
+        expect(store.recoverAdministrator({ id: crypto.randomUUID(), username: 'admin', passwordHash: recoveryHash }))
+          .toMatchObject({ role: 'admin', active: true });
+        expect(store.getSession('recovery-session-0123456').revokedAt).not.toBeNull();
+        expect(store.getUserAuthentication('admin').passwordHash).toBe(recoveryHash);
+      } finally {
+        store.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+  });
+
+  describe('User backup recovery', () => {
+    it('restores SQLite accounts and revokes sessions from the replaced account set', async () => {
+      const originalBackups = new Set(crontab.get_backup_names());
+      const suffix = crypto.randomUUID().slice(0, 8);
+      const now = Date.now();
+      const adminName = `restore.admin.${suffix}`;
+      const viewerName = `restore.viewer.${suffix}`;
+      const laterName = `later.user.${suffix}`;
+      const adminHash = await hashPassword('restore admin password');
+      const viewerHash = await hashPassword('restore viewer password');
+      crontab.users.create({
+        id: crypto.randomUUID(), username: adminName, passwordHash: adminHash,
+        role: 'admin', active: true, actor: 'migration', now,
+      });
+      crontab.users.create({
+        id: crypto.randomUUID(), username: viewerName, passwordHash: viewerHash,
+        role: 'viewer', active: true, actor: adminName, now,
+      });
+      const sessionId = `restore-session-${suffix}-123456`;
+      crontab.sessions.create({ id: sessionId, user: viewerName, issuedAt: now, expiresAt: now + 60000 });
+      const backup = await new Promise((resolve, reject) => {
+        crontab.backup((error, name) => error ? reject(error) : resolve(name));
+      });
+
+      try {
+        crontab.users.create({
+          id: crypto.randomUUID(), username: laterName, passwordHash: await hashPassword('later user password'),
+          role: 'executor', active: true, actor: adminName, now: Date.now(),
+        });
+        crontab.sessions.create({
+          id: `later-session-${suffix}-123456`, user: laterName, issuedAt: Date.now(), expiresAt: Date.now() + 60000,
+        });
+        await new Promise((resolve, reject) => crontab.restore(backup, (error) => error ? reject(error) : resolve()));
+
+        expect(crontab.users.getByUsername(adminName)).toMatchObject({ role: 'admin', active: true });
+        expect(crontab.users.getByUsername(viewerName)).toMatchObject({ role: 'viewer', active: true });
+        expect(crontab.users.getByUsername(laterName)).toBeNull();
+        expect(crontab.sessions.get(sessionId)).toBeNull();
+        expect(crontab.sessions.get(`later-session-${suffix}-123456`)).toBeNull();
+      } finally {
+        crontab.get_backup_names().filter((name) => !originalBackups.has(name)).forEach((name) => {
+          fs.rmSync(path.join(crontab.db_folder, name), { force: true });
+        });
+      }
+    });
+  });
+
+  describe('Legacy user provider migration', () => {
+    it('imports environment credentials as scrypt hashes once and is idempotent', async () => {
+      const filename = path.join(testDbPath, `user-migration-${crypto.randomUUID()}.db`);
+      const store = new SqliteDatastore({ filename });
+      const userStore = {
+        getAuthentication: (username) => store.getUserAuthentication(username),
+        import: (users) => store.importUsers(users),
+        countActiveAdministrators: () => store.countActiveAdministrators(),
+      };
+      const environment = {
+        BASIC_AUTH_USERS_JSON: JSON.stringify({ Administrator: 'legacy-password-123' }),
+        AUTHZ_ROLE_MAP_JSON: JSON.stringify({ administrator: 'admin' }),
+      };
+      try {
+        expect(await migrateLegacyUsers(userStore, environment)).toEqual({ imported: 1, existing: 0 });
+        const account = store.getUserAuthentication('administrator');
+        expect(account).toMatchObject({ username: 'administrator', role: 'admin', active: true });
+        expect(account.passwordHash).toMatch(/^scrypt:/);
+        expect(account.passwordHash).not.toContain('legacy-password-123');
+        expect(await migrateLegacyUsers(userStore, environment)).toEqual({ imported: 0, existing: 1 });
+        expect(store.listUsers()).toHaveLength(1);
+        environment.BASIC_AUTH_USERS_JSON = JSON.stringify({
+          administrator: store.getUserAuthentication('administrator').passwordHash,
+        });
+        expect(await migrateLegacyUsers(userStore, environment)).toEqual({ imported: 0, existing: 1 });
+      } finally {
+        store.close();
+        fs.rmSync(filename, { force: true });
+      }
+    });
+
+    it('rejects external password hash formats instead of importing them as literal passwords', async () => {
+      const store = {
+        getAuthentication: () => null,
+        import: () => { throw new Error('must not write invalid migration'); },
+        countActiveAdministrators: () => 0,
+      };
+      const environment = {
+        BASIC_AUTH_USERS_JSON: JSON.stringify({ admin: '$2b$12$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJ' }),
+        AUTHZ_ROLE_MAP_JSON: JSON.stringify({ admin: 'admin' }),
+      };
+      await expect(migrateLegacyUsers(store, environment)).rejects.toThrow('unsupported bcrypt password hash');
+    });
+  });
+
+  describe('SQLite user predeploy validation', () => {
+    it('requires an active SQLite administrator when AUTH_PROVIDER=sqlite', async () => {
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-predeploy-users-'));
+      const filename = path.join(directory, 'crontab.db');
+      const store = new SqliteDatastore({ filename });
+      const passwordHash = await hashPassword('predeploy admin password');
+      store.createUser({
+        id: crypto.randomUUID(), username: 'admin', passwordHash, role: 'admin', active: true,
+        actor: 'migration', now: Date.now(),
+      });
+      store.close();
+      const script = path.join(__dirname, '..', 'scripts', 'predeploy-check.js');
+      const baseEnvironment = {
+        ...process.env,
+        AUTH_PROVIDER: 'sqlite',
+        CRON_DB_PATH: directory,
+        CSRF_SECRET: '12345678901234567890123456789012',
+        ALLOW_HTTP: 'true',
+      };
+      try {
+        const valid = spawnSync(process.execPath, [script], { env: baseEnvironment, encoding: 'utf8' });
+        expect(valid.status).toBe(0);
+        const database = new Database(filename);
+        database.prepare("UPDATE users SET is_active = 0 WHERE role = 'admin'").run();
+        database.close();
+        const invalid = spawnSync(process.execPath, [script], { env: baseEnvironment, encoding: 'utf8' });
+        expect(invalid.status).toBe(1);
+        expect(invalid.stderr).toContain('active SQLite administrator');
+      } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
       }
     });
   });
@@ -2218,6 +2407,44 @@ describe('Crontab UI', () => {
       expect(page.text).toContain('Review and publish');
     });
   });
+
+  it('restores user hashes and revokes sessions from the replaced account set', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-user-restore-'));
+    const sourceFile = path.join(directory, 'source.db');
+    const activeFile = path.join(directory, 'active.db');
+    const backupFile = path.join(directory, 'backup.db');
+    createDatabaseFile(sourceFile, []);
+    createDatabaseFile(activeFile, []);
+    const source = new SqliteDatastore({ filename: sourceFile });
+    const active = new SqliteDatastore({ filename: activeFile });
+    try {
+      const sourceHash = await hashPassword('restored administrator password');
+      source.createUser({
+        id: crypto.randomUUID(), username: 'restored.admin', passwordHash: sourceHash,
+        role: 'admin', active: true, actor: 'migration', now: Date.now(),
+      });
+      const previousHash = await hashPassword('old administrator password');
+      active.createUser({
+        id: crypto.randomUUID(), username: 'old.admin', passwordHash: previousHash,
+        role: 'admin', active: true, actor: 'migration', now: Date.now(),
+      });
+      active.createSession({
+        id: 'old-admin-session-123456', user: 'old.admin', issuedAt: Date.now(), expiresAt: Date.now() + 60000,
+      });
+      source.snapshotTo(backupFile);
+
+      active.replaceDocuments([], active.getExecutionCatalog(), readUsersFromFile(backupFile));
+      expect(active.getUserByUsername('restored.admin')).toMatchObject({ role: 'admin', active: true });
+      expect(active.getUserByUsername('old.admin')).toBeNull();
+      expect(active.getSession('old-admin-session-123456')).toBeNull();
+      expect(active.getUserAuthentication('restored.admin').passwordHash).toBe(sourceHash);
+    } finally {
+      source.close();
+      active.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
 });
 
 describe('Environment definitions', () => {
@@ -3516,6 +3743,7 @@ describe('Session authentication middleware', () => {
       },
       prune: () => {},
     };
+
   }
 
   function authedApp(sessions) {
@@ -3642,6 +3870,97 @@ describe('Session authentication middleware', () => {
     } finally {
       Date.now = originalNow;
     }
+  });
+});
+
+describe('SQLite user management API', () => {
+  const originalProvider = process.env.AUTH_PROVIDER;
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalUser = process.env.BASIC_AUTH_USER;
+  const originalPassword = process.env.BASIC_AUTH_PWD;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+
+  afterAll(() => {
+    if (originalProvider === undefined) delete process.env.AUTH_PROVIDER;
+    else process.env.AUTH_PROVIDER = originalProvider;
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalUser === undefined) delete process.env.BASIC_AUTH_USER;
+    else process.env.BASIC_AUTH_USER = originalUser;
+    if (originalPassword === undefined) delete process.env.BASIC_AUTH_PWD;
+    else process.env.BASIC_AUTH_PWD = originalPassword;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  it('creates users, enforces fixed roles, revokes sessions and protects the final admin', async () => {
+    process.env.AUTH_PROVIDER = 'sqlite';
+    delete process.env.BASIC_AUTH_USERS_JSON;
+    delete process.env.BASIC_AUTH_USER;
+    delete process.env.BASIC_AUTH_PWD;
+    process.env.AUTHZ_ROLE_MAP_JSON = '{}';
+    const isolatedUserDb = new Database(crontab.crontab_db_file);
+    isolatedUserDb.prepare('UPDATE users SET is_active = 0').run();
+    isolatedUserDb.close();
+    expect(() => createApp()).toThrow('requires at least one active administrator');
+
+    const now = Date.now();
+    const adminHash = await hashPassword('initial admin password');
+    const admin = crontab.users.create({
+      id: crypto.randomUUID(), username: 'admin.sqlite', passwordHash: adminHash,
+      role: 'admin', active: true, actor: 'migration', now,
+    });
+    const protectedApp = createApp();
+    const cookieFor = async (username, password) => {
+      const login = await rawRequest(protectedApp).post('/login')
+        .set('Cookie', `crontab_ui_csrf=${encodeURIComponent(testCsrfToken)}`)
+        .set('X-CSRF-Token', testCsrfToken)
+        .send({ username, password })
+        .expect(302);
+      const sessionCookie = login.headers['set-cookie'].find((value) => value.startsWith('crontab_ui_session='));
+      return `${sessionCookie.split(';')[0]}; crontab_ui_csrf=${encodeURIComponent(testCsrfToken)}`;
+    };
+    const adminCookie = await cookieFor('ADMIN.SQLITE', 'initial admin password');
+    const adminRequest = (method, url) => rawRequest(protectedApp)[method](url)
+      .set('Cookie', adminCookie)
+      .set('X-CSRF-Token', testCsrfToken);
+    await adminRequest('get', '/users').expect(200).expect((response) => {
+      expect(response.text).toContain('Users &amp; Permissions');
+    });
+
+    const createResponse = await adminRequest('post', '/api/users').send({
+      username: 'etl.operator', password: 'initial operator password', role: 'operator',
+    });
+    expect(createResponse.status, JSON.stringify(createResponse.body)).toBe(201);
+    const created = createResponse;
+    expect(created.body).toMatchObject({ username: 'etl.operator', role: 'operator', active: true });
+    expect(JSON.stringify(created.body)).not.toContain('password_hash');
+    const listed = await adminRequest('get', '/api/users?q=etl').expect(200);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0].effective_permissions.manageOwnedTasks).toBe(false);
+
+    const viewerCookie = await cookieFor('etl.operator', 'initial operator password');
+    const viewerRequest = (method, url) => rawRequest(protectedApp)[method](url)
+      .set('Cookie', viewerCookie)
+      .set('X-CSRF-Token', testCsrfToken);
+    await viewerRequest('get', '/api/users').expect(403);
+
+    const reset = await adminRequest('post', `/api/users/${created.body.id}/reset-password`).send({
+      revision: 1, password: 'replacement operator password',
+    }).expect(200);
+    expect(reset.body.revision).toBe(2);
+    await viewerRequest('get', '/api/users').expect(401);
+
+    await adminRequest('patch', `/api/users/${admin.id}`).send({ revision: 1, active: false }).expect(409);
+    const disabled = await adminRequest('post', `/api/users/${created.body.id}/deactivate`).send({ revision: 2 }).expect(200);
+    expect(disabled.body).toMatchObject({ active: false, revision: 3 });
+    await adminRequest('post', `/api/users/${created.body.id}/activate`).send({ revision: 3 }).expect(200);
+    const auditText = fs.readFileSync(crontab.audit_file, 'utf8');
+    expect(auditText).toContain('"operation":"create_user"');
+    expect(auditText).toContain('"operation":"reset_user_password"');
+    expect(auditText).toContain('"operation":"deactivate_user"');
+    expect(auditText).not.toContain('initial operator password');
+    expect(auditText).not.toContain('replacement operator password');
   });
 });
 

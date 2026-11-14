@@ -5,6 +5,13 @@ const { verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('
 
 const SESSION_COOKIE = 'crontab_ui_session';
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const SUPPORTED_PROVIDERS = new Set(['env', 'sqlite']);
+
+function getAuthProvider() {
+  const provider = process.env.AUTH_PROVIDER || 'env';
+  if (!SUPPORTED_PROVIDERS.has(provider)) throw new Error('AUTH_PROVIDER must be env or sqlite');
+  return provider;
+}
 
 function configuredUsers() {
   const raw = process.env.BASIC_AUTH_USERS_JSON;
@@ -40,6 +47,7 @@ function configuredUsers() {
 function authenticatedUsers() {
   const user = process.env.BASIC_AUTH_USER;
   const pwd = process.env.BASIC_AUTH_PWD;
+  if (getAuthProvider() === 'sqlite') return null;
   return configuredUsers() || (user && pwd ? { [user]: pwd } : null);
 }
 
@@ -122,9 +130,16 @@ function redirectPath(req, baseUrl) {
   return isLocalPath(requestPath, baseUrl) ? requestPath : (baseUrl || '/');
 }
 
-function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions, audit = () => {} } = {}) {
-  const users = authenticatedUsers();
-  if (!users) return false;
+function setupAuth(app, {
+  baseUrl = '', resetLoginRateLimit = () => {}, sessions, userStore = null, audit = () => {},
+} = {}) {
+  const provider = getAuthProvider();
+  const users = provider === 'env' ? authenticatedUsers() : null;
+  if (provider === 'env' && !users) return false;
+  if (provider === 'sqlite' && (!userStore || typeof userStore.getAuthentication !== 'function'
+    || typeof userStore.createAuthenticatedSession !== 'function')) {
+    throw new Error('A SQLite user store is required when AUTH_PROVIDER=sqlite');
+  }
   if (!sessions || typeof sessions.create !== 'function' || typeof sessions.get !== 'function') {
     // Without a store the cookie could not be withdrawn, which is exactly the property that was
     // missing. Refusing to start is better than silently serving sessions that cannot be revoked.
@@ -133,6 +148,9 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions
 
   const secret = process.env.AUTH_SESSION_SECRET || process.env.CSRF_SECRET || crypto.randomBytes(32).toString('base64url');
   const ttl = sessionTtl();
+  if (provider === 'sqlite' && userStore.countActiveAdministrators() < 1) {
+    throw new Error('AUTH_PROVIDER=sqlite requires at least one active administrator; run the user migration or recovery CLI');
+  }
   const loginPath = `${baseUrl}/login`;
   const logoutPath = `${baseUrl}/logout`;
   const currentSession = (req) => readSession(req, secret, sessions);
@@ -156,14 +174,18 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions
     const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     let accepted = false;
+    let account = null;
     try {
       // The verification runs even for an unknown user, so a wrong username and a wrong password
       // take a comparable amount of time and do not disclose which accounts exist.
-      accepted = await verifyPassword(password, users[username]);
+      account = provider === 'sqlite' ? userStore.getAuthentication(username) : null;
+      const storedPassword = provider === 'sqlite' ? account?.passwordHash : users[username];
+      accepted = await verifyPassword(password, storedPassword);
     } catch (error) {
       return next(error);
     }
-    if (!users[username] || !accepted) {
+    if ((provider === 'sqlite' && (!account || !account.active))
+      || (provider === 'env' && !Object.hasOwn(users, username)) || !accepted) {
       const attemptsExhausted = Number(req.rateLimit?.remaining) === 0;
       const minutes = res.locals.loginRateLimitMinutes || 1;
       const error = attemptsExhausted
@@ -172,18 +194,26 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions
       return renderLogin(req, res, 401, error);
     }
     const now = Date.now();
+    const authenticatedUsername = provider === 'sqlite' ? account.username : username;
     const sessionId = crypto.randomBytes(24).toString('base64url');
     try {
       sessions.prune(now);
-      sessions.create({ id: sessionId, user: username, issuedAt: now, expiresAt: now + ttl });
+      const session = { id: sessionId, user: authenticatedUsername, issuedAt: now, expiresAt: now + ttl };
+      if (provider === 'sqlite') {
+        if (!userStore.createAuthenticatedSession(account.id, session)) {
+          return renderLogin(req, res, 401, res.locals.t ? res.locals.t('invalidCredentials') : 'Invalid username or password.');
+        }
+      } else {
+        sessions.create(session);
+      }
     } catch (error) {
       // Refusing to issue a session the store does not know about is the only safe outcome: a
       // cookie without a record would be permanently unrevocable.
       console.error(`Unable to create a session record: ${error.message}`);
       return next(error);
     }
-    issueSession(res, username, secret, ttl, sessionId);
-    audit({ type: 'auth', action: 'sign_in', user: username, sourceIp: req.ip });
+    issueSession(res, authenticatedUsername, secret, ttl, sessionId);
+    audit({ type: 'auth', action: 'sign_in', user: authenticatedUsername, sourceIp: req.ip });
     resetLoginRateLimit(req);
     const returnTo = isLocalPath(req.body?.returnTo, baseUrl)
       ? req.body.returnTo
@@ -209,9 +239,22 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions
 
   app.use((req, res, next) => {
     const session = currentSession(req);
-    if (session && Object.hasOwn(users, session.user)) {
-      req.auth = { user: session.user, sessionId: session.sid };
-      return next();
+    if (session) {
+      if (provider === 'env' && Object.hasOwn(users, session.user)) {
+        req.auth = { user: session.user, sessionId: session.sid, role: undefined };
+        return next();
+      }
+      if (provider === 'sqlite') {
+        try {
+          const account = userStore.getAuthentication(session.user);
+          if (account?.active) {
+            req.auth = { user: account.username, userId: account.id, sessionId: session.sid, role: account.role };
+            return next();
+          }
+        } catch (_error) {
+          return res.status(401).json({ message: 'Authentication required' });
+        }
+      }
     }
     if (req.method === 'GET' && String(req.get('Accept') || '').includes('text/html')) {
       return res.redirect(`${loginPath}?returnTo=${encodeURIComponent(redirectPath(req, baseUrl))}`);
@@ -225,4 +268,5 @@ function setupAuth(app, { baseUrl = '', resetLoginRateLimit = () => {}, sessions
 module.exports = setupAuth;
 module.exports.configuredUsers = configuredUsers;
 module.exports.authenticatedUsers = authenticatedUsers;
+module.exports.getAuthProvider = getAuthProvider;
 module.exports.SESSION_COOKIE = SESSION_COOKIE;

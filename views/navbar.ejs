@@ -1,4 +1,5 @@
 <% const displayRole = typeof currentRole === 'undefined' ? 'viewer' : currentRole; %>
+<% const displayAuthProvider = typeof authProvider === 'undefined' ? 'env' : authProvider; %>
 <nav class="navbar navbar-expand-lg navbar-dark app-navbar">
   <div class="container-fluid app-shell py-0">
     <a class="navbar-brand d-inline-flex align-items-center gap-2" href="<%= JSON.parse(routes).root %>">
@@ -11,9 +12,10 @@
 
     <div class="collapse navbar-collapse" id="navbarContent">
       <ul class="navbar-nav ms-lg-5 me-auto">
-        <li class="nav-item"><a class="nav-link <%= currentPage === 'environments' ? '' : 'active' %>" href="<%= JSON.parse(routes).root %>"><%= t('tasks') %></a></li>
+        <li class="nav-item"><a class="nav-link <%= currentPage === 'tasks' ? 'active' : '' %>" href="<%= JSON.parse(routes).root %>"><%= t('tasks') %></a></li>
         <% if (displayRole === 'admin') { %>
         <li class="nav-item"><a class="nav-link <%= currentPage === 'environments' ? 'active' : '' %>" href="<%= JSON.parse(routes).execution_environments_ui %>"><%= t('executionEnvironments') %></a></li>
+        <% if (displayAuthProvider === 'sqlite') { %><li class="nav-item"><a class="nav-link <%= currentPage === 'users' ? 'active' : '' %>" href="<%= JSON.parse(routes).users_ui %>"><%= t('usersAndPermissions') %></a></li><% } %>
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"><%= t('backups') %></a>
           <ul class="dropdown-menu">

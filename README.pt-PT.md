@@ -171,6 +171,8 @@ O Compose remove todas as capacidades Linux e readiciona apenas `SETUID` e `SETG
 
 ## Autenticação e autorização
 
+A gestão de utilizadores está disponível através do provider SQLite (`AUTH_PROVIDER=sqlite`) e mantém os perfis fixos `viewer`, `executor`, `operator` e `admin`. Mantenha `AUTH_PROVIDER=env` até importar as contas com `node --env-file=.env.production bin/crontab-ui-users.js migrate`, confirmar um administrador activo e reiniciar o serviço. O painel permite criar contas, alterar perfil/estado e repor passwords; cada alteração de acesso revoga as sessões do utilizador e o último administrador activo não pode ser desactivado nem despromovido. Consulte [`docs/USER_MANAGEMENT.md`](docs/USER_MANAGEMENT.md) para migração, CLI de recuperação e rollback.
+
 Quando `HOST` não é loopback, a autenticação é obrigatória. Estão disponíveis duas alternativas:
 
 - `BASIC_AUTH_USER` e `BASIC_AUTH_PWD`, para um único utilizador;
@@ -214,6 +216,7 @@ Cada tarefa criada recebe `owner` e `createdBy`. As tarefas antigas e as tarefas
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Tempo máximo de espera para o Supercronic validar e confirmar a recarga de uma agenda Docker publicada. Predefinição: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Autenticação de utilizador único; alternativa ao mapa JSON. |
 | `BASIC_AUTH_USERS_JSON` | Mapa JSON de utilizadores e palavras-passe; tem precedência sobre o par individual. Um valor pode ser um resumo scrypt, ver abaixo. |
+| `AUTH_PROVIDER` | `env` (predefinição) ou `sqlite`. Mudar para `sqlite` apenas depois de `npm run users -- migrate` e de confirmar um administrador activo. |
 | `AUTHZ_ROLE_MAP_JSON` | Mapa JSON de utilizador para `viewer`, `executor`, `operator` ou `admin`. |
 | `CSRF_SECRET` | Segredo persistente obrigatório em produção. |
 | `AUTH_SESSION_SECRET` | Segredo persistente opcional para assinar sessões; por omissão usa `CSRF_SECRET`. |

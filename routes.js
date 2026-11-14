@@ -29,6 +29,8 @@ const routes = {
   installed_crontab: '/installed_crontab',
   diagnostics: '/diagnostics',
   execution_environments_ui: '/execution-environments',
+  users_ui: '/users',
+  users: '/api/users',
   execution_targets: '/api/execution-targets',
   execution_environments: '/api/execution-environments',
   locale: '/locale',

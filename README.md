@@ -171,6 +171,8 @@ Compose drops every Linux capability, then adds only `SETUID` and `SETGID` so Su
 
 ## Authentication and authorization
 
+User administration is available through the SQLite provider (`AUTH_PROVIDER=sqlite`) with fixed `viewer`, `executor`, `operator`, and `admin` roles. Keep `AUTH_PROVIDER=env` until the accounts have been imported with `node --env-file=.env.production bin/crontab-ui-users.js migrate`, an active administrator has been verified, and the service has been restarted. The panel supports account creation, role/state changes and password reset; each access change revokes the user's sessions, and the last active administrator cannot be disabled or demoted. See [`docs/USER_MANAGEMENT.md`](docs/USER_MANAGEMENT.md) for migration, recovery CLI and rollback.
+
 When `HOST` is not loopback, authentication is mandatory. The web interface uses a secure, signed `HttpOnly` session cookie, so users can sign out from the navigation bar. Two credential configuration alternatives are available:
 
 - `BASIC_AUTH_USER` and `BASIC_AUTH_PWD` for a single user;
@@ -214,6 +216,7 @@ Each created task receives `owner` and `createdBy`. Legacy tasks and tasks impor
 | `SCHEDULER_RELOAD_TIMEOUT_MS` | Maximum wait for Supercronic to validate and acknowledge a published Docker schedule. Default: `10000`. |
 | `BASIC_AUTH_USER`, `BASIC_AUTH_PWD` | Single-user authentication; an alternative to the JSON map. |
 | `BASIC_AUTH_USERS_JSON` | JSON map of users and passwords; takes precedence over the single-user pair. A value may be a scrypt digest, see below. |
+| `AUTH_PROVIDER` | `env` (default) or `sqlite`. Switch to `sqlite` only after `npm run users -- migrate` and verifying an active admin. |
 | `AUTHZ_ROLE_MAP_JSON` | JSON map from user to `viewer`, `executor`, `operator`, or `admin`. |
 | `CSRF_SECRET` | Persistent secret required in production. |
 | `AUTH_SESSION_SECRET` | Optional persistent session-signing secret; defaults to `CSRF_SECRET`. |

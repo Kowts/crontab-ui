@@ -19,7 +19,9 @@ replace the other.
 - [ ] Structured execution is disabled by default; if included in the release, container allowlists and Linux no-shell tests pass.
 - [ ] If the Ubuntu agent is included/enabled, its independent host policy, HMAC/UDS, cgroup v2 limits, restart/unknown recovery, cancellation and ownership adversarial tests pass on an Ubuntu VM.
 - [ ] Structured task catalog, import/restore and legacy command compatibility are verified with a production-like backup.
+- [ ] User-provider migration, last-admin protection, session revocation, recovery CLI and rollback from `sqlite` to the retained `env` configuration are tested.
 - [ ] A pre-release backup of the running instance exists and is also in `BACKUP_EXTERNAL_DIR`.
+- [ ] If enabling `AUTH_PROVIDER=sqlite`, the environment-user migration, last-admin protection, session revocation, recovery CLI and rollback with retained legacy configuration are verified.
 - [ ] A reviewer is available to approve the `production` environment deployment.
 
 ## 2. Operational drill

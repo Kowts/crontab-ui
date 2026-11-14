@@ -19,8 +19,13 @@ const restore = require('./restore');
 const packageJson = require('./package.json');
 const { base_url: baseUrl, routes } = require('./routes');
 const setupAuth = require('./middleware/auth');
-const { authenticatedUsers } = require('./middleware/auth');
-const { configuredRoles, requireRole, validateRoleAssignments } = require('./middleware/authorization');
+const { authenticatedUsers, getAuthProvider } = require('./middleware/auth');
+const {
+  configuredRoles,
+  requireRole,
+  roleForRequest,
+  validateRoleAssignments,
+} = require('./middleware/authorization');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const {
@@ -35,6 +40,8 @@ const { requireBoundedNumber, useCommandTimeoutMs } = require('./config/limits')
 const { validateStructuredTask } = require('./config/structured-tasks');
 const { probeExecutionEnvironment } = require('./lib/structured-execution');
 const { LocalAgentClient } = require('./lib/agent-client');
+const { hashPassword } = require('./config/passwords');
+const { normaliseUsername, validatePassword, validateUserRole } = require('./config/users');
 const { sendTestMessage } = require('./config/mail-probe');
 const { validateProductionTransport } = require('./config/transport');
 const { canAccessJob, requireJobAccess, requireSaveAccess, canManageTasks, canExecuteTasks } = require('./middleware/job-authorization');
@@ -174,9 +181,17 @@ app.use((req, res, next) => {
   });
   next();
 });
-const authEnabled = Boolean(authenticatedUsers());
+const authProvider = getAuthProvider();
+const environmentUsers = authProvider === 'env' ? authenticatedUsers() : null;
+const userStore = authProvider === 'sqlite' ? crontab.users : null;
+const authEnabled = authProvider === 'sqlite' || Boolean(environmentUsers);
 app.locals.authEnabled = authEnabled;
-if (authEnabled) validateRoleAssignments(authenticatedUsers(), configuredRoles());
+app.locals.authProvider = authProvider;
+app.locals.userStore = userStore;
+if (authProvider === 'sqlite' && userStore.countActiveAdministrators() < 1) {
+  throw new Error('AUTH_PROVIDER=sqlite requires at least one active administrator; run the user migration or recovery CLI');
+}
+if (authProvider === 'env' && authEnabled) validateRoleAssignments(environmentUsers, configuredRoles());
 if (process.env.NODE_ENV === 'production' && !process.env.CSRF_SECRET) {
   throw new Error('CSRF_SECRET is required in production');
 }
@@ -285,6 +300,7 @@ app.use(routes.login, (req, res, next) => {
 setupAuth(app, {
   baseUrl,
   sessions: crontab.sessions,
+  userStore,
   audit: (event) => crontab.audit(event),
   resetLoginRateLimit: (req) => loginRateLimitStore.resetKey(loginRateLimitKey(req)),
 });
@@ -308,7 +324,7 @@ function auditOperation(operation, resource = () => ({})) {
         requestId: req.requestId,
         operation,
         actor: req.auth?.user || (app.locals.authEnabled ? null : 'local'),
-        role: req.auth?.user ? configuredRoles()[req.auth.user] || null : null,
+        role: req.auth?.user ? roleForRequest(req) : null,
         sourceIp: req.ip,
         method: req.method,
         path: req.path,
@@ -325,7 +341,7 @@ function auditOperation(operation, resource = () => ({})) {
 app.get(routes.root, requireRole('viewer'), (req, res) => {
   crontab.crontabs((docs) => {
     docs = docs.filter((job) => canAccessJob(req, job, 'read'));
-    const currentRole = app.locals.authEnabled ? configuredRoles()[req.auth?.user] : 'admin';
+    const currentRole = app.locals.authEnabled ? roleForRequest(req) : 'admin';
     const isAdmin = currentRole === 'admin';
     docs = docs.map((job) => ({
       ...job,
@@ -342,6 +358,7 @@ app.get(routes.root, requireRole('viewer'), (req, res) => {
       backups: isAdmin ? crontab.get_backup_names() : [],
       env: serializeForHtml(isAdmin ? crontab.get_env() : ''),
       currentRole,
+      authProvider: app.locals.authProvider,
       currentPage: 'tasks',
       canManageTasks: canManageTasks(req),
       canExecuteTasks: canExecuteTasks(req),
@@ -357,6 +374,7 @@ app.get(routes.execution_environments_ui, requireRole('admin'), (req, res) => {
   return res.render('execution-environments', {
     routes: serializeForHtml(routes),
     currentRole: 'admin',
+    authProvider: app.locals.authProvider,
     currentPage: 'environments',
     backups: crontab.get_backup_names(),
     authEnabled: app.locals.authEnabled,
@@ -365,6 +383,199 @@ app.get(routes.execution_environments_ui, requireRole('admin'), (req, res) => {
     messages: serializeForHtml(dictionaries[res.locals.locale]),
   });
 });
+
+function requireSqliteUserProvider(res) {
+  if (app.locals.authProvider === 'sqlite') return true;
+  res.status(409).json({ message: 'User management requires AUTH_PROVIDER=sqlite. Migrate environment accounts first.' });
+  return false;
+}
+
+function effectiveUserPermissions(role) {
+  const operatorEnabled = process.env.ALLOW_OPERATOR_TASK_EXECUTION === 'true';
+  return {
+    viewOwnedTasks: ['viewer', 'executor', 'operator', 'admin'].includes(role),
+    viewAllTasks: role === 'admin',
+    executeOwnedTasks: role === 'executor' || role === 'admin' || (role === 'operator' && operatorEnabled),
+    manageOwnedTasks: role === 'admin' || (role === 'operator' && operatorEnabled),
+    manageUsers: role === 'admin',
+    manageEnvironments: role === 'admin',
+  };
+}
+
+app.get(routes.users_ui, requireRole('admin'), (req, res) => {
+  if (app.locals.authProvider !== 'sqlite') {
+    return res.status(409).json({ message: 'User management requires AUTH_PROVIDER=sqlite. Migrate environment accounts first.' });
+  }
+  return res.render('users', {
+    routes: serializeForHtml(routes),
+    currentRole: 'admin',
+    authProvider: app.locals.authProvider,
+    currentPage: 'users',
+    backups: crontab.get_backup_names(),
+    authEnabled: app.locals.authEnabled,
+    csrfToken: req.csrfToken || '',
+    locale: res.locals.locale,
+    messages: serializeForHtml(dictionaries[res.locals.locale]),
+  });
+});
+
+function serializeUser(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    active: user.active,
+    revision: user.revision,
+    created_by: user.createdBy,
+    created_at: user.createdAt,
+    updated_at: user.updatedAt,
+    last_login_at: user.lastLoginAt,
+    effective_permissions: effectiveUserPermissions(user.role),
+  };
+}
+
+function validUserId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value || '');
+}
+
+app.get(routes.users_ui, requireRole('admin'), (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  return res.render('users', {
+    routes: serializeForHtml(routes),
+    currentRole: 'admin',
+    authProvider: app.locals.authProvider,
+    currentPage: 'users',
+    backups: crontab.get_backup_names(),
+    authEnabled: app.locals.authEnabled,
+    csrfToken: req.csrfToken || '',
+    locale: res.locals.locale,
+    messages: serializeForHtml(dictionaries[res.locals.locale]),
+  });
+});
+
+app.get(routes.users, requireRole('admin'), (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  const query = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase().slice(0, 100) : '';
+  const roleFilter = req.query.role;
+  const activeFilter = req.query.active;
+  const limit = req.query.limit === undefined ? 100 : Number(req.query.limit);
+  const offset = req.query.offset === undefined ? 0 : Number(req.query.offset);
+  if ((roleFilter !== undefined && !['viewer', 'executor', 'operator', 'admin'].includes(roleFilter))
+    || (activeFilter !== undefined && !['true', 'false'].includes(activeFilter))
+    || !Number.isSafeInteger(limit) || limit < 1 || limit > 100
+    || !Number.isSafeInteger(offset) || offset < 0) {
+    return res.status(400).json({ message: 'Invalid user filters' });
+  }
+  let users = crontab.users.list();
+  if (query) users = users.filter((user) => user.username.toLowerCase().includes(query) || user.role.includes(query));
+  if (roleFilter) users = users.filter((user) => user.role === roleFilter);
+  if (activeFilter !== undefined) users = users.filter((user) => user.active === (activeFilter === 'true'));
+  const total = users.length;
+  return res.json({ items: users.slice(offset, offset + limit).map(serializeUser), total, limit, offset });
+});
+
+app.post(routes.users, requireRole('admin'), auditOperation('create_user', (req) => ({
+  username: typeof req.body.username === 'string' ? req.body.username.trim().toLowerCase() : null,
+  role: typeof req.body.role === 'string' ? req.body.role : null,
+})), async (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  if (!req.body || Object.keys(req.body).some((key) => !['username', 'password', 'role'].includes(key))) {
+    return res.status(400).json({ message: 'Invalid user payload' });
+  }
+  try {
+    const username = normaliseUsername(req.body.username);
+    const password = validatePassword(req.body.password);
+    const role = validateUserRole(req.body.role);
+    const passwordHash = await hashPassword(password);
+    const user = crontab.users.create({
+      id: crypto.randomUUID(), username, passwordHash, role, active: true,
+      actor: req.auth?.user || 'local', now: Date.now(),
+    });
+    return res.status(201).json(serializeUser(user));
+  } catch (error) {
+    const status = error.statusCode || (error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 409 : 422);
+    return res.status(status).json({ message: error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 'Username already exists' : error.message });
+  }
+});
+
+app.get(`${routes.users}/:id`, requireRole('admin'), (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  if (!validUserId(req.params.id)) return res.status(400).json({ message: 'Invalid user id' });
+  const user = crontab.users.get(req.params.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+  return res.json(serializeUser(user));
+});
+
+app.patch(`${routes.users}/:id`, requireRole('admin'), auditOperation('update_user', (req) => ({
+  userId: req.params.id,
+  role: typeof req.body.role === 'string' ? req.body.role : null,
+  active: typeof req.body.active === 'boolean' ? req.body.active : null,
+})), (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  if (!validUserId(req.params.id) || !Number.isSafeInteger(req.body.revision) || req.body.revision < 1
+    || Object.keys(req.body).some((key) => !['revision', 'role', 'active'].includes(key))
+    || !['role', 'active'].some((key) => Object.hasOwn(req.body, key))) {
+    return res.status(400).json({ message: 'Invalid user update' });
+  }
+  const changes = {};
+  try {
+    if (Object.hasOwn(req.body, 'role')) changes.role = validateUserRole(req.body.role);
+    if (Object.hasOwn(req.body, 'active')) {
+      if (typeof req.body.active !== 'boolean') return res.status(422).json({ message: 'Invalid account state' });
+      changes.active = req.body.active;
+    }
+    const previousUser = crontab.users.get(req.params.id);
+    const currentSessionRevoked = Boolean(previousUser && req.auth?.user === previousUser.username
+      && ((Object.hasOwn(changes, 'role') && changes.role !== previousUser.role)
+        || (Object.hasOwn(changes, 'active') && changes.active !== previousUser.active)));
+    const user = crontab.users.update(req.params.id, req.body.revision, changes, req.auth?.user || 'local');
+    if (!user) return res.status(409).json({ message: 'User revision is stale or the account no longer exists' });
+    return res.json({ ...serializeUser(user), current_session_revoked: currentSessionRevoked });
+  } catch (error) {
+    return res.status(error.statusCode || 422).json({ message: error.message });
+  }
+});
+
+app.post(`${routes.users}/:id/reset-password`, requireRole('admin'), auditOperation('reset_user_password', (req) => ({
+  userId: req.params.id,
+})), async (req, res) => {
+  if (!requireSqliteUserProvider(res)) return;
+  if (!validUserId(req.params.id) || Object.keys(req.body).some((key) => !['revision', 'password'].includes(key))
+    || !Number.isSafeInteger(req.body.revision) || req.body.revision < 1) {
+    return res.status(400).json({ message: 'Invalid password reset request' });
+  }
+  try {
+    const password = validatePassword(req.body.password);
+    const passwordHash = await hashPassword(password);
+    const previousUser = crontab.users.get(req.params.id);
+    const user = crontab.users.update(req.params.id, req.body.revision, { passwordHash }, req.auth?.user || 'local');
+    if (!user) return res.status(409).json({ message: 'User revision is stale or the account no longer exists' });
+    return res.json({ ...serializeUser(user), current_session_revoked: previousUser?.username === req.auth?.user });
+  } catch (error) {
+    return res.status(error.statusCode || 422).json({ message: error.message });
+  }
+});
+
+for (const [action, active] of [['activate', true], ['deactivate', false]]) {
+  app.post(`${routes.users}/:id/${action}`, requireRole('admin'), auditOperation(`${action}_user`, (req) => ({ userId: req.params.id })), (req, res) => {
+    if (!requireSqliteUserProvider(res)) return;
+    if (!validUserId(req.params.id) || !Number.isSafeInteger(req.body.revision) || req.body.revision < 1
+      || Object.keys(req.body).some((key) => key !== 'revision')) {
+      return res.status(400).json({ message: 'Invalid user state change' });
+    }
+    try {
+      const previousUser = crontab.users.get(req.params.id);
+      const user = crontab.users.update(req.params.id, req.body.revision, { active }, req.auth?.user || 'local');
+      if (!user) return res.status(409).json({ message: 'User revision is stale or the account no longer exists' });
+      return res.json({
+        ...serializeUser(user),
+        current_session_revoked: previousUser?.username === req.auth?.user && previousUser.active !== user.active,
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 422).json({ message: error.message });
+    }
+  });
+}
 
 app.post(routes.locale, requireRole('viewer'), (req, res) => {
   if (!['en', 'pt'].includes(req.body.locale)) return res.status(400).json({ message: 'Invalid locale' });
