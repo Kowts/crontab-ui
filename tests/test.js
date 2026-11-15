@@ -250,6 +250,149 @@ describe('Structured execution policy', () => {
   });
 });
 
+describe('Native trusted group paths', () => {
+  let policy;
+  let files;
+  let options;
+  let environment;
+  let job;
+
+  beforeEach(() => {
+    files = new Map();
+    function entry(filename, mode, uid = 0, gid = 0, kind = 'directory') {
+      files.set(filename, {
+        mode, uid, gid, dev: 1, ino: files.size + 1, size: 10, mtimeMs: 1,
+        isDirectory: () => kind === 'directory', isFile: () => kind === 'file',
+        isSymbolicLink: () => kind === 'link',
+      });
+    }
+    ['/', '/opt', '/usr', '/usr/bin', '/usr/local', '/usr/local/libexec'].forEach((name) => entry(name, 0o755));
+    ['/opt/etl', '/opt/etl/venv', '/opt/etl/venv/bin', '/opt/etl/jobs'].forEach((name) => entry(name, 0o2775, 1001, 1003));
+    entry('/opt/etl/venv/bin/python', 0o777, 1001, 1003, 'link');
+    entry('/usr/bin/python3.12', 0o755, 0, 0, 'file');
+    entry('/usr/local/libexec/exec-wrapper', 0o755, 0, 0, 'file');
+    entry('/opt/etl/jobs/main.py', 0o664, 1001, 1003, 'file');
+    const fakeFs = {
+      constants: fs.constants,
+      realpathSync(filename) {
+        if (!files.has(filename)) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        return filename === '/opt/etl/venv/bin/python' ? '/usr/bin/python3.12' : filename;
+      },
+      statSync(filename) {
+        const stat = files.get(filename);
+        if (!stat) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        return stat;
+      },
+      lstatSync(filename) { return this.statSync(filename); },
+      accessSync(filename) { this.statSync(filename); },
+    };
+    const context = {
+      module: { exports: {} },
+      process: { platform: 'linux', env: {}, getuid: () => 1001 },
+      setTimeout, clearTimeout,
+      require(name) {
+        if (name === 'fs') return fakeFs;
+        if (name === 'path') return path.posix;
+        if (name === './agent-cgroups') return {
+          prepareNativeCgroupRoot: () => '/sys/fs/cgroup/test.service',
+          CgroupManager: class { constructor(settings) { this.root = settings.root; } },
+        };
+        if (name === 'child_process') return {
+          spawn() {
+            const child = new EventEmitter();
+            child.stdout = new EventEmitter();
+            child.stderr = new EventEmitter();
+            setImmediate(() => { child.stdout.emit('data', Buffer.from('Python 3.12\n')); child.emit('close', 0); });
+            return child;
+          },
+        };
+        return require(name);
+      },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../lib/structured-execution.js'), 'utf8'), context);
+    policy = context.module.exports;
+    options = {
+      trustedOwnerUids: '1001', trustedGroupGids: '1003', groupWritableRoots: '/opt/etl',
+      scriptRoots: '/opt/etl', executables: '/usr/bin/python3.12',
+      wrapperPath: '/usr/local/libexec/exec-wrapper', maximumTimeoutMs: 10000,
+    };
+    environment = {
+      id: 'env', enabled: true, validationStatus: 'valid', targetId: 'native-local',
+      executablePath: '/opt/etl/venv/bin/python', runtimeType: 'python',
+    };
+    job = { structured_execution: { script_path: '/opt/etl/jobs/main.py', arguments: [], timeout_ms: 10000 } };
+  });
+
+  it('accepts an explicitly trusted shared venv and script for Native Linux in validation and dispatch', async () => {
+    const plan = policy.prepareStructuredExecution(job, environment, options);
+    expect(plan).toMatchObject({
+      executable: '/opt/etl/venv/bin/python', args: ['/opt/etl/jobs/main.py'], cwd: '/opt/etl/jobs',
+      cgroupManager: { root: '/sys/fs/cgroup/test.service' },
+    });
+    const result = await new Promise((resolve, reject) => policy.probeExecutionEnvironment(
+      environment, (error, output) => error ? reject(error) : resolve(output), options,
+    ));
+    expect(result.runtimeVersion).toBe('Python 3.12');
+  });
+
+  it('keeps group-write rejected by default and never applies the exception to container-local', () => {
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, trustedGroupGids: '', groupWritableRoots: '',
+    })).toThrow('unsafe permissions');
+    expect(() => policy.prepareStructuredExecution(job, { ...environment, targetId: 'container-local' }, options))
+      .toThrow('unsafe permissions');
+  });
+
+  it.each(['/opt/etl', '/opt/etl/venv/bin', '/opt/etl/jobs/main.py'])('rejects untrusted group-write at %s', (filename) => {
+    files.get(filename).gid = 1004;
+    expect(() => policy.prepareStructuredExecution(job, environment, options)).toThrow(/unsafe.*permissions/);
+  });
+
+  it.each(['/opt/etl', '/opt/etl/venv/bin', '/opt/etl/jobs/main.py'])('always rejects world-write at %s', (filename) => {
+    files.get(filename).mode |= 0o002;
+    expect(() => policy.prepareStructuredExecution(job, environment, options)).toThrow(/unsafe.*permissions/);
+  });
+
+  it('does not exempt paths outside the group-write roots or bypass owner and executable allowlists', () => {
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, groupWritableRoots: '/opt/etl/jobs',
+    })).toThrow('unsafe permissions');
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, trustedOwnerUids: '',
+    })).toThrow('unsafe permissions');
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, executables: '/usr/local/libexec/exec-wrapper',
+    })).toThrow('executable allowlist');
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, scriptRoots: '/opt/etl/venv',
+    })).toThrow('outside the configured roots');
+  });
+
+  it('does not treat a similarly prefixed sibling directory as a trusted root', () => {
+    files.set('/opt/etl-other', files.get('/opt/etl/jobs'));
+    files.set('/opt/etl-other/main.py', files.get('/opt/etl/jobs/main.py'));
+    expect(() => policy.prepareStructuredExecution({
+      structured_execution: { ...job.structured_execution, script_path: '/opt/etl-other/main.py' },
+    }, environment, { ...options, scriptRoots: '/opt/etl,/opt/etl-other' })).toThrow('unsafe permissions');
+  });
+
+  it.each([
+    { trustedGroupGids: 'etl-team' }, { trustedGroupGids: '1003,,1004' },
+    { trustedGroupGids: '-1' }, { trustedGroupGids: '9007199254740992' },
+    { trustedGroupGids: '' }, { groupWritableRoots: '' }, { groupWritableRoots: '/' },
+    { groupWritableRoots: '/opt/etl/../etl' }, { groupWritableRoots: '/missing' },
+  ])('fails closed for invalid group configuration %j', (changes) => {
+    expect(() => policy.prepareStructuredExecution(job, environment, { ...options, ...changes }))
+      .toThrow(expect.objectContaining({ statusCode: 503, code: 'EXECUTOR_POLICY_INVALID' }));
+  });
+
+  it('requires canonical directory roots rather than executable symlinks', () => {
+    expect(() => policy.prepareStructuredExecution(job, environment, {
+      ...options, groupWritableRoots: '/opt/etl/venv/bin/python',
+    })).toThrow('existing canonical directories');
+  });
+});
+
 describe('Local agent request authentication', () => {
   it('authenticates the exact body and rejects stale signed requests', () => {
     const secret = Buffer.alloc(32, 19);

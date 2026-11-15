@@ -38,12 +38,18 @@ Não montar pastas ETL do host para contornar incompatibilidades de ABI. Não co
 | `STRUCTURED_EXECUTION_ROOTS` | Roots POSIX autorizadas para scripts e directórios. | vazio, desactivado |
 | `STRUCTURED_EXECUTION_EXECUTABLES` | Paths canónicos exactos dos runtimes aprovados. | vazio, desactivado |
 | `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` | UIDs confiáveis para ficheiros/root pertencentes ao utilizador da aplicação. Lista numérica separada por vírgulas. | vazio |
+| `STRUCTURED_EXECUTION_TRUSTED_GROUP_GIDS` | Opt-in Native Linux: GIDs numéricos confiáveis para escrita de código/runtime nos caminhos aprovados. | vazio |
+| `STRUCTURED_EXECUTION_GROUP_WRITABLE_ROOTS` | Raízes canónicas existentes onde se aceita escrita pelos grupos confiáveis. Configurar juntamente com GIDs; `/` é recusado. | vazio |
 | `STRUCTURED_EXECUTION_CGROUP_WRAPPER` | Path do wrapper C root-owned que coloca o processo no cgroup antes do `execve`. | vazio |
 | `STRUCTURED_EXECUTION_MEMORY_MAX_BYTES` | Memória máxima por execução. | `536870912` |
 | `STRUCTURED_EXECUTION_CPU_QUOTA_PERCENT` | Quota CPU por execução; `100` equivale a um CPU. | `100` |
 | `STRUCTURED_EXECUTION_PIDS_MAX` | Máximo de processos/threads por execução. | `64` |
 
 Por defeito, executáveis, scripts, roots e directórios pertencentes à conta do serviço são recusados. Se os ETLs existentes forem mantidos por essa mesma conta, o administrador pode definir `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` para UIDs específicos. Esta opção é uma declaração explícita de confiança: os scripts correm com a identidade e acesso a ficheiros da aplicação, não são sandbox e podem alterar outros ficheiros dessa conta. Não adicionar UIDs sem revisão do risco.
+
+Para instalações colaborativas, `STRUCTURED_EXECUTION_TRUSTED_GROUP_GIDS` e `STRUCTURED_EXECUTION_GROUP_WRITABLE_ROOTS` permitem uma excepção explícita e limitada à escrita pelo grupo. As listas são separadas por vírgulas e têm de ser configuradas em conjunto. Só se aceita a escrita se o GID do ficheiro/directório estiver autorizado e o caminho estiver numa das raízes canónicas aprovadas; os ficheiros alvo e ancestrais inspeccionados são verificados. A raiz de grupo não autoriza scripts ou executáveis por si só: continuam a aplicar-se `STRUCTURED_EXECUTION_ROOTS`, a allowlist de executáveis e a confiança de UID. Links de runtime mantêm a verificação do caminho canónico e dos ancestrais do link.
+
+Escrita por outros é sempre recusada, mesmo num grupo confiável. `container-local` e o agente Ubuntu não usam esta excepção. Confiar no grupo significa aceitar todos os seus membros com escrita como autores de código executado com os acessos da conta do serviço; não concede isolamento contra alterações ao venv, dependências ou scripts. Preferir raízes específicas, rever membros e dependências, e revalidar após alterações. Não instalar dependências automaticamente na validação nem executar um ETL de produção como teste do venv.
 
 O wrapper `agent/exec-wrapper.c` deve ser compilado e instalado root-owned, sem setuid/capacidades, no path configurado:
 
