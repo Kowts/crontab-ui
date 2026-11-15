@@ -28,6 +28,10 @@ replace the other.
 
 Run on an instance that is not production, ideally on a different server.
 
+For the Native Linux rows, use the bounded fixtures and per-trigger evidence criteria in
+[NATIVE_EXECUTION_DRILL.md](NATIVE_EXECUTION_DRILL.md). Test artifacts are not operational
+proof; retain the actual Ubuntu outputs before checking these items.
+
 | Step | Covered automatically | Manual |
 | --- | --- | --- |
 | Create a backup and verify its integrity | Backup suites in `npm test` (`PRAGMA integrity_check`) | Confirm the file also arrived in `BACKUP_EXTERNAL_DIR` on a different volume |

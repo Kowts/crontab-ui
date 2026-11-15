@@ -149,4 +149,6 @@ Antes de actualizar, criar e verificar backup. Rollback de imagem só é suporta
 
 ## Limitações de validação
 
+O roteiro [NATIVE_EXECUTION_DRILL.md](NATIVE_EXECUTION_DRILL.md) inclui probes limitados para uma instância Ubuntu independente, critérios separados para execução manual/agendada, cancelamento, timeout, descendentes, CPU/memória/PIDs, idempotência e recuperação. Não executar estes ensaios sobre ETLs ou contas de produção; os resultados reais continuam a ser necessários para fechar o gate.
+
 Os testes Windows cobrem API, migrações, persistência, política, HMAC, named pipes de teste, argv sem shell e fail-closed. Não substituem o ensaio Ubuntu obrigatório de UDS real através de Docker, systemd, cgroups v2, launcher C, restart/reaping e execução de ETL não destrutivo. A feature não deve ser declarada pronta para produção até esse gate passar.
