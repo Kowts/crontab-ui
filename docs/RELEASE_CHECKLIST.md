@@ -19,9 +19,9 @@ replace the other.
 - [ ] Structured execution is disabled by default; if included in the release, container allowlists and Linux no-shell tests pass.
 - [ ] If the Ubuntu agent is included/enabled, its independent host policy, HMAC/UDS, cgroup v2 limits, restart/unknown recovery, cancellation and ownership adversarial tests pass on an Ubuntu VM.
 - [ ] Structured task catalog, import/restore and legacy command compatibility are verified with a production-like backup.
-- [ ] User-provider migration, last-admin protection, session revocation, recovery CLI and rollback from `sqlite` to the retained `env` configuration are tested.
+- [ ] If enabling `AUTH_PROVIDER=sqlite`, environment-user migration, last-admin protection, session revocation, recovery CLI and rollback to retained legacy `env` configuration are verified.
 - [ ] A pre-release backup of the running instance exists and is also in `BACKUP_EXTERNAL_DIR`.
-- [ ] If enabling `AUTH_PROVIDER=sqlite`, the environment-user migration, last-admin protection, session revocation, recovery CLI and rollback with retained legacy configuration are verified.
+- [ ] Native structured tasks have a verified cron-to-delegated-executor dispatch path: authenticated and authorised requests, unique operation IDs, idempotency and no automatic retry of unknown results.
 - [ ] A reviewer is available to approve the `production` environment deployment.
 
 ## 2. Operational drill
@@ -39,7 +39,8 @@ Run on an instance that is not production, ideally on a different server.
 | Tasks actually run in the scheduler | `npm run test:docker-scheduler` (CI) | Create a test task, wait for a scheduled run and confirm it as the non-root user |
 | Logs, history and audit | - | Check the execution history, `GET /audit` and the `logs` directory |
 | Structured container execution | Unit/API tests | On Linux, execute a non-destructive sample under configured executable/root allowlists |
-| Native structured execution | Policy/API tests | On a native Ubuntu service, verify trusted-owner policy, cgroup v2 memory/CPU/PIDs, wrapper isolation, timeout and cancellation |
+| Native structured execution | Policy/API tests | On Ubuntu, verify both manual and cron-triggered dispatch under the delegated systemd unit; confirm UID, interpreter, working directory and distinct execution cgroups |
+| Native resource control and recovery | Executor/policy tests | For both triggers, test timeout, cancellation, surviving descendants, memory/CPU/PID limits and service restart; verify no orphan processes, no duplicate execution and explicit interrupted/unknown results |
 | Ubuntu agent and UDS | HMAC/policy unit tests | On an independent Ubuntu VM, validate socket permissions, replay rejection, cgroup limits, cancellation and agent restart reconciliation |
 | Structured recovery | SQLite snapshot/import tests | Restore a backup and reconcile agent-local state; confirm `unknown` is never automatically resubmitted |
 
@@ -100,6 +101,24 @@ the tagged commit changes.
 - Status: **not approved for production**
 - Required before release: an independent Ubuntu VM drill covering the rows above, with environment, image digest, date, operator and outputs recorded.
 - The Windows development session validates JavaScript, API, SQLite, HMAC and policy logic only; it does not prove Linux UDS permissions, C wrapper compilation, systemd delegation or cgroup behaviour.
+
+#### Native Linux evidence reported on 2026-11-15
+
+- Operator-reported systemd: 255 (255.4-1ubuntu8.18), unified cgroup v2. Ubuntu release was not provided.
+- Manual non-destructive sample: Python `/usr/bin/python3.12`, UID `1001`, working directory `/opt/crontab-ui-native-smoke`, cgroup `/system.slice/crontab-ui.service/execution-629e3f28-dd20-48cc-8a82-2dbc72c91d13`.
+- Manual sample using the shared venv: Python `/opt/etl-processes/main-env/venv/bin/python`, same UID and working directory, cgroup `/system.slice/crontab-ui.service/execution-eb001773-9f31-4bb2-beb6-bfc712731c91`.
+- These supplied outputs demonstrate basic manual execution, not scheduler dispatch, enforcement of resource limits, timeout/cancellation or recovery. They do not approve production ETLs or the optional Ubuntu agent.
+
+For every remaining scenario, record the tested commit, Ubuntu/systemd versions, trigger,
+operation ID, effective timeout, cgroup path, configured limits and observed result. On an
+independent non-production instance, require:
+
+- Manual and scheduled samples each execute once with the expected interpreter, UID and working directory, under a distinct `execution-*` cgroup belonging to the delegated service.
+- Repeated submission of the same operation ID never starts a second process; lost acknowledgements and restart are explicitly unknown/interrupted and are not automatically replayed.
+- A long-running sample and its descendants stop on timeout and cancellation; verify the processes disappear and the cgroup is cleaned up.
+- Samples exceeding memory/PID limits cannot escape their configured cgroups; record actual limit files and observed failure. Measure CPU use against the configured quota.
+- Restart during a sample leaves no descendants and produces an explicit recoverable state, never false success.
+- Existing legacy scheduled tasks still run correctly; restored tasks and users preserve their documented contracts.
 
 ### Drill record - v0.6.3
 
