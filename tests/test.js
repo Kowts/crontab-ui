@@ -4272,6 +4272,14 @@ describe('User management panel', () => {
 });
 
 describe('SQLite user management API', () => {
+  it('registers the administrative page once and rejects the environment provider', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+    expect(source.match(/app\.get\(routes\.users_ui,/g)).toHaveLength(1);
+    await request(app).get('/users').expect(409).expect(({ body }) => {
+      expect(body.message).toContain('AUTH_PROVIDER=sqlite');
+    });
+  });
+
   const originalProvider = process.env.AUTH_PROVIDER;
   const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
   const originalUser = process.env.BASIC_AUTH_USER;

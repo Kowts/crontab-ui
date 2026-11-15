@@ -402,23 +402,6 @@ function effectiveUserPermissions(role) {
   };
 }
 
-app.get(routes.users_ui, requireRole('admin'), (req, res) => {
-  if (app.locals.authProvider !== 'sqlite') {
-    return res.status(409).json({ message: 'User management requires AUTH_PROVIDER=sqlite. Migrate environment accounts first.' });
-  }
-  return res.render('users', {
-    routes: serializeForHtml(routes),
-    currentRole: 'admin',
-    authProvider: app.locals.authProvider,
-    currentPage: 'users',
-    backups: crontab.get_backup_names(),
-    authEnabled: app.locals.authEnabled,
-    csrfToken: req.csrfToken || '',
-    locale: res.locals.locale,
-    messages: serializeForHtml(dictionaries[res.locals.locale]),
-  });
-});
-
 function serializeUser(user) {
   return {
     id: user.id,
