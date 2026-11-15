@@ -52,7 +52,11 @@ cc -O2 -Wall -Wextra -Werror -fPIE -pie -Wl,-z,relro,-z,now \
   agent/exec-wrapper.c -o /usr/local/libexec/crontab-ui-agent-exec
 ```
 
-A unidade systemd da aplicação tem de delegar `cpu`, `memory` e `pids`; [crontab-ui-native-cgroup.conf.example](../deploy/systemd/crontab-ui-native-cgroup.conf.example) mostra as directivas necessárias. Sem wrapper seguro, controllers delegados ou permissões correctas, a validação e execução são recusadas.
+A unidade systemd da aplicação tem de delegar `cpu`, `memory` e `pids`; [crontab-ui-native-cgroup.conf.example](../deploy/systemd/crontab-ui-native-cgroup.conf.example) mostra as directivas necessárias. Requer systemd 254 ou superior, com `DelegateSubgroup=crontab-ui-supervisor`: o serviço inicia nesse subgrupo, deixando o cgroup-pai da unidade sem processos. Na validação/execução nativa, a aplicação activa os controllers nesse pai delegado e cria os cgroups das tarefas como irmãos do supervisor. Não activa controllers fora dessa estrutura nem move processos existentes entre cgroups.
+
+`Delegate=yes` isoladamente não é suficiente. Verificar `systemd --version` antes de instalar o drop-in; após `daemon-reload` e reinício numa janela de manutenção, `/proc/<MainPID>/cgroup` deve terminar em `/crontab-ui.service/crontab-ui-supervisor` (ou no nome real da unidade). Se o systemd ignorar a directiva ou os controllers/permissões não estiverem disponíveis, a validação é recusada com diagnóstico explícito. O ensaio Ubuntu continua obrigatório: confirmar validação, cgroup de cada execução, limites e cancelamento antes de produção.
+
+Runners nativos iniciados por outro serviço, como cron, não herdam a pertença ao cgroup do Crontab UI. Não publicar tarefas structured nativas nesse contexto sem uma integração de lançamento na unidade delegada validada; as allowlists ou variáveis de ambiente, por si só, não transferem essa pertença. Sem wrapper seguro, controllers delegados ou permissões correctas, a validação e execução são recusadas.
 
 `native-local` não é apresentado como isolamento de identidade: é execução directa sem shell e com limites cgroup por processo, sob a conta do Crontab UI. Para fronteira de identidade separada, usar `ubuntu-local` e o agente dedicado.
 

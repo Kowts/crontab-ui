@@ -89,6 +89,7 @@ const { resolveTask, validateAgentPolicy } = require('../lib/local-agent-policy'
 const { LocalAgentStore } = require('../lib/agent-store');
 const { LocalAgentClient } = require('../lib/agent-client');
 const { createAgentServer } = require('../agent/server');
+const { prepareNativeCgroupRoot } = require('../lib/agent-cgroups');
 const { migrateLegacyUsers } = require('../lib/user-migration');
 const { hashPassword, verifyPassword, isValidDigestFormat, identifyForeignDigest } = require('../config/passwords');
 const { normaliseMailing, failureAlertDue } = require('../config/alert-policy');
@@ -121,6 +122,82 @@ describe('Execution environment validation', () => {
     expect(() => configuredTrustedOwnerUids('root')).toThrow('trusted UID policy is invalid');
     expect(() => configuredTrustedOwnerUids('1000,,1001')).toThrow('trusted UID policy is invalid');
   });
+});
+
+describe('Native systemd cgroup delegation', () => {
+  let directory;
+  let root;
+  let options;
+
+  beforeEach(() => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-native-cgroup-'));
+    const mountRoot = path.join(directory, 'cgroups');
+    root = path.join(mountRoot, 'system.slice', 'crontab-ui.service');
+    fs.mkdirSync(path.join(root, 'crontab-ui-supervisor'), { recursive: true });
+    const procFile = path.join(directory, 'membership');
+    fs.writeFileSync(procFile, '0::/system.slice/crontab-ui.service/crontab-ui-supervisor\n');
+    fs.writeFileSync(path.join(root, 'cgroup.controllers'), 'cpu memory pids\n');
+    fs.writeFileSync(path.join(root, 'cgroup.subtree_control'), '\n');
+    fs.writeFileSync(path.join(root, 'cgroup.procs'), '');
+    options = { procFile, mountRoot };
+  });
+
+  afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  it('enables missing controllers in the empty service parent, not the supervisor subgroup', () => {
+    expect(prepareNativeCgroupRoot(options)).toBe(root);
+    expect(fs.readFileSync(path.join(root, 'cgroup.subtree_control'), 'utf8')).toBe('+cpu +memory +pids');
+    expect(fs.existsSync(path.join(root, 'crontab-ui-supervisor', 'cgroup.subtree_control'))).toBe(false);
+    expect(fs.readFileSync(options.procFile, 'utf8')).toContain('/crontab-ui-supervisor');
+  });
+
+  it('preserves existing controllers and leaves an already enabled parent unchanged', () => {
+    const controlFile = path.join(root, 'cgroup.subtree_control');
+    fs.writeFileSync(controlFile, 'cpu io\n');
+    prepareNativeCgroupRoot(options);
+    expect(fs.readFileSync(controlFile, 'utf8')).toBe('+memory +pids');
+    // A normal file does not implement the kernel's additive controller interface.
+    fs.writeFileSync(controlFile, 'cpu io memory pids\n');
+    expect(prepareNativeCgroupRoot(options)).toBe(root);
+    expect(fs.readFileSync(controlFile, 'utf8')).toBe('cpu io memory pids\n');
+  });
+
+  it.each([
+    '/system.slice/crontab-ui.service',
+    '/system.slice/cron.service/worker',
+    '/system.slice/not-a-service/crontab-ui-supervisor',
+  ])('refuses membership outside the dedicated service subgroup: %s', (membership) => {
+    fs.writeFileSync(options.procFile, `0::${membership}\n`);
+    expect(() => prepareNativeCgroupRoot(options)).toThrow('DelegateSubgroup=crontab-ui-supervisor');
+    expect(fs.readFileSync(path.join(root, 'cgroup.subtree_control'), 'utf8')).toBe('\n');
+  });
+
+  it('refuses to activate controllers in a populated parent', () => {
+    fs.writeFileSync(path.join(root, 'cgroup.procs'), '123\n');
+    expect(() => prepareNativeCgroupRoot(options)).toThrow('must contain no processes');
+    expect(fs.readFileSync(path.join(root, 'cgroup.subtree_control'), 'utf8')).toBe('\n');
+  });
+
+  it('reports missing controllers and unreadable cgroup state without attempting activation', () => {
+    fs.writeFileSync(path.join(root, 'cgroup.controllers'), 'cpu pids\n');
+    expect(() => prepareNativeCgroupRoot(options)).toThrow('memory controller is not available');
+    fs.unlinkSync(path.join(root, 'cgroup.controllers'));
+    expect(() => prepareNativeCgroupRoot(options)).toThrow('Unable to inspect');
+    expect(fs.readFileSync(path.join(root, 'cgroup.subtree_control'), 'utf8')).toBe('\n');
+  });
+
+  it('surfaces a failed activation rather than treating delegation as ready', () => {
+    const controlFile = path.join(root, 'cgroup.subtree_control');
+    fs.writeFileSync(controlFile, 'cpu\n');
+    const source = fs.readFileSync(path.join(__dirname, '../lib/agent-cgroups.js'), 'utf8');
+    const context = { module: { exports: {} }, require: (name) => name === 'fs'
+      ? { ...fs, writeFileSync() { throw Object.assign(new Error('denied'), { code: 'EACCES' }); } }
+      : require(name), process };
+    vm.runInNewContext(source, context);
+    expect(() => context.module.exports.prepareNativeCgroupRoot(options)).toThrow('controllers: EACCES');
+    expect(fs.readFileSync(controlFile, 'utf8')).toBe('cpu\n');
+  });
+
 });
 
 describe('Structured process execution', () => {

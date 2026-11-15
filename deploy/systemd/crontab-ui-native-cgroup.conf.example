@@ -1,4 +1,5 @@
 [Service]
 Delegate=cpu memory pids
+DelegateSubgroup=crontab-ui-supervisor
 ProtectControlGroups=no
 KillMode=control-group
