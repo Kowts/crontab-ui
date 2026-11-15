@@ -545,7 +545,11 @@ function applyRetention() {
   }
 }
 
-exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
+exports.getJobForNativeDispatch = (_id) => new Promise((resolve, reject) => {
+  db.find({ _id }).exec((error, docs) => error ? reject(error) : resolve(docs[0] || null));
+});
+
+exports.runjob = (_id, auditContext = {}, callback = () => {}, dispatchOptions = {}) => {
   if (typeof auditContext === 'function') {
     callback = auditContext;
     auditContext = {};
@@ -553,9 +557,17 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
   db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const res = docs[0];
-    const operationId = crypto.randomUUID();
+    const operationId = dispatchOptions.operationId || crypto.randomUUID();
     let plan;
     try {
+      if (dispatchOptions.expectedFingerprint) {
+        const { authorizeScheduledJob } = require('./lib/native-dispatch');
+        const environment = db.getExecutionEnvironment(res.structured_execution?.environment_id);
+        authorizeScheduledJob(res, environment, dispatchOptions.expectedFingerprint);
+        if (environment.revision !== dispatchOptions.expectedEnvironmentRevision) {
+          throw Object.assign(new Error('Scheduled native environment changed before dispatch'), { code: 'NATIVE_DISPATCH_REJECTED' });
+        }
+      }
       plan = prepareJobExecution(res);
     } catch (dispatchError) {
       audit({
@@ -568,7 +580,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
     audit({ operationId, type: 'runjob', jobId: _id, status: 'started', ...auditContext, runtime: plan.runtime });
 
     const startedAt = Date.now();
-    executeJob(res, plan, operationId, (error, result) => {
+    const controller = executeJob(res, plan, operationId, (error, result) => {
       const failed = Boolean(error);
       const output = result.dispatchStatus ? null : recordOutput(res, result, operationId);
       // The execution is recorded before the notification decision, because the number of
@@ -585,6 +597,7 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}) => {
       audit({ operationId, type: result.dispatchStatus ? 'execution_dispatch' : 'runjob', jobId: _id, status: error ? 'failed' : 'completed', dispatchStatus: result.dispatchStatus, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits, error: error?.message, ...auditContext, runtime: plan.runtime });
       callback(error, { operationId, exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason });
     });
+    if (dispatchOptions.onController) dispatchOptions.onController(controller);
   });
 };
 
@@ -617,7 +630,7 @@ function prepareJobExecution(job) {
       };
     }
     const structured = prepareStructuredExecution(job, environment, { maximumTimeoutMs: commandTimeoutMs });
-    return { structured, runtime: Object.freeze({ ...executionRuntime, ...structured.runtime }) };
+    return { structured, runtime: Object.freeze({ ...executionRuntime, ...structured.runtime, timeoutMs: structured.timeoutMs }) };
   }
   let configuredEnvironment;
   try {

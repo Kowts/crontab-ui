@@ -62,7 +62,25 @@ A unidade systemd da aplicação tem de delegar `cpu`, `memory` e `pids`; [cront
 
 `Delegate=yes` isoladamente não é suficiente. Verificar `systemd --version` antes de instalar o drop-in; após `daemon-reload` e reinício numa janela de manutenção, `/proc/<MainPID>/cgroup` deve terminar em `/crontab-ui.service/crontab-ui-supervisor` (ou no nome real da unidade). Se o systemd ignorar a directiva ou os controllers/permissões não estiverem disponíveis, a validação é recusada com diagnóstico explícito. O ensaio Ubuntu continua obrigatório: confirmar validação, cgroup de cada execução, limites e cancelamento antes de produção.
 
-Runners nativos iniciados por outro serviço, como cron, não herdam a pertença ao cgroup do Crontab UI. Não publicar tarefas structured nativas nesse contexto sem uma integração de lançamento na unidade delegada validada; as allowlists ou variáveis de ambiente, por si só, não transferem essa pertença. Sem wrapper seguro, controllers delegados ou permissões correctas, a validação e execução são recusadas.
+Runners nativos iniciados por cron não herdam a pertença ao cgroup do Crontab UI. Para tarefas `native-local`, o runner envia apenas ID de operação, ID da tarefa e fingerprint da configuração ao dispatcher da aplicação; nunca executa o runtime directamente. As demais tarefas mantêm o caminho anterior. O cron continua a ser o agendador, sem segundo scheduler.
+
+### Dispatcher nativo para cron
+
+O dispatcher é opt-in: `ENABLE_NATIVE_DISPATCH=true` no ambiente da unidade delegada. Antes de activar, provisionar uma chave binária aleatória de 32 bytes em `CRON_DB_PATH/native-dispatch.key`, pertencente à conta do serviço e modo `0600`. O directório `CRON_DB_PATH` tem de ser propriedade dessa conta, sem acesso por grupo/outros. Usar o mesmo caminho absoluto da base no serviço e nos runners publicados; caminhos de socket acima de 100 bytes são recusados.
+
+Com a identidade do serviço, numa instalação com base privada já existente, executar uma vez (o comando recusa sobrescrever uma chave):
+
+```bash
+node -e "require('./lib/native-dispatch').initializeKey('/absolute/private/database-directory')"
+```
+
+Não imprimir nem versionar a chave; nunca colocá-la na linha cron ou no ambiente dos scripts. A autenticação reutiliza HMAC com timestamp, nonce e rejeição de replay. A autorização volta a ler a tarefa no serviço: tem de estar publicada, activa, sem revisão pendente, com ambiente Native Linux validado e fingerprint coincidente. O pedido não aceita comandos, paths ou argumentos arbitrários. A chave permite despacho/cancelamento de tarefas aprovadas e consulta do estado; acesso à conta Unix e à chave é uma fronteira de confiança.
+
+O serviço abre `native-dispatch.sock` com modo `0600` no directório privado. O cron tem de executar com essa mesma conta e conseguir ler a chave. Não conceder acesso ao grupo ETL ao directório da base. Em falta de chave, dispatcher ou autorização, a execução falha explicitamente, sem fallback. O dispatcher reutiliza `crontab.runjob` e o executor comum; histórico, output e notificações são produzidos no serviço, com trigger `scheduled` e ID de operação único. O timeout registado corresponde ao timeout structured efectivo.
+
+`native-dispatch.db` guarda aceitação e resultados, reutilizando o datastore do agente. Repetir o mesmo ID não executa novamente; um ID usado com outro pedido é recusado. Operações sem desfecho no reinício ficam `unknown`, não são reexecutadas. O runner consulta o mesmo ID após perda de acknowledgement e nunca volta a submeter uma operação incerta. Uma nova ocorrência cron tem um novo ID: não é retry de uma ocorrência anterior. Conservar esta base durante recuperação para manter a evidência de idempotência; snapshots da base principal não contêm este diário separado.
+
+No encerramento normal, o dispatcher cancela os controladores activos e aguarda os callbacks; o limite de 10 segundos do bootstrap mantém-se. SIGKILL depende de `KillMode=control-group` e deve ser ensaiado no Ubuntu. A validação manual não comprova o cron: testar uma tarefa não destrutiva publicada, confirmar o cgroup do serviço e uma única execução no histórico antes de aprovar produção. Sem wrapper seguro, controllers delegados ou permissões correctas, a validação e execução são recusadas.
 
 `native-local` não é apresentado como isolamento de identidade: é execução directa sem shell e com limites cgroup por processo, sob a conta do Crontab UI. Para fronteira de identidade separada, usar `ubuntu-local` e o agente dedicado.
 
