@@ -107,15 +107,15 @@ that same working directory and **one individual argument** from the table below
 Use the listed timeout in milliseconds. Do not give these probes an unlimited timeout.
 Keep only one probe active at a time.
 
-| Argument | Timeout | Expected evidence |
-| --- | ---: | --- |
-| `baseline` | 15000 | Exit 0; one `ready` record with expected UID/interpreter/cwd and validation-unit execution cgroup |
-| `wait` | 5000 | Timeout; no process or execution cgroup left after the grace period |
-| `descendants` | 5000 | Parent and detached child ignore TERM; both disappear after escalation |
-| `parent-exit` | 15000 | Parent exits 0; detached child is killed by cleanup, not left alive for its 20-second sleep |
-| `cpu` | 15000 | Ten-second busy sample; CPU seconds no greater than `elapsed * 0.25 * 1.25 + 0.25` |
-| `memory` | 15000 | Bounded 96 MiB allocation meets the 64 MiB limit; OOM kill, not success |
-| `pids` | 15000 | Bounded spawn refused with EAGAIN and an increment in `pids.events:max`; probe exits 0 after cleaning its children |
+| Argument        | Timeout | Expected evidence                                                                                                    |
+| --------------- | ------: | -------------------------------------------------------------------------------------------------------------------- |
+| `baseline`    |   15000 | Exit 0; one `ready` record with expected UID/interpreter/cwd and validation-unit execution cgroup                  |
+| `wait`        |    5000 | Timeout; no process or execution cgroup left after the grace period                                                  |
+| `descendants` |    5000 | Parent and detached child ignore TERM; both disappear after escalation                                               |
+| `parent-exit` |   15000 | Parent exits 0; detached child is killed by cleanup, not left alive for its 20-second sleep                          |
+| `cpu`         |   15000 | Ten-second busy sample; CPU seconds no greater than `elapsed * 0.25 * 1.25 + 0.25`                                 |
+| `memory`      |   15000 | Bounded 96 MiB allocation meets the 64 MiB limit; OOM kill, not success                                              |
+| `pids`        |   15000 | Bounded spawn refused with EAGAIN and an increment in `pids.events:max`; probe exits 0 after cleaning its children |
 
 The 25% CPU ceiling includes a 25% tolerance and a 0.25-second burst allowance.
 Do not fail a CPU test merely because wall time increases on a busy host.
