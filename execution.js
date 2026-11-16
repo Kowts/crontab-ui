@@ -181,6 +181,16 @@ function executeStructured(executable, args, {
 
   let cgroup = null;
   let child;
+  const cleanup = async () => {
+    if (!cgroup) return null;
+    try {
+      await cgroupManager.remove(cgroup);
+      return null;
+    } catch (error) {
+      console.error(`Execution ${operationId} cgroup cleanup failed: ${error.message}`);
+      return error;
+    }
+  };
   try {
     if (cgroupManager) {
       if (!wrapperPath || !operationId) throw Object.assign(new Error('Native structured execution wrapper is not configured'), { code: 'EINVAL' });
@@ -204,8 +214,9 @@ function executeStructured(executable, args, {
       });
     }
   } catch (error) {
-    if (cgroup) cgroupManager.remove(cgroup);
-    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
+    cleanup().then((cleanupError) => callback(cleanupError || error, {
+      durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity,
+    }));
     return null;
   }
   const output = { stdout: [], stderr: [], bytes: 0, exceeded: false };
@@ -213,7 +224,7 @@ function executeStructured(executable, args, {
   let killTimer;
   let settled = false;
   const terminateTree = (reason) => {
-    if (terminationReason) return;
+    if (terminationReason || settled) return;
     terminationReason = reason;
     terminate(child, 'SIGTERM');
     killTimer = setTimeout(() => {
@@ -238,20 +249,20 @@ function executeStructured(executable, args, {
   const timeout = timeoutMs === 0 ? null : setTimeout(() => terminateTree('timeout'), timeoutMs);
   child.stdout.on('data', collect(output.stdout));
   child.stderr.on('data', collect(output.stderr));
-  child.on('error', (error) => {
+  child.on('error', async (error) => {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    if (cgroup) cgroupManager.remove(cgroup);
-    callback(error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
+    const cleanupError = await cleanup();
+    callback(cleanupError || error, { durationMs: Date.now() - startedAt, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), identity });
   });
-  child.on('close', (exitCode, signal) => {
+  child.on('close', async (exitCode, signal) => {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    if (cgroup) cgroupManager.remove(cgroup);
+    const cleanupError = await cleanup();
     const result = {
       durationMs: Date.now() - startedAt,
       exitCode,
@@ -265,7 +276,7 @@ function executeStructured(executable, args, {
     const error = terminationReason
       ? Object.assign(new Error(`Structured execution terminated: ${terminationReason}`), { code: terminationReason, signal })
       : exitCode === 0 ? null : Object.assign(new Error(`Structured execution exited with code ${exitCode}`), { code: exitCode, signal });
-    callback(error, result);
+    callback(cleanupError || error, result);
   });
   if (typeof onStart === 'function') onStart(controller);
   return controller;

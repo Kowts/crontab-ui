@@ -571,7 +571,7 @@ describe('Local agent UDS service', () => {
     }
   });
 
-  it('marks execution failed and cancels its cgroup when a log stream errors', async () => {
+  it.each([false, true])('waits for cgroup cleanup after a log stream error (cleanup failure=%s)', async (cleanupFails) => {
     const secret = Buffer.alloc(32, 53);
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'crontab-ui-agent-stream-'));
     const socketPath = process.platform === 'win32'
@@ -602,12 +602,20 @@ describe('Local agent UDS service', () => {
     child.stderr = new EventEmitter();
     const streams = [];
     const cgroupEvents = [];
+    let finishCleanup;
     const agent = createAgentServer({
       cgroups: {
         root: '/cgroup',
         create() { return { name: 'execution-test', directory: '/cgroup/execution-test' }; },
         kill() { cgroupEvents.push('kill'); },
-        remove() { cgroupEvents.push('remove'); },
+        remove() {
+          cgroupEvents.push('remove');
+          return new Promise((resolve, reject) => {
+            finishCleanup = () => cleanupFails
+              ? reject(Object.assign(new Error('cleanup denied'), { code: 'CGROUP_CLEANUP_FAILED' }))
+              : resolve(true);
+          });
+        },
       },
       createWriteStream() {
         const stream = new EventEmitter();
@@ -668,10 +676,17 @@ describe('Local agent UDS service', () => {
       expect(cgroupEvents).toContain('kill');
       child.emit('close', 1, null);
       await new Promise((resolve) => setImmediate(resolve));
-      expect(store.getOperation(operationId)).toMatchObject({
-        status: 'failed', errorCode: 'OUTPUT_PERSISTENCE_FAILED',
-      });
+      expect(store.getOperation(operationId).status).toBe('running');
       expect(cgroupEvents).toContain('remove');
+      finishCleanup();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(store.getOperation(operationId)).toMatchObject({
+        status: 'failed', errorCode: cleanupFails ? 'CGROUP_CLEANUP_FAILED' : 'OUTPUT_PERSISTENCE_FAILED',
+      });
+      if (cleanupFails) {
+        expect(fs.readFileSync(path.join(directory, 'logs', 'agent-audit.jsonl'), 'utf8'))
+          .toContain('"operation":"execution_cgroup_cleanup_failed"');
+      }
     } finally {
       await new Promise((resolve) => agent.close(resolve));
       store.close();

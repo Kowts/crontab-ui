@@ -138,6 +138,7 @@ Instalar a unidade em `/etc/systemd/system/`, executar `systemctl daemon-reload`
 - stdout/stderr ficam em `/var/log/crontab-ui-agent` com nomes UUID, permissões restritas, paginação por cursor e truncagem explícita.
 - O estado durável fica em `/var/lib/crontab-ui-agent/agent.db`, separado da SQLite central.
 - Cancelamento envia SIGTERM ao grupo e mata o cgroup após o período de graça.
+- A conclusão aguarda a limpeza do cgroup: depois de `cgroup.kill`, espera `populated 0` e repete remoções transitoriamente ocupadas, até 2000 ms. Uma falha de limpeza é registada explicitamente e não é reportada como execução bem-sucedida. A validação real da remoção e do prazo continua obrigatória no Ubuntu.
 
 ## Backup, restauro e rollback
 

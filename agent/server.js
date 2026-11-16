@@ -271,7 +271,7 @@ function createAgentServer(options) {
     return { accepted: true, already_terminal: false };
   }
 
-  function startExecution(body) {
+  async function startExecution(body) {
     if (!body || typeof body.operation_id !== 'string' || !UUID.test(body.operation_id)) {
       throw Object.assign(new Error('Invalid operation ID'), { statusCode: 400, code: 'AGENT_REQUEST_INVALID' });
     }
@@ -310,6 +310,16 @@ function createAgentServer(options) {
     const startedAt = Date.now();
     const stdoutPath = path.join(logDirectory, `${body.operation_id}.stdout`);
     const stderrPath = path.join(logDirectory, `${body.operation_id}.stderr`);
+    const cleanup = async () => {
+      if (!cgroup) return null;
+      try {
+        await cgroups.remove(cgroup);
+        return null;
+      } catch (error) {
+        audit({ operation: 'execution_cgroup_cleanup_failed', operationId: body.operation_id, errorCode: error.code || 'IO_ERROR' });
+        return error;
+      }
+    };
     const closeOutputStream = (stream) => new Promise((resolve) => {
       if (!stream || stream.closed || stream.writableFinished) return resolve();
       let settled = false;
@@ -331,18 +341,18 @@ function createAgentServer(options) {
       finalized = true;
       clearTimeout(timeout);
       if (killTimer) clearTimeout(killTimer);
-      const finalError = error || outputError;
-      const status = terminationReason === 'timeout' ? 'timeout'
-        : terminationReason === 'cancelled' ? 'cancelled'
-          : terminationReason === 'output_limit' ? 'output_limit'
-            : terminationReason === 'output_error' || finalError || exitCode !== 0 ? 'failed' : 'completed';
-      Promise.all([closeOutputStream(stdout), closeOutputStream(stderr)]).then(() => {
+      Promise.all([closeOutputStream(stdout), closeOutputStream(stderr), cleanup()]).then(([, , cleanupError]) => {
+        const finalError = error || outputError;
+        const status = cleanupError ? 'failed'
+          : terminationReason === 'timeout' ? 'timeout'
+            : terminationReason === 'cancelled' ? 'cancelled'
+              : terminationReason === 'output_limit' ? 'output_limit'
+                : terminationReason === 'output_error' || finalError || exitCode !== 0 ? 'failed' : 'completed';
         store.complete(body.operation_id, {
           status, exitCode, signal, terminationReason, durationMs: Date.now() - startedAt,
           outputBytes, outputTruncated,
-          errorCode: outputError ? 'OUTPUT_PERSISTENCE_FAILED' : finalError ? 'EXECUTION_FAILED' : null,
+          errorCode: cleanupError ? 'CGROUP_CLEANUP_FAILED' : outputError ? 'OUTPUT_PERSISTENCE_FAILED' : finalError ? 'EXECUTION_FAILED' : null,
         });
-        if (cgroup) cgroups.remove(cgroup);
         controllers.delete(body.operation_id);
         audit({ operation: 'execution_finished', operationId: body.operation_id, taskId: body.task_id, status, exitCode, signal, durationMs: Date.now() - startedAt, outputBytes, outputTruncated });
       }).catch((storeError) => {
@@ -396,9 +406,9 @@ function createAgentServer(options) {
       if (stdout) stdout.destroy();
       if (stderr) stderr.destroy();
       try { fs.rmSync(stdoutPath, { force: true }); fs.rmSync(stderrPath, { force: true }); } catch (_cleanupError) { /* best effort */ }
-      if (cgroup) cgroups.remove(cgroup);
+      const cleanupError = await cleanup();
       controllers.delete(body.operation_id);
-      store.complete(body.operation_id, { status: 'failed', errorCode: 'EXECUTOR_START_FAILED' });
+      store.complete(body.operation_id, { status: 'failed', errorCode: cleanupError ? 'CGROUP_CLEANUP_FAILED' : 'EXECUTOR_START_FAILED' });
       audit({ operation: 'execution_rejected', operationId: body.operation_id, taskId: body.task_id, reason: 'executor_start_failed' });
       throw Object.assign(new Error('Unable to start approved execution'), { statusCode: 503, code: 'EXECUTOR_START_FAILED' });
     }
@@ -482,7 +492,7 @@ function createAgentServer(options) {
         return respond(response, 200, result);
       }
       if (request.method === 'POST' && request.url === '/v1/submit-execution') {
-        const result = startExecution(body);
+        const result = await startExecution(body);
         return respond(response, 202, result);
       }
       if (request.method === 'POST' && request.url === '/v1/cancel-execution') {
