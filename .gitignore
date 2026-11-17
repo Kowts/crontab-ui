@@ -1,5 +1,6 @@
 *.swp
 AGENTS.md
+AGENTS.history.md
 node_modules
 coverage/
 .env

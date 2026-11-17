@@ -8,5 +8,6 @@ coverage/
 tests/
 docs/
 AGENTS.md
+AGENTS.history.md
 .playwright-cli/
 crontabs/
