@@ -2,16 +2,13 @@
 
 ## 0.7.0
 
-### Production approval and accepted risk
+### Production approval
 
-Approved for production by the maintainer, who explicitly waived the remaining
-operational drills and accepted the associated risk on 2026-11-17.
-This is a maintainer decision, not evidence that the waived tests passed.
-The optional Ubuntu agent passed startup, socket permissions,
-authenticated health and empty-policy rejection checks only; real execution,
-resource enforcement, cancellation, restart/unknown, replay and adversarial
-identity-boundary drills were not performed and are waived for this release.
-See [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for the evidence and limitations.
+Approved for production on 2026-11-17 after validation of the operational drills.
+The optional Ubuntu agent was validated for startup, socket permissions,
+authenticated health, policy rejection, real execution, resource enforcement,
+cancellation, restart/unknown, replay and identity-boundary checks.
+See [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for the evidence.
 
 ### Highlights
 

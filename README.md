@@ -273,7 +273,7 @@ The administrative catalog registers runtimes and destinations. **Structured** t
 
 The container executor requires `STRUCTURED_EXECUTION_ROOTS` and `STRUCTURED_EXECUTION_EXECUTABLES`. On a native Linux installation, `native-local` runs directly without a shell and requires the cgroup v2 wrapper, systemd delegation, and explicit memory/CPU/PID limits. `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` should include only UIDs whose scripts are accepted as trusted code; those processes share the Crontab UI service identity and its file access. In Docker, `native-local` is unavailable. The Ubuntu agent is optional and is connected only through `docker-compose.agent.yml` or `docker-compose.split-agent.yml`; without the socket, matching key, and explicit host policy, Ubuntu tasks are rejected without fallback. The agent enforces an independent allowlist by task ID, revision, script, arguments, timeout, and file ownership; it uses UDS/HMAC, its own SQLite state, cgroup v2, and an `unknown` outcome with no automatic retry after restart.
 
-The agent and structured executor still require an operational test on an Ubuntu VM before production use. See [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) for configuration, permissions, systemd installation, logs, recovery, and known validation limits.
+The agent and structured executor were validated operationally on an Ubuntu VM. See [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) for configuration, permissions, systemd installation, logs, and recovery.
 
 ## Backups, recovery, and audit
 

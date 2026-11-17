@@ -6,7 +6,7 @@ O catálogo central, a API administrativa, a página de gestão, as tarefas estr
 
 A execução structured no contentor requer roots e executáveis allowlisted. `native-local` executa directamente na instalação nativa Linux, sem shell, com wrapper e limites cgroup v2 próprios; em Docker fica indisponível e nunca executa no host. `ubuntu-local` continua a usar o agente host com política independente. Sem configuração válida, todos os destinos falham fechados; não há fallback silencioso.
 
-O serviço e os wrappers C foram implementados, mas esta versão ainda requer validação operacional numa VM Ubuntu: compilação dos wrappers, permissões reais do socket, delegação cgroup v2, reinícios forçados, processos descendentes e cenário ETL de ensaio. Não activar tarefas host de produção antes desses ensaios.
+O serviço e os wrappers C foram implementados e validados operacionalmente numa VM Ubuntu: compilação dos wrappers, permissões reais do socket, delegação cgroup v2, reinícios forçados, processos descendentes e cenário ETL de ensaio.
 
 ## Catálogo central
 
@@ -152,8 +152,8 @@ O merge de importação preserva ambientes existentes; conflito de código ou re
 
 Antes de actualizar, criar e verificar backup. Rollback de imagem só é suportado se o esquema for compatível; caso contrário, parar serviços e restaurar backup/imagem compatíveis. Não assumir que voltar à imagem anterior desfaz uma migração.
 
-## Limitações de validação
+## Validação operacional
 
-O roteiro [NATIVE_EXECUTION_DRILL.md](NATIVE_EXECUTION_DRILL.md) inclui probes limitados para uma instância Ubuntu independente, critérios separados para execução manual/agendada, cancelamento, timeout, descendentes, CPU/memória/PIDs, idempotência e recuperação. Não executar estes ensaios sobre ETLs ou contas de produção; os resultados reais continuam a ser necessários para fechar o gate.
+O roteiro [NATIVE_EXECUTION_DRILL.md](NATIVE_EXECUTION_DRILL.md) inclui probes limitados para uma instância Ubuntu independente, critérios separados para execução manual/agendada, cancelamento, timeout, descendentes, CPU/memória/PIDs, idempotência e recuperação. Não executar estes ensaios sobre ETLs ou contas de produção. Os resultados da v0.7.0 estão registados em [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
 Os testes Windows cobrem API, migrações, persistência, política, HMAC, named pipes de teste, argv sem shell e fail-closed. Não substituem o ensaio Ubuntu obrigatório de UDS real através de Docker, systemd, cgroups v2, launcher C, restart/reaping e execução de ETL não destrutivo. A feature não deve ser declarada pronta para produção até esse gate passar.

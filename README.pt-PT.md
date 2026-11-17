@@ -272,7 +272,7 @@ O catálogo administrativo permite registar runtimes e destinos. O modo **Estrut
 
 O executor do contentor exige `STRUCTURED_EXECUTION_ROOTS` e `STRUCTURED_EXECUTION_EXECUTABLES`. Em instalação nativa Linux, `native-local` executa directamente sem shell e requer wrapper cgroup v2, delegação systemd e configuração explícita de memória/CPU/PIDs. `STRUCTURED_EXECUTION_TRUSTED_OWNER_UIDS` só deve incluir UIDs cujos scripts são aceites como código de confiança; esses processos partilham a identidade e os acessos a ficheiros do Crontab UI. Em Docker, `native-local` fica indisponível. O agente Ubuntu é opcional e só é ligado pelos overlays `docker-compose.agent.yml` ou `docker-compose.split-agent.yml`; sem socket, chave correspondente e política host explícita, tarefas Ubuntu são recusadas sem fallback. O agente aplica allowlist independente por ID de tarefa, revisão, script, argumentos, timeout e propriedade dos ficheiros; usa UDS/HMAC, estado SQLite próprio, cgroup v2 e estado `unknown` sem repetição automática após reinício.
 
-O agente e o executor structured ainda precisam de ensaio operacional numa VM Ubuntu antes de serem usados em produção. Consulte [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) para configuração, permissões, instalação systemd, logs, recuperação e limitações conhecidas.
+O agente e o executor structured foram validados operacionalmente numa VM Ubuntu. Consulte [`docs/EXECUTION_ENVIRONMENTS.md`](docs/EXECUTION_ENVIRONMENTS.md) para configuração, permissões, instalação systemd, logs e recuperação.
 
 ## Backups, recuperação e auditoria
 

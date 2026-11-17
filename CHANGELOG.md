@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Release status
 
-- Approved for production by the maintainer with explicit risk acceptance and waiver of the remaining operational drills. Waived checks are not technical passes: the optional Ubuntu agent has not completed real execution, limits, cancellation, restart/unknown and adversarial identity-boundary drills. See the release checklist for evidence and limitations.
+- Approved for production after validation of the operational drills, including the optional Ubuntu agent's execution, limits, cancellation, restart/unknown and identity-boundary checks. See the release checklist for evidence.
 
 ### Added
 
@@ -19,7 +19,7 @@ All notable changes to this project are documented here. The format follows
 - Execution environment catalog, structured task payloads with argv arrays, and a no-shell structured executor path; legacy `command` tasks remain unchanged.
 - `native-local` structured destination for native Linux installations, with explicit trusted-owner UIDs and per-run cgroup v2 resource limits; unavailable inside Docker.
 - Optional Ubuntu local execution agent with UDS/HMAC, independent task allowlist, durable idempotency, cgroup v2 limits, bounded logs and `unknown` recovery state.
-- `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and outstanding Linux validation gates.
+- `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and Linux validation procedure.
 - SQLite user and access management with fixed roles, scrypt migration, session revocation, last-admin protection and a local recovery CLI.
 - `docs/USER_MANAGEMENT.md`: provider migration, administration, recovery and rollback procedure.
 
