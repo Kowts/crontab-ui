@@ -264,6 +264,7 @@ function resolveRunParameters(definitions, submitted, fixedArguments = []) {
 
 module.exports = {
   MAX_PARAMETERS,
+  NAME_PATTERN: NAME,
   ROLES,
   TYPES,
   resolveRunParameters,

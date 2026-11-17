@@ -233,6 +233,44 @@ describe('Run parameters editor', () => {
     expect(edited[2]).toEqual({ name: 'mode', flag: '--mode', type: 'select', label: 'Mode', style: 'equals', options: [{ value: 'full', label: 'Full' }] });
   });
 
+  it('suggests the technical name from the argument and keeps a name typed by hand', () => {
+    const { client, get } = loadClient('admin');
+    client.fillEditor([]);
+    get('job-add-run-parameter').dispatch('click');
+    setValue(get('run-parameter-0-flag'), '--Date-From');
+    expect(get('run-parameter-0-name').value).toBe('date_from');
+    setValue(get('run-parameter-0-name'), 'start');
+    setValue(get('run-parameter-0-flag'), '--begin');
+    expect(get('run-parameter-0-name').value).toBe('start');
+    expect(client.readEditor()[0].name).toBe('start');
+  });
+
+  it('marks an invalid technical name and blocks the save before contacting the server', () => {
+    const { client, get, dom } = loadClient('admin');
+    client.fillEditor([]);
+    get('job-add-run-parameter').dispatch('click');
+    setValue(get('run-parameter-0-flag'), '--date');
+    setValue(get('run-parameter-0-name'), 'Data');
+    expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBe('true');
+    expect(get('run-parameter-0-name-help').classList.contains('text-danger')).toBe(true);
+    expect(get('run-parameter-0-name').getAttribute('aria-describedby')).toBe('run-parameter-0-name-help');
+    expect(client.checkEditor()).toBe(false);
+    expect(dom.activeElement).toBe(get('run-parameter-0-name'));
+
+    setValue(get('run-parameter-0-name'), 'data');
+    expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBeNull();
+    expect(client.checkEditor()).toBe(true);
+  });
+
+  it('rejects an empty technical name on save', () => {
+    const { client, get } = loadClient('admin');
+    client.fillEditor([]);
+    get('job-add-run-parameter').dispatch('click');
+    expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBeNull();
+    expect(client.checkEditor()).toBe(false);
+    expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBe('true');
+  });
+
   it('disables adding parameters for the Ubuntu agent target', () => {
     const { client, get } = loadClient('admin');
     client.setEditorTarget('ubuntu-local');

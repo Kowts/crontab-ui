@@ -127,6 +127,43 @@
     });
   }
 
+  function validName(name) {
+    return rules().NAME_PATTERN.test(String(name || ''));
+  }
+
+  // Suggested technical name for a new parameter: "--Date-From" becomes "date_from".
+  function nameFromFlag(flag) {
+    return String(flag || '').toLowerCase().replace(/^-+/, '').replace(/[^a-z0-9_]/g, '_')
+      .replace(/^[^a-z]+/, '').slice(0, 32);
+  }
+
+  function markNameField(input, help, invalid) {
+    input.classList.toggle('is-invalid', invalid);
+    help.classList.toggle('text-danger', invalid);
+    if (invalid) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+
+  // Checks the technical names before saving, because the server error does not point to the
+  // field. Marks and focuses the first invalid one; returns false when the save must not proceed.
+  function checkEditor() {
+    var firstInvalid = null;
+    editorState.forEach(function(state, index) {
+      var input = document.getElementById('run-parameter-' + index + '-name');
+      var help = document.getElementById('run-parameter-' + index + '-name-help');
+      var invalid = !validName(state.name);
+      if (input && help) markNameField(input, help, invalid);
+      if (invalid && !firstInvalid) firstInvalid = input;
+    });
+    if (!firstInvalid && editorState.some(function(state) { return !validName(state.name); })) return false;
+    if (firstInvalid) {
+      if (firstInvalid.scrollIntoView) firstInvalid.scrollIntoView({ block: 'center' });
+      firstInvalid.focus();
+      return false;
+    }
+    return true;
+  }
+
   function setEditorTarget(targetId) {
     var unsupported = targetId === 'ubuntu-local';
     var notice = document.getElementById('run-parameters-unsupported');
@@ -214,8 +251,26 @@
     card.appendChild(header);
 
     var grid = el('div', 'row g-2');
-    grid.appendChild(editorField(prefix + '-flag', tr('runParameterFlag'), textInput(state, 'flag', { monospace: true, placeholder: '--date', maxLength: 64 }), 'col-md-4'));
-    grid.appendChild(editorField(prefix + '-name', tr('runParameterName'), textInput(state, 'name', { monospace: true, placeholder: 'date', maxLength: 32 }), 'col-md-4'));
+    var flagInput = textInput(state, 'flag', { monospace: true, placeholder: '--date', maxLength: 64 });
+    var nameInput = textInput(state, 'name', { monospace: true, placeholder: 'date', maxLength: 32 });
+    var nameColumn = editorField(prefix + '-name', tr('runParameterName'), nameInput, 'col-md-4');
+    var nameHelp = el('div', 'form-text', tr('runParameterNameHelp'));
+    nameHelp.id = prefix + '-name-help';
+    nameInput.setAttribute('aria-describedby', nameHelp.id);
+    nameColumn.appendChild(nameHelp);
+    var refreshName = function() { markNameField(nameInput, nameHelp, state.name !== '' && !validName(state.name)); };
+    nameInput.addEventListener('input', refreshName);
+    // Fill the name from the argument while it is empty or still the suggestion.
+    flagInput.addEventListener('input', function() {
+      if (state.name && state.name !== state.suggestedName) return;
+      state.suggestedName = nameFromFlag(state.flag);
+      state.name = state.suggestedName;
+      nameInput.value = state.name;
+      refreshName();
+    });
+    refreshName();
+    grid.appendChild(editorField(prefix + '-flag', tr('runParameterFlag'), flagInput, 'col-md-4'));
+    grid.appendChild(nameColumn);
     grid.appendChild(editorField(prefix + '-type', tr('runParameterType'), selectInput(state, 'type', TYPES.map(function(type) {
       return [type, tr('runParameterType_' + type)];
     }), function() { state.default = undefined; renderEditor(); }), 'col-md-4'));
@@ -541,6 +596,7 @@
     formatValues: formatValues,
     fillEditor: fillEditor,
     readEditor: readEditor,
+    checkEditor: checkEditor,
     setEditorTarget: setEditorTarget,
     textToOptions: textToOptions,
     optionsToText: optionsToText,

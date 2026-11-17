@@ -726,6 +726,7 @@ function updateStructuredPreview() {
 function saveTask(payload, mode) {
   if ((mode || $('#job-execution-mode').val()) === 'structured') {
     if (!payload.structured_execution) {
+      if (runParametersClient() && !runParametersClient().checkEditor()) return;
       payload.structured_execution = {
         environment_id: $('#job-execution-environment').val(),
         script_path: $('#job-script-path').val(),
