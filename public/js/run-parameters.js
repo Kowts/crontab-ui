@@ -191,6 +191,38 @@
     return input;
   }
 
+  // Dates are typed as ISO YYYY-MM-DD, the exact value the script receives. The native date
+  // control is avoided because it shows the browser's regional format (e.g. dd/mm/yyyy).
+  function maskIsoDate(value) {
+    var digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+    if (digits.length > 6) return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6);
+    if (digits.length > 4) return digits.slice(0, 4) + '-' + digits.slice(4);
+    return digits;
+  }
+
+  // Configures a text input for ISO dates. Must run before other input listeners are added,
+  // so they read the masked value.
+  function isoDateInput(input) {
+    input.type = 'text';
+    input.placeholder = 'YYYY-MM-DD';
+    input.maxLength = 10;
+    input.inputMode = 'numeric';
+    input.autocomplete = 'off';
+    input.classList.add('font-monospace');
+    input.addEventListener('input', function() {
+      var masked = maskIsoDate(input.value);
+      if (masked !== input.value) input.value = masked;
+    });
+    return input;
+  }
+
+  function dateInput(state, key) {
+    var input = isoDateInput(el('input', 'form-control'));
+    input.value = state[key] === undefined || state[key] === null ? '' : String(state[key]);
+    input.addEventListener('input', function() { state[key] = input.value; });
+    return input;
+  }
+
   function selectInput(state, key, choices, onChange) {
     var select = el('select', 'form-select');
     choices.forEach(function(choice) {
@@ -278,9 +310,9 @@
     grid.appendChild(editorField(prefix + '-help', tr('runParameterHelpText'), textInput(state, 'help', { maxLength: 200 }), 'col-md-6'));
 
     if (state.type === 'date') {
-      grid.appendChild(editorField(prefix + '-min', tr('runParameterMinDate'), textInput(state, 'min', { type: 'date' }), 'col-md-4'));
-      grid.appendChild(editorField(prefix + '-max', tr('runParameterMaxDate'), textInput(state, 'max', { type: 'date' }), 'col-md-4'));
-      grid.appendChild(editorField(prefix + '-default', tr('runParameterDefault'), textInput(state, 'default', { type: 'date' }), 'col-md-4'));
+      grid.appendChild(editorField(prefix + '-min', tr('runParameterMinDate'), dateInput(state, 'min'), 'col-md-4'));
+      grid.appendChild(editorField(prefix + '-max', tr('runParameterMaxDate'), dateInput(state, 'max'), 'col-md-4'));
+      grid.appendChild(editorField(prefix + '-default', tr('runParameterDefault'), dateInput(state, 'default'), 'col-md-4'));
     } else if (state.type === 'integer') {
       grid.appendChild(editorField(prefix + '-min', tr('runParameterMin'), textInput(state, 'min', { type: 'number' }), 'col-md-4'));
       grid.appendChild(editorField(prefix + '-max', tr('runParameterMax'), textInput(state, 'max', { type: 'number' }), 'col-md-4'));
@@ -411,6 +443,12 @@
     ).map(function(input) { return input.dataset.parameter; });
   }
 
+  function incompleteDate(name) {
+    var definition = runState.definitions.find(function(item) { return item.name === name; });
+    var input = document.getElementById(fieldId(name));
+    return Boolean(definition && definition.type === 'date' && input && input.value.length > 0 && input.value.length < 10);
+  }
+
   function updateRunForm() {
     var submit = document.getElementById('run-parameters-submit');
     var preview = document.getElementById('run-parameters-preview');
@@ -420,8 +458,10 @@
     try {
       resolved = rules().resolveRunParameters(runState.definitions, collectValues(), runState.fixedArguments);
     } catch (error) {
-      if (error.parameter) setFieldError(error.parameter, error.message);
-      else setFormError(error.message);
+      // A date still being typed only keeps the submit disabled; it is not an error yet.
+      if (error.parameter) {
+        if (!incompleteDate(error.parameter)) setFieldError(error.parameter, error.message);
+      } else setFormError(error.message);
       renderConfirmations([]);
       preview.textContent = '';
       submit.disabled = true;
@@ -478,9 +518,7 @@
       } else {
         input = el('input', 'form-control');
         if (definition.type === 'date') {
-          input.type = 'date';
-          if (definition.min) input.min = definition.min;
-          if (definition.max) input.max = definition.max;
+          isoDateInput(input);
         } else if (definition.type === 'integer') {
           input.type = 'number';
           input.step = '1';

@@ -132,7 +132,8 @@ describe('Run parameters form', () => {
     });
     expect(modal.shown).toBe(1);
     expect(get('run-parameters-task').textContent).toBe('Pagamentos Siebel · python · native-local');
-    expect(get('run-param-date').type).toBe('date');
+    expect(get('run-param-date').type).toBe('text');
+    expect(get('run-param-date').placeholder).toBe('YYYY-MM-DD');
     expect(get('run-param-date').getAttribute('aria-describedby')).toBe('run-param-date-flag run-param-date-help run-param-date-error');
     expect(get('run-param-delete').disabled).toBe(true);
     expect(get('run-param-delete-role').textContent).toBe('runParameterRequiresRole {"role":"operator"}');
@@ -192,6 +193,22 @@ describe('Run parameters form', () => {
     expect(get('run-parameters-error').textContent).toBe('Execution environment must be validated before use');
     expect(get('run-parameters-error').classList.contains('d-none')).toBe(false);
     expect(modal.hidden).toBe(0);
+  });
+
+  it('masks dates as ISO YYYY-MM-DD and waits for a complete date before showing an error', () => {
+    const { client, get, job } = loadClient('admin');
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    setValue(get('run-param-date'), '202611');
+    expect(get('run-param-date').value).toBe('2026-11');
+    expect(get('run-param-date').getAttribute('aria-invalid')).toBeNull();
+    expect(get('run-parameters-submit').disabled).toBe(true);
+    setValue(get('run-param-date'), '15/11/2026');
+    expect(get('run-param-date').value).toBe('1511-20-26');
+    expect(get('run-param-date').getAttribute('aria-invalid')).toBe('true');
+    setValue(get('run-param-date'), '20261115');
+    expect(get('run-param-date').value).toBe('2026-11-15');
+    expect(get('run-parameters-submit').disabled).toBe(false);
+    expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--verbose', '--date', '2026-11-15']);
   });
 
   it('prefills a repeated run and keeps parameters absent from it switched off', () => {
@@ -269,6 +286,19 @@ describe('Run parameters editor', () => {
     expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBeNull();
     expect(client.checkEditor()).toBe(false);
     expect(get('run-parameter-0-name').getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('edits date limits and defaults as ISO text fields', () => {
+    const { client, get } = loadClient('admin');
+    client.fillEditor([{ name: 'date', flag: '--date', type: 'date', label: 'Date', min: '2026-01-01' }]);
+    expect(get('run-parameter-0-min').type).toBe('text');
+    expect(get('run-parameter-0-min').value).toBe('2026-01-01');
+    setValue(get('run-parameter-0-max'), '20261231');
+    setValue(get('run-parameter-0-default'), '2026-06-30');
+    expect(get('run-parameter-0-max').value).toBe('2026-12-31');
+    expect(client.readEditor()[0]).toEqual({
+      name: 'date', flag: '--date', type: 'date', label: 'Date', min: '2026-01-01', max: '2026-12-31', default: '2026-06-30',
+    });
   });
 
   it('disables adding parameters for the Ubuntu agent target', () => {
