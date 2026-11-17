@@ -190,7 +190,8 @@ function validateRunParameterDefinitions(definitions, fixedArguments = []) {
     if (raw.min_role !== undefined && !ROLES.includes(raw.min_role)) throw parameterError(`Parameter ${name} has an invalid min_role`, name);
 
     const isFlag = raw.type === 'flag';
-    if (isFlag && raw.required !== undefined) throw parameterError(`Flag parameter ${name} cannot be required`, name);
+    // Normalised definitions store required: false on flags, so re-validating them stays idempotent.
+    if (isFlag && raw.required === true) throw parameterError(`Flag parameter ${name} cannot be required`, name);
     if (isFlag && raw.style !== undefined) throw parameterError(`Flag parameter ${name} cannot define a style`, name);
     if (!isFlag && raw.style !== undefined && !STYLES.includes(raw.style)) throw parameterError(`Parameter ${name} has an invalid style`, name);
 

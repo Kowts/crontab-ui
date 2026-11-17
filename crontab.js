@@ -27,6 +27,7 @@ const {
   validateUserRecords,
 } = require('./lib/database');
 const { assertRunParametersSupported, validateStructuredTask } = require('./config/structured-tasks');
+const { resolveRunParameters, validateRunParameterDefinitions } = require('./config/run-parameters');
 const { validateEnvironmentPayload: validateExecutionEnvironmentPayload } = require('./config/execution-environments');
 const { persistSchedule } = require('./lib/schedule-store');
 const { createLogThrottle } = require('./lib/log-throttle');
@@ -378,7 +379,7 @@ function recordOutput(tab, result, operationId) {
 
 // The execution history is diagnostic, never operational: a failure to store it must not turn a
 // completed run into a failed one, so the error is surfaced in the audit log instead of thrown.
-function recordExecution({ job, operationId, trigger, actor, startedAt, status, result, runtime = executionRuntime }) {
+function recordExecution({ job, operationId, trigger, actor, startedAt, status, result, runtime = executionRuntime, runParameters = null }) {
   try {
     db.createExecution({
       operationId,
@@ -394,6 +395,7 @@ function recordExecution({ job, operationId, trigger, actor, startedAt, status, 
       terminationReason: result.terminationReason,
       outputExceeded: result.outputExceeded,
       runtime,
+      runParameters,
     });
   } catch (error) {
     audit({ operationId, type: 'execution_history', jobId: job._id, status: 'failed', error: error.message });
@@ -601,7 +603,33 @@ exports.runjob = (_id, auditContext = {}, callback = () => {}, dispatchOptions =
   });
 };
 
-function prepareJobExecution(job) {
+function runParameterError(message, statusCode, code) {
+  return Object.assign(new Error(message), { statusCode, code });
+}
+
+// Resolves the values submitted for a manual run against the task's own parameter definitions.
+// Returns null for a task without parameters, which keeps the v0.7.0 run path unchanged.
+function resolveManualRunParameters(job, submitted) {
+  const definitions = job.execution_mode === 'structured' ? job.structured_execution?.run_parameters || [] : [];
+  if (!definitions.length) {
+    const empty = submitted === undefined || submitted === null
+      || (typeof submitted === 'object' && !Array.isArray(submitted) && !Object.keys(submitted).length);
+    if (!empty) throw runParameterError('This task does not accept run parameters', 422, 'RUN_PARAMETERS_NOT_ACCEPTED');
+    return null;
+  }
+  const environment = db.getExecutionEnvironment(job.structured_execution.environment_id);
+  if (environment?.targetId === 'ubuntu-local') {
+    throw runParameterError('Run parameters are not supported by this execution target', 409, 'RUN_PARAMETERS_UNSUPPORTED_TARGET');
+  }
+  const fixedArguments = job.structured_execution.arguments || [];
+  const resolved = resolveRunParameters(validateRunParameterDefinitions(definitions, fixedArguments), submitted, fixedArguments);
+  return {
+    ...resolved,
+    digest: crypto.createHash('sha256').update(JSON.stringify(resolved.values)).digest('hex'),
+  };
+}
+
+function prepareJobExecution(job, overrides = {}) {
   if (job.execution_mode === 'structured') {
     const environmentId = job.structured_execution?.environment_id;
     const environment = typeof environmentId === 'string' ? db.getExecutionEnvironment(environmentId) : null;
@@ -613,6 +641,9 @@ function prepareJobExecution(job) {
       }
       if (environment.validationStatus !== 'valid') {
         throw Object.assign(new Error('Execution environment must be validated before use'), { statusCode: 409, code: 'ENVIRONMENT_NOT_VALIDATED' });
+      }
+      if (overrides.arguments !== undefined) {
+        throw runParameterError('Run parameters are not supported by this execution target', 409, 'RUN_PARAMETERS_UNSUPPORTED_TARGET');
       }
       const definition = job.structured_execution;
       return {
@@ -629,7 +660,7 @@ function prepareJobExecution(job) {
           environmentRevision: environment.revision, runtimeType: environment.runtimeType, scriptPath: definition.script_path }),
       };
     }
-    const structured = prepareStructuredExecution(job, environment, { maximumTimeoutMs: commandTimeoutMs });
+    const structured = prepareStructuredExecution(job, environment, { maximumTimeoutMs: commandTimeoutMs, arguments: overrides.arguments });
     return { structured, runtime: Object.freeze({ ...executionRuntime, ...structured.runtime, timeoutMs: structured.timeoutMs }) };
   }
   let configuredEnvironment;
@@ -827,15 +858,29 @@ exports.getExecutionPanel = (job) => ({
 
 exports.getLatestExecutions = () => db.listLatestExecutions();
 
-exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
+// options.parameters: values submitted for the task's run parameters.
+// options.authorizeParameters(resolved): throws to refuse the run, e.g. for role or confirmation checks.
+exports.startManualRun = (_id, auditContext = {}, callback = () => {}, options = {}) => {
   return db.find({ _id }).exec((err, docs) => {
     if (err || !docs.length) return callback(err || new Error('Job not found'));
     const job = docs[0];
     const operationId = crypto.randomUUID();
     const actor = auditContext.actor || 'local';
+    let runParameters;
+    try {
+      runParameters = resolveManualRunParameters(job, options.parameters);
+      if (runParameters && options.authorizeParameters) options.authorizeParameters(runParameters);
+    } catch (parameterError) {
+      audit({
+        operationId, type: 'manual_run', jobId: _id, trigger: 'manual', actor, status: 'rejected',
+        errorCode: parameterError.code || 'RUN_PARAMETERS_REJECTED', ...auditContext,
+      });
+      return callback(parameterError);
+    }
+    const parameterAudit = runParameters ? { parameters: runParameters.values, parametersDigest: runParameters.digest } : {};
     let plan;
     try {
-      plan = prepareJobExecution(job);
+      plan = prepareJobExecution(job, runParameters ? { arguments: runParameters.arguments } : {});
     } catch (dispatchError) {
       audit({
         operationId, type: 'execution_dispatch', jobId: _id, trigger: 'manual', actor,
@@ -855,7 +900,7 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       }
       return callback(error);
     }
-    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext, runtime: plan.runtime });
+    audit({ operationId, type: 'manual_run', jobId: _id, status: 'started', ...auditContext, ...parameterAudit, runtime: plan.runtime });
     callback(null, exports.getManualRun(operationId));
     const startedAt = Date.now();
     const controller = executeJob(job, plan, operationId, (error, result) => {
@@ -881,14 +926,17 @@ exports.startManualRun = (_id, auditContext = {}, callback = () => {}) => {
       const failed = Boolean(error);
       const output = recordOutput(job, result, operationId);
       const status = resolveTerminalState(error, result);
-      recordExecution({ job, operationId, trigger: 'manual', actor, startedAt, status, result, runtime: plan.runtime });
+      recordExecution({
+        job, operationId, trigger: 'manual', actor, startedAt, status, result, runtime: plan.runtime,
+        runParameters: runParameters ? runParameters.values : null,
+      });
       if (output) deliverMail(job, operationId, result, failed);
       else if (shouldSendMail(job.mailing, failed)) audit({ operationId, type: 'mail', jobId: job._id, status: 'skipped', reason: 'output_unavailable' });
       applyRetention();
       const resultSummary = { exitCode: result.exitCode, signal: result.signal, durationMs: result.durationMs, terminationReason: result.terminationReason, outputExceeded: result.outputExceeded, identity: result.identity, resourceLimits: result.resourceLimits };
       db.completeManualRun(operationId, status, Date.now(), resultSummary);
       manualRunControllers.delete(operationId);
-      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, runtime: plan.runtime });
+      audit({ operationId, type: 'manual_run', jobId: _id, status, error: error?.message, ...resultSummary, ...auditContext, ...parameterAudit, runtime: plan.runtime });
       pruneManualRuns();
     });
     manualRunControllers.set(operationId, controller);

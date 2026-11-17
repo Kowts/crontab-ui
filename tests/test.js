@@ -383,6 +383,19 @@ describe('Native trusted group paths', () => {
     expect(result.runtimeVersion).toBe('Python 3.12');
   });
 
+  it('uses the composed run-parameter arguments instead of the stored ones when supplied', () => {
+    const parameterised = { structured_execution: { ...job.structured_execution, arguments: ['--verbose'] } };
+    expect(policy.prepareStructuredExecution(parameterised, environment, options).args)
+      .toEqual(['/opt/etl/jobs/main.py', '--verbose']);
+    expect(policy.prepareStructuredExecution(parameterised, environment, {
+      ...options, arguments: ['--verbose', '--date', '2026-11-15', '--delete'],
+    }).args).toEqual(['/opt/etl/jobs/main.py', '--verbose', '--date', '2026-11-15', '--delete']);
+    expect(() => policy.prepareStructuredExecution(parameterised, environment, { ...options, arguments: '--delete' }))
+      .toThrow('Structured task arguments are invalid');
+    expect(() => policy.prepareStructuredExecution(parameterised, environment, { ...options, arguments: ['a\0b'] }))
+      .toThrow('Structured task arguments are invalid');
+  });
+
   it('keeps group-write rejected by default and never applies the exception to container-local', () => {
     expect(() => policy.prepareStructuredExecution(job, environment, {
       ...options, trustedGroupGids: '', groupWritableRoots: '',
@@ -5326,6 +5339,109 @@ describe('Run parameters on structured tasks', () => {
     const agentPlain = taskPayload(agentId, { run_parameters: [] });
     await request(app).post('/save').send(agentPlain).expect(200);
     await request(app).post('/remove').send({ _id: (await findJob(agentPlain.name))._id }).expect(200);
+  });
+
+  function startRun(jobId, options) {
+    return new Promise((resolve) => crontab.startManualRun(jobId, { actor: 'local', requestId: crypto.randomUUID() },
+      (error, result) => resolve({ error, result }), options));
+  }
+
+  it('resolves manual-run values before dispatch and audits refusals without starting a run', async () => {
+    const environmentId = await createEnvironment('container-local');
+    const payload = taskPayload(environmentId);
+    await request(app).post('/save').send(payload).expect(200);
+    const job = await findJob(payload.name);
+    try {
+      const invalid = await startRun(job._id, { parameters: { date: '2026-02-30' } });
+      expect(invalid.error).toMatchObject({ statusCode: 422, code: 'INVALID_RUN_PARAMETERS', parameter: 'date' });
+      const unknown = await startRun(job._id, { parameters: { force: true } });
+      expect(unknown.error).toMatchObject({ statusCode: 422, parameter: 'force' });
+
+      let seen;
+      const refused = await startRun(job._id, {
+        parameters: { date: '2026-11-15', delete: true },
+        authorizeParameters(resolved) {
+          seen = resolved;
+          throw Object.assign(new Error('refused'), { statusCode: 403, code: 'RUN_PARAMETER_FORBIDDEN' });
+        },
+      });
+      expect(refused.error).toMatchObject({ statusCode: 403, code: 'RUN_PARAMETER_FORBIDDEN' });
+      expect(seen).toMatchObject({
+        values: { date: '2026-11-15', delete: true },
+        arguments: ['--verbose', '--date', '2026-11-15', '--delete'],
+        active: [
+          { name: 'date', confirm: false, min_role: 'executor' },
+          { name: 'delete', confirm: true, min_role: 'operator' },
+        ],
+      });
+      expect(seen.digest).toMatch(/^[0-9a-f]{64}$/);
+      const rejections = crontab.searchAudit({ jobId: job._id, type: 'manual_run', status: 'rejected' }, 10);
+      expect(rejections.map((event) => event.errorCode).sort())
+        .toEqual(['INVALID_RUN_PARAMETERS', 'INVALID_RUN_PARAMETERS', 'RUN_PARAMETER_FORBIDDEN']);
+
+      // Valid values reach the executor, which refuses this unvalidated environment as before.
+      const dispatched = await startRun(job._id, { parameters: { date: '2026-11-15' } });
+      expect(dispatched.error).toMatchObject({ statusCode: 409, code: 'ENVIRONMENT_NOT_VALIDATED' });
+      expect(crontab.getExecutionPanel(job).history).toHaveLength(0);
+    } finally {
+      await request(app).post('/remove').send({ _id: job._id }).expect(200);
+    }
+  });
+
+  it('refuses values for a task without parameters and parameters after a move to the Ubuntu agent', async () => {
+    const environmentId = await createEnvironment('container-local');
+    const plain = taskPayload(environmentId, { run_parameters: [] });
+    await request(app).post('/save').send(plain).expect(200);
+    const plainJob = await findJob(plain.name);
+    const parameterised = taskPayload(environmentId);
+    await request(app).post('/save').send(parameterised).expect(200);
+    const parameterisedJob = await findJob(parameterised.name);
+    try {
+      expect((await startRun(plainJob._id, { parameters: { date: '2026-11-15' } })).error)
+        .toMatchObject({ statusCode: 422, code: 'RUN_PARAMETERS_NOT_ACCEPTED' });
+      expect((await startRun(plainJob._id, { parameters: {} })).error)
+        .toMatchObject({ statusCode: 409, code: 'ENVIRONMENT_NOT_VALIDATED' });
+
+      await request(app).patch(`/api/execution-environments/${environmentId}`)
+        .send({ revision: 1, target_id: 'ubuntu-local' }).expect(200);
+      expect((await startRun(parameterisedJob._id, { parameters: {} })).error)
+        .toMatchObject({ statusCode: 409, code: 'RUN_PARAMETERS_UNSUPPORTED_TARGET' });
+    } finally {
+      await request(app).post('/remove').send({ _id: plainJob._id }).expect(200);
+      await request(app).post('/remove').send({ _id: parameterisedJob._id }).expect(200);
+    }
+  });
+
+  it('adds the run_parameters history column to an existing database and round-trips values', () => {
+    const file = path.join(testDbPath, `run-parameters-migration-${crypto.randomUUID()}.db`);
+    createDatabaseFile(file, []);
+    const previous = new Database(file);
+    previous.exec('ALTER TABLE executions DROP COLUMN run_parameters');
+    previous.prepare("DELETE FROM schema_migrations WHERE version = '0004_execution_run_parameters'").run();
+    previous.prepare(`INSERT INTO executions (operation_id, job_id, trigger, status, started_at, completed_at)
+      VALUES ('legacy-operation', 'migration-job', 'scheduled', 'completed', 1, 2)`).run();
+    previous.close();
+
+    const datastore = new SqliteDatastore({ filename: file });
+    try {
+      datastore.createExecution({
+        operationId: 'manual-operation', jobId: 'migration-job', trigger: 'manual', actor: 'local', status: 'completed',
+        startedAt: 3, completedAt: 4, runParameters: { date: '2026-11-15', delete: true },
+      });
+      const history = datastore.listExecutions('migration-job', 10);
+      expect(history.find((entry) => entry.operationId === 'manual-operation').runParameters)
+        .toEqual({ date: '2026-11-15', delete: true });
+      expect(history.find((entry) => entry.operationId === 'legacy-operation').runParameters).toBeNull();
+    } finally {
+      datastore.close();
+    }
+    const migrated = new Database(file, { readonly: true });
+    try {
+      expect(migrated.prepare("SELECT 1 FROM schema_migrations WHERE version = '0004_execution_run_parameters'").get()).toBeTruthy();
+    } finally {
+      migrated.close();
+      fs.rmSync(file, { force: true });
+    }
   });
 
   it('includes run parameters in the native scheduled-dispatch fingerprint', () => {

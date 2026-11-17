@@ -44,6 +44,17 @@ describe('Run parameter definitions', () => {
     expect(remove).not.toHaveProperty('style');
   });
 
+  it('is idempotent, so stored and backed-up definitions validate again unchanged', () => {
+    const normalized = validateRunParameterDefinitions([
+      ...siebel,
+      { name: 'mode', flag: '--mode', type: 'select', label: 'Mode', options: [{ value: 'full', label: 'Full' }], style: 'equals' },
+      { name: 'batch', flag: '--batch', type: 'integer', label: 'Batch', min: 1, max: 9, default: 3 },
+      { name: 'code', flag: '--code', type: 'text', label: 'Code', pattern: '[A-Z]{3}', help: 'Three letters' },
+    ]);
+    const roundTrip = JSON.parse(JSON.stringify(normalized));
+    expect(validateRunParameterDefinitions(roundTrip)).toEqual(normalized);
+  });
+
   it('accepts each supported type with its own fields', () => {
     const definitions = validateRunParameterDefinitions([
       { name: 'month', flag: '--month', type: 'date', label: 'Month', min: '2026-01-01', max: '2026-12-31', style: 'equals' },
