@@ -106,6 +106,14 @@ jobs:
         run: |
           prerelease=""
           case "${GITHUB_REF_NAME}" in *-*) prerelease="--prerelease" ;; esac
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## ${version}" '
+            $0 == heading { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' docs/RELEASE_NOTES.md > release-notes.txt
+          test -s release-notes.txt
+          printf '\nImage: ghcr.io/%s@%s\n' "${IMAGE_REPO}" "${DIGEST}" >> release-notes.txt
           gh release create "${GITHUB_REF_NAME}" sbom.spdx.json $prerelease \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Image: ghcr.io/${IMAGE_REPO}@${DIGEST}. See CHANGELOG.md and docs/RELEASE_NOTES.md. Roll back by deploying a previous tag or digest."
+            --notes-file release-notes.txt

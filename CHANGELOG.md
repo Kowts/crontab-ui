@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Release status
+
+- Approved for production by the maintainer with explicit risk acceptance and waiver of the remaining operational drills. Waived checks are not technical passes: the optional Ubuntu agent has not completed real execution, limits, cancellation, restart/unknown and adversarial identity-boundary drills. See the release checklist for evidence and limitations.
+
 ### Added
 
 - `docs/RELEASE_CHECKLIST.md`: drill record template to keep manual validation evidence per release.
@@ -16,13 +22,18 @@ All notable changes to this project are documented here. The format follows
 - `docs/EXECUTION_ENVIRONMENTS.md`: installation, policy, operations, backup/restore and outstanding Linux validation gates.
 - SQLite user and access management with fixed roles, scrypt migration, session revocation, last-admin protection and a local recovery CLI.
 - `docs/USER_MANAGEMENT.md`: provider migration, administration, recovery and rollback procedure.
-- SQLite user and access management with fixed roles, scrypt migration, session revocation, last-admin protection and a local recovery CLI.
-- `docs/USER_MANAGEMENT.md`: provider migration, operations, recovery and rollback procedure.
 
 ### Changed
 
+- Backup previews now show task names, structured script details, enabled states and theme-aware styling.
 - `docs/OPERATIONS.md`: the rollback procedure now separates application rollback (keep the volume) from backup restore, matching the release checklist.
 - SQLite backups/imports now retain execution environments and structured-task references; legacy databases without a catalog remain importable.
+
+### Fixed
+
+- Await bounded execution-cgroup cleanup before reporting completion.
+- Supply complete rendering context to the backup restore page.
+- Initialise the Ubuntu agent's empty delegated parent with a separate supervisor subgroup.
 
 ## [0.6.3]
 
@@ -112,7 +123,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `ALLOW_HTTP=true` explicit exception for HTTP in production.
 
-[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/Kowts/crontab-ui/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Kowts/crontab-ui/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/Kowts/crontab-ui/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Kowts/crontab-ui/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Kowts/crontab-ui/compare/v0.6.0...v0.6.1

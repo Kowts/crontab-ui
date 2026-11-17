@@ -1,5 +1,52 @@
 # Release notes
 
+## 0.7.0
+
+### Production approval and accepted risk
+
+Approved for production by the maintainer, who explicitly waived the remaining
+operational drills and accepted the associated risk on 2026-11-17.
+This is a maintainer decision, not evidence that the waived tests passed.
+The optional Ubuntu agent passed startup, socket permissions,
+authenticated health and empty-policy rejection checks only; real execution,
+resource enforcement, cancellation, restart/unknown, replay and adversarial
+identity-boundary drills were not performed and are waived for this release.
+See [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for the evidence and limitations.
+
+### Highlights
+
+- Execution environment catalog and structured, no-shell tasks with argument arrays.
+- Native Linux cron dispatch into a delegated service with per-execution cgroup limits,
+  durable idempotency and explicit unknown results after interrupted dispatch.
+- Optional Ubuntu UDS/HMAC agent with an independent, root-managed task policy.
+- Optional SQLite user management, migration from environment credentials, session
+  revocation, last-admin protection and administrative recovery CLI.
+- Improved backup preview with structured task details and theme-aware states.
+- Fixes for bounded cgroup cleanup, backup-page rendering and agent delegation.
+
+### Validation and limitations
+
+- Isolated Ubuntu Native manual/scheduled drills and SQLite migration, access,
+  recovery and provider rollback were exercised; evidence is in the checklist.
+- The prior validated checkout passed 384 tests and coverage thresholds on Ubuntu.
+  Final release-commit CI is required separately.
+- Synthetic legacy-data Docker recovery and v0.6.3 rollback passed. This does not
+  establish downgrade compatibility for structured tasks or SQLite user data.
+- The forced-stop drill's systemctl command returned an auxiliary-process EINVAL;
+  process death and interrupted/unknown recovery were verified separately.
+
+### Upgrade and rollback
+
+Take and verify an external pre-upgrade backup. Keep `AUTH_PROVIDER=env` unless
+explicitly migrating users; retain protected legacy credentials for provider rollback.
+Structured execution requires explicit allowlists and Linux delegation; the Ubuntu
+agent requires systemd 254+ and the updated supervisor-subgroup unit.
+Native tasks execute as the service account, not in an identity sandbox.
+Preserve separate dispatcher/agent journals during recovery; never automatically
+resubmit unknown operations. Restored tasks require review and explicit publication.
+Use a compatible pre-upgrade backup with the previous image when downgrading an
+incompatible schema or feature set; changing images does not undo data migrations.
+
 ## 0.6.3
 
 ### Observabilidade
