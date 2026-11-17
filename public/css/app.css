@@ -212,6 +212,20 @@ div.dt-container div.jobs-search-cell input { display: block; min-width: 0; max-
 .structured-argument-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 40px); gap: .5rem; align-items: center; }
 .structured-argument-action { width: 40px; height: 40px; padding: 0; }
 .structured-execution-preview { min-height: 5rem; max-height: 12rem; overflow: auto; padding: .75rem; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-subtle); color: var(--app-ink); font-size: .82rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-date-field { position: relative; }
+.run-date-picker { position: absolute; top: calc(100% + .25rem); left: 0; z-index: 1070; width: 17.5rem; max-width: 100%; padding: .75rem; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); color: var(--app-ink); }
+.run-date-picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .4rem; }
+.run-date-picker-title { font-weight: 650; }
+.run-date-picker-nav { min-width: 2rem; padding: .1rem .5rem; color: var(--app-ink); font-size: 1.25rem; line-height: 1; text-decoration: none; }
+.run-date-picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.run-date-picker-weekday { padding: .2rem 0; color: var(--app-muted); font-size: .75rem; font-weight: 600; }
+.run-date-picker-day { padding: .35rem 0; border: 0; border-radius: 6px; background: transparent; color: var(--app-ink); font-size: .875rem; font-variant-numeric: tabular-nums; }
+.run-date-picker-day:hover:not(:disabled) { background: var(--app-canvas); }
+.run-date-picker-day[aria-current="date"] { box-shadow: inset 0 0 0 1px var(--app-primary); }
+.run-date-picker-day[aria-pressed="true"] { background: var(--app-primary); color: var(--app-surface); }
+.run-date-picker-day:disabled { opacity: .35; cursor: not-allowed; }
+.run-date-picker-day:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 1px; }
+.run-date-picker-footer { display: flex; justify-content: space-between; margin-top: .5rem; }
 .run-parameter-definition { padding: .75rem; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-surface); }
 .run-parameter-definition-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
 .run-parameter-definition-title { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }

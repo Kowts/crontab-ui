@@ -211,6 +211,66 @@ describe('Run parameters form', () => {
     expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--verbose', '--date', '2026-11-15']);
   });
 
+  it('picks a date from an English calendar that respects the limits', () => {
+    const { client, get, parse } = loadClient('executor');
+    const job = parse({
+      _id: 'job-2', name: 'Limited', structured_execution: {
+        environment_id: 'env-1', script_path: '/opt/etl/main.py', arguments: [],
+        run_parameters: [
+          { name: 'date', flag: '--date', type: 'date', label: 'Date', min: '2026-11-10', max: '2026-12-05' },
+          { name: 'purge', flag: '--purge-before', type: 'date', label: 'Purge', min_role: 'admin' },
+        ],
+      },
+    });
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    const toggle = get('run-param-date').pickerToggle;
+    expect(toggle.getAttribute('aria-label')).toBe('runParameterOpenCalendar');
+    expect(get('run-param-purge').pickerToggle.disabled).toBe(true);
+
+    setValue(get('run-param-date'), '2026-11-15');
+    toggle.dispatch('click');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const panel = get('run-param-date-calendar');
+    const nodes = () => panel.descendants();
+    const day = (iso) => nodes().find((node) => node.getAttribute('data-date') === iso);
+    expect(nodes().find((node) => node.className === 'run-date-picker-title').textContent).toBe('November 2026');
+    expect(nodes().filter((node) => node.className === 'run-date-picker-weekday').map((node) => node.textContent))
+      .toEqual(['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']);
+    expect(day('2026-11-09').disabled).toBe(true);
+    expect(day('2026-11-15').getAttribute('aria-pressed')).toBe('true');
+    expect(day('2026-11-15').tabIndex).toBe(0);
+
+    // Arrow keys move the focus, across months when needed.
+    day('2026-11-30').listeners.keydown[0]({ key: 'ArrowRight', preventDefault() {} });
+    expect(nodes().find((node) => node.className === 'run-date-picker-title').textContent).toBe('December 2026');
+    expect(day('2026-12-06').disabled).toBe(true);
+
+    day('2026-12-02').dispatch('click');
+    expect(get('run-param-date').value).toBe('2026-12-02');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--date', '2026-12-02']);
+
+    toggle.dispatch('click');
+    const clear = get('run-param-date-calendar').descendants().find((node) => node.textContent === 'Clear');
+    clear.dispatch('click');
+    expect(get('run-param-date').value).toBe('');
+  });
+
+  it('opens the calendar on the current month and closes it with Escape', () => {
+    const { client, get, job } = loadClient('admin');
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    const toggle = get('run-param-date').pickerToggle;
+    toggle.dispatch('click');
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const panel = get('run-param-date-calendar');
+    expect(panel.descendants().find((node) => node.getAttribute('data-date') === today).getAttribute('aria-current')).toBe('date');
+    let stopped = false;
+    panel.listeners.keydown[0]({ key: 'Escape', preventDefault() {}, stopPropagation() { stopped = true; } });
+    expect(stopped).toBe(true);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('prefills a repeated run and keeps parameters absent from it switched off', () => {
     const { client, get, job, parse } = loadClient('admin');
     client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {}, initialValues: parse({ date: '2026-11-14' }) });
@@ -296,6 +356,9 @@ describe('Run parameters editor', () => {
     setValue(get('run-parameter-0-max'), '20261231');
     setValue(get('run-parameter-0-default'), '2026-06-30');
     expect(get('run-parameter-0-max').value).toBe('2026-12-31');
+    get('run-parameter-0-default').pickerToggle.dispatch('click');
+    get('run-parameter-0-default-calendar').descendants().find((node) => node.getAttribute('data-date') === '2026-06-30').dispatch('click');
+    expect(get('run-parameter-0-default').value).toBe('2026-06-30');
     expect(client.readEditor()[0]).toEqual({
       name: 'date', flag: '--date', type: 'date', label: 'Date', min: '2026-01-01', max: '2026-12-31', default: '2026-06-30',
     });

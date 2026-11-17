@@ -176,7 +176,7 @@
     var column = el('div', columnClass || 'col-md-6');
     var label = el('label', 'form-label', labelText);
     label.setAttribute('for', id);
-    control.id = id;
+    (control.fieldInput || control).id = id;
     column.append(label, control);
     return column;
   }
@@ -220,7 +220,190 @@
     var input = isoDateInput(el('input', 'form-control'));
     input.value = state[key] === undefined || state[key] === null ? '' : String(state[key]);
     input.addEventListener('input', function() { state[key] = input.value; });
-    return input;
+    return withDatePicker(input, {});
+  }
+
+  /* ---------------- Date picker ----------------
+   * Always in English, independent of the browser language (the native calendar follows the
+   * browser locale). It only fills the ISO text field; validation stays with the shared rules. */
+
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+  var activePicker = null;
+
+  function pad(number) {
+    return (number < 10 ? '0' : '') + number;
+  }
+
+  function isoFromParts(year, month, day) {
+    return year + '-' + pad(month + 1) + '-' + pad(day);
+  }
+
+  function parseIso(value) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    if (!match) return null;
+    var date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    return date.getUTCMonth() === Number(match[2]) - 1 ? date : null;
+  }
+
+  function addDaysIso(iso, days) {
+    var date = parseIso(iso);
+    date.setUTCDate(date.getUTCDate() + days);
+    return isoFromParts(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  }
+
+  function todayIso() {
+    var now = new Date();
+    return isoFromParts(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  function outOfRange(picker, iso) {
+    return Boolean((picker.limits.min && iso < picker.limits.min) || (picker.limits.max && iso > picker.limits.max));
+  }
+
+  function fireInput(input) {
+    if (typeof Event === 'function' && input.dispatchEvent) input.dispatchEvent(new Event('input', { bubbles: true }));
+    else if (input.dispatch) input.dispatch('input');
+  }
+
+  function pickerButton(className, text, label, onClick) {
+    var button = el('button', className, text);
+    button.type = 'button';
+    if (label) button.setAttribute('aria-label', label);
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  function closeDatePicker(restoreFocus) {
+    if (!activePicker) return;
+    var picker = activePicker;
+    activePicker = null;
+    picker.wrapper.replaceChildren(picker.group);
+    picker.toggle.setAttribute('aria-expanded', 'false');
+    if (document.removeEventListener) document.removeEventListener('mousedown', picker.outside, true);
+    if (restoreFocus) picker.toggle.focus();
+  }
+
+  function selectDate(picker, iso) {
+    picker.input.value = iso;
+    fireInput(picker.input);
+    closeDatePicker(true);
+  }
+
+  function moveFocus(picker, iso) {
+    picker.focusIso = iso;
+    var date = parseIso(iso);
+    picker.year = date.getUTCFullYear();
+    picker.month = date.getUTCMonth();
+    renderDatePicker(picker);
+    if (picker.buttons[iso]) picker.buttons[iso].focus();
+  }
+
+  function onDayKey(picker, iso, event) {
+    var steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    if (Object.prototype.hasOwnProperty.call(steps, event.key)) {
+      event.preventDefault();
+      moveFocus(picker, addDaysIso(iso, steps[event.key]));
+    }
+  }
+
+  function changeMonth(picker, delta) {
+    var month = picker.month + delta;
+    picker.year += Math.floor(month / 12);
+    picker.month = ((month % 12) + 12) % 12;
+    renderDatePicker(picker);
+  }
+
+  function renderDatePicker(picker) {
+    var title = el('span', 'run-date-picker-title', MONTHS[picker.month] + ' ' + picker.year);
+    title.setAttribute('aria-live', 'polite');
+    var header = el('div', 'run-date-picker-header');
+    header.append(
+      pickerButton('btn btn-sm btn-link run-date-picker-nav', '‹', 'Previous month', function() { changeMonth(picker, -1); }),
+      title,
+      pickerButton('btn btn-sm btn-link run-date-picker-nav', '›', 'Next month', function() { changeMonth(picker, 1); })
+    );
+
+    var grid = el('div', 'run-date-picker-grid');
+    WEEKDAYS.forEach(function(day) { grid.appendChild(el('span', 'run-date-picker-weekday', day)); });
+    var offset = (new Date(Date.UTC(picker.year, picker.month, 1)).getUTCDay() + 6) % 7;
+    for (var blank = 0; blank < offset; blank += 1) grid.appendChild(el('span', ''));
+    var days = new Date(Date.UTC(picker.year, picker.month + 1, 0)).getUTCDate();
+    var today = todayIso();
+    var focusInMonth = picker.focusIso && picker.focusIso.slice(0, 7) === isoFromParts(picker.year, picker.month, 1).slice(0, 7);
+    picker.buttons = {};
+    for (var day = 1; day <= days; day += 1) {
+      (function(iso, number) {
+        var button = pickerButton('run-date-picker-day', String(number), number + ' ' + MONTHS[picker.month] + ' ' + picker.year, function() {
+          selectDate(picker, iso);
+        });
+        button.setAttribute('data-date', iso);
+        button.disabled = outOfRange(picker, iso);
+        button.setAttribute('aria-pressed', iso === picker.input.value ? 'true' : 'false');
+        if (iso === today) button.setAttribute('aria-current', 'date');
+        button.tabIndex = (focusInMonth ? iso === picker.focusIso : number === 1) ? 0 : -1;
+        button.addEventListener('keydown', function(event) { onDayKey(picker, iso, event); });
+        picker.buttons[iso] = button;
+        grid.appendChild(button);
+      })(isoFromParts(picker.year, picker.month, day), day);
+    }
+
+    var footer = el('div', 'run-date-picker-footer');
+    var todayButton = pickerButton('btn btn-sm btn-outline-secondary', 'Today', null, function() { selectDate(picker, today); });
+    todayButton.disabled = outOfRange(picker, today);
+    footer.append(todayButton, pickerButton('btn btn-sm btn-link', 'Clear', null, function() { selectDate(picker, ''); }));
+    picker.panel.replaceChildren(header, grid, footer);
+  }
+
+  function openDatePicker(picker) {
+    closeDatePicker(false);
+    var start = parseIso(picker.input.value) ? picker.input.value : todayIso();
+    if (picker.limits.min && start < picker.limits.min) start = picker.limits.min;
+    if (picker.limits.max && start > picker.limits.max) start = picker.limits.max;
+    picker.panel = el('div', 'run-date-picker shadow');
+    picker.panel.id = picker.input.id + '-calendar';
+    picker.panel.setAttribute('role', 'dialog');
+    picker.panel.setAttribute('aria-label', 'Choose date');
+    picker.panel.addEventListener('keydown', function(event) {
+      if (event.key !== 'Escape') return;
+      // Close only the calendar, not the surrounding modal.
+      event.preventDefault();
+      event.stopPropagation();
+      closeDatePicker(true);
+    });
+    picker.wrapper.append(picker.panel);
+    picker.toggle.setAttribute('aria-expanded', 'true');
+    activePicker = picker;
+    if (document.addEventListener) document.addEventListener('mousedown', picker.outside, true);
+    moveFocus(picker, start);
+  }
+
+  // Wraps a date input in an input group with a calendar button. limits: { min, max } in ISO.
+  function withDatePicker(input, limits) {
+    var wrapper = el('div', 'run-date-field');
+    var group = el('div', 'input-group');
+    var toggle = el('button', 'btn btn-outline-secondary run-date-toggle');
+    toggle.type = 'button';
+    toggle.setAttribute('aria-label', tr('runParameterOpenCalendar'));
+    toggle.title = tr('runParameterOpenCalendar');
+    toggle.setAttribute('aria-haspopup', 'dialog');
+    toggle.setAttribute('aria-expanded', 'false');
+    var icon = el('i', 'bi bi-calendar3');
+    icon.setAttribute('aria-hidden', 'true');
+    toggle.appendChild(icon);
+    group.append(input, toggle);
+    wrapper.appendChild(group);
+    var picker = { input: input, toggle: toggle, wrapper: wrapper, group: group, limits: limits || {}, buttons: {} };
+    picker.outside = function(event) {
+      if (!wrapper.contains(event.target)) closeDatePicker(false);
+    };
+    toggle.addEventListener('click', function() {
+      if (activePicker === picker) closeDatePicker(true);
+      else openDatePicker(picker);
+    });
+    input.pickerToggle = toggle;
+    wrapper.fieldInput = input;
+    return wrapper;
   }
 
   function selectInput(state, key, choices, onChange) {
@@ -355,6 +538,7 @@
   }
 
   function renderEditor() {
+    closeDatePicker(false);
     var container = document.getElementById('job-run-parameters');
     if (!container) return;
     container.replaceChildren();
@@ -533,7 +717,7 @@
       }
       input.value = value === null || value === undefined ? '' : String(value);
       if (definition.required) input.required = true;
-      group.appendChild(input);
+      group.appendChild(definition.type === 'date' ? withDatePicker(input, { min: definition.min, max: definition.max }) : input);
       var flagHint = el('div', 'form-text', tr('runParameterArgument', { flag: definition.flag }));
       flagHint.id = id + '-flag';
       described.push(flagHint.id);
@@ -549,6 +733,7 @@
     }
     if (!allowed) {
       input.disabled = true;
+      if (input.pickerToggle) input.pickerToggle.disabled = true;
       var role = el('div', 'form-text text-warning-emphasis', tr('runParameterRequiresRole', { role: tr(definition.min_role) }));
       role.id = id + '-role';
       described.push(role.id);
@@ -580,6 +765,7 @@
     if (options.environment) subtitle.push(options.environment.runtime_type, options.environment.target_id);
     document.getElementById('run-parameters-task').textContent = subtitle.join(' · ');
     var fields = document.getElementById('run-parameters-fields');
+    closeDatePicker(false);
     fields.replaceChildren();
     runState.definitions.forEach(function(definition) {
       fields.appendChild(renderRunField(definition, options.initialValues));
