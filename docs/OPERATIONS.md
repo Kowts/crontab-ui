@@ -56,6 +56,11 @@ changes already written to persistent files.
 
 **B. Backup restore** (corruption, or an incompatible or irreversible data change):
 
+Open a saved file from the **Backups** menu to preview its tasks, schedule, enabled
+state and last modification time. Expand **Details** to inspect a legacy command or
+structured script and its argument array. This preview is read-only; use **Restore
+backup** to start the existing confirmation flow.
+
 1. Stop the service as above.
 2. Restore the pre-upgrade backup in the UI, or copy the saved `crontab.db` back into the volume.
 3. Start the previous pinned image tag, check `/diagnostics` and republish the schedule.

@@ -2694,6 +2694,35 @@ describe('Crontab UI', () => {
   });
 
   describe('Backup recovery', () => {
+    it.each(['en', 'pt'])('renders a readable, escaped backup preview in %s for both execution modes', async (locale) => {
+      const { dictionaries, translate } = require('../config/i18n');
+      const html = await require('ejs').renderFile(path.join(__dirname, '..', 'views', 'restore.ejs'), {
+        locale,
+        t: (key, values) => translate(locale, key, values),
+        routes: JSON.stringify(require('../routes').routes),
+        crontabs: JSON.stringify([
+          { _id: 'legacy-preview', name: '<img src=x onerror=alert(1)>', command: 'echo <unsafe>', schedule: '* * * * *', stopped: true, timestamp: '2026-11-16T23:48:37Z' },
+          { _id: 'structured-preview', name: 'Structured preview', execution_mode: 'structured',
+            structured_execution: { script_path: '/opt/probes/check.py', arguments: ['<argument>'] },
+            schedule: '0 0 1 1 *', stopped: false, timestamp: '2026-11-16T23:48:37Z' },
+        ]),
+        backups: [], db: 'backup-preview.db', currentRole: 'admin',
+        currentPage: 'backups', authProvider: 'env', authEnabled: false,
+        csrfToken: '', mailProfileIds: [], messages: JSON.stringify(dictionaries[locale]),
+      });
+      expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+      expect(html).toContain('echo &lt;unsafe&gt;');
+      expect(html).toContain('/opt/probes/check.py');
+      expect(html).toContain('&lt;argument&gt;');
+      expect(html).toContain(translate(locale, 'disabled'));
+      expect(html).toContain(translate(locale, 'active'));
+      expect(html).toContain(translate(locale, 'backupRestoreHint'));
+      expect(html).toContain('datetime="2026-11-16T23:48:37.000Z"');
+      expect(html).not.toContain('table-primary');
+      expect(html).toContain('data-action="restore-backup" data-db="backup-preview.db"');
+      expect(html).toContain('data-action="delete-backup" data-db="backup-preview.db"');
+    });
+
     it('should restore a persisted job from a backup', async () => {
       await request(app).post('/save').send({
         _id: -1, name: 'recovery-job', command: 'echo recover',

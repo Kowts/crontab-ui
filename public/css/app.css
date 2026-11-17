@@ -131,6 +131,33 @@ div.dt-container div.jobs-search-cell input { display: block; min-width: 0; max-
 .app-card .table thead th { color: #5a6a83; font-size: .78rem; font-weight: 750; text-transform: uppercase; letter-spacing: .045em; }
 .job-meta { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
 .job-meta:empty { margin-top: 0; }
+.backup-filename { overflow-wrap: anywhere; }
+.backup-preview .card-heading p { margin: .4rem 0 0; color: var(--app-muted); font-size: .88rem; }
+.backup-table { min-width: 760px; table-layout: fixed; }
+.backup-table th:first-child { width: 30%; }
+.backup-table th:nth-child(2) { width: 22%; }
+.backup-table th:nth-child(3) { width: 15%; }
+.backup-table th:nth-child(4) { width: 13%; }
+.backup-table th:last-child { width: 20%; }
+.backup-table th[scope="row"] { font-weight: 400; }
+.backup-task-name { display: block; overflow-wrap: anywhere; font-size: .94rem; }
+.backup-task-id { display: block; margin-top: .35rem; color: var(--app-muted); overflow-wrap: anywhere; font-size: .73rem; font-family: var(--bs-font-monospace); }
+.backup-mode, .backup-modified { font-size: .84rem; }
+.backup-execution { margin-top: .35rem; font-size: .82rem; }
+.backup-execution summary { width: fit-content; color: var(--app-primary); cursor: pointer; }
+.backup-execution code { display: block; margin-top: .5rem; color: var(--app-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.backup-execution pre { margin: .4rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-ink); font-size: inherit; }
+.backup-schedule { color: var(--app-ink); white-space: nowrap; }
+.backup-table-scroll:focus-visible, .backup-execution summary:focus-visible { outline: 2px solid var(--app-primary); outline-offset: -2px; }
+.backup-restore-notice { display: flex; gap: .65rem; padding: 1rem 1.5rem; border-top: 1px solid var(--app-border); color: var(--app-muted); font-size: .86rem; }
+.backup-restore-notice > i { color: var(--app-primary); }
+.backup-restore-notice p { margin: 0; max-width: 75ch; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0 1.5rem 1.25rem; }
+.backup-actions .btn-outline-danger { margin-left: auto; }
+@media (max-width: 575px) {
+  .backup-actions { flex-direction: column; }
+  .backup-actions .btn-outline-danger { margin-left: 0; }
+}
 .job-name-row { display: flex; align-items: flex-start; gap: .4rem; }
 .job-name-row > strong { min-width: 0; overflow-wrap: anywhere; }
 .job-state { display: inline-flex; align-items: center; gap: .32rem; padding: .2rem .46rem; border-radius: 999px; font-size: .72rem; font-weight: 700; line-height: 1.2; }
