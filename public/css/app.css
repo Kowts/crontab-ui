@@ -212,6 +212,11 @@ div.dt-container div.jobs-search-cell input { display: block; min-width: 0; max-
 .structured-argument-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 40px); gap: .5rem; align-items: center; }
 .structured-argument-action { width: 40px; height: 40px; padding: 0; }
 .structured-execution-preview { min-height: 5rem; max-height: 12rem; overflow: auto; padding: .75rem; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-subtle); color: var(--app-ink); font-size: .82rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run-parameter-definition { padding: .75rem; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-surface); }
+.run-parameter-definition-header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .5rem; }
+.run-parameter-definition-title { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.run-parameters-confirm { padding: .75rem 1rem; border: 1px solid var(--bs-warning-border-subtle); border-left-width: 4px; border-radius: 6px; background: var(--bs-warning-bg-subtle); color: var(--bs-warning-text-emphasis); }
+#executions-table code { white-space: normal; overflow-wrap: anywhere; }
 .job-status { display: flex; align-items: center; min-height: 42px; padding: .65rem .8rem; border: 1px solid #cfdced; border-radius: 9px; color: var(--app-ink); background: #fbfdff; }
 .job-status::before { content: ""; width: .48rem; height: .48rem; margin-right: .55rem; border-radius: 50%; background: var(--app-success); }
 .schedule-section { margin-top: 1.5rem; padding-top: 1.3rem; border-top: 1px solid var(--app-border); }

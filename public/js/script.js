@@ -11,6 +11,11 @@ function tr(key, values) {
   });
 }
 
+// The run parameters client is optional, so pages and tests without it keep working.
+function runParametersClient() {
+  return typeof CrontabRunParameters !== 'undefined' ? CrontabRunParameters : null;
+}
+
 function csrfToken() {
 var match = document.cookie.match(/(?:^|; )crontab_ui_csrf=([^;]+)/);
 return match ? decodeURIComponent(match[1]) : '';
@@ -31,6 +36,11 @@ function initPage() {
   if (i18nState) i18n = JSON.parse(i18nState.textContent);
   if (jobs) crontabs = JSON.parse(jobs.textContent);
   if (routeState) routes = JSON.parse(routeState.textContent);
+  var roleState = document.getElementById('role-state');
+  if (runParametersClient()) {
+    runParametersClient().init({ tr: tr, role: roleState ? JSON.parse(roleState.textContent) : null });
+    runParametersClient().bind();
+  }
   if (env) {
     var environmentValue = JSON.parse(env.textContent);
     $('#env_vars').val(environmentValue);
@@ -387,10 +397,25 @@ function startJob(_id) {
 }
 
 function runJob(_id) {
+  var job = crontabs.find(function(item) { return item._id === _id; });
+  if (runParametersClient() && runParametersClient().hasRunParameters(job)) {
+    openRunParameters(job);
+    return;
+  }
   messageBox('<p>' + tr('runTaskBody') + '</p>', tr('runTaskTitle'), tr('run'), tr('cancel'), function() {
     $.post(routes.run, {_id: _id}, function(result) {
       trackManualRun(_id, result.operationId);
     }).fail(handleOperationFailure);
+  });
+}
+
+function openRunParameters(job, initialValues) {
+  var environmentId = job.structured_execution && job.structured_execution.environment_id;
+  runParametersClient().openRunForm(job, {
+    environment: executionEnvironments.find(function(item) { return item.id === environmentId; }) || null,
+    initialValues: initialValues,
+    runUrl: routes.run,
+    onStarted: function(operationId) { trackManualRun(job._id, operationId); },
   });
 }
 
@@ -670,6 +695,7 @@ function fillStructuredExecution(execution) {
   $('#job-working-directory').val(execution.working_directory || '');
   $('#job-timeout').val(execution.timeout_ms === undefined ? 300000 : execution.timeout_ms);
   renderStructuredArguments(Array.isArray(execution.arguments) ? execution.arguments : []);
+  if (runParametersClient()) runParametersClient().fillEditor(execution.run_parameters || []);
   updateStructuredPreview();
 }
 
@@ -681,6 +707,7 @@ function updateStructuredPreview() {
   var script = $('#job-script-path').val();
   var args = readStructuredArguments();
   output.textContent = JSON.stringify(environment ? [environment.executable_path, script].concat(args) : [script].concat(args), null, 2);
+  if (runParametersClient()) runParametersClient().setEditorTarget(environment ? environment.target_id : null);
   var warning = document.getElementById('job-environment-warning');
   if (!warning) return;
   if (!environment) {
@@ -707,6 +734,7 @@ function saveTask(payload, mode) {
         timeout_ms: Number($('#job-timeout').val()),
         environment_variables: {},
       };
+      if (runParametersClient()) payload.structured_execution.run_parameters = runParametersClient().readEditor();
     }
     payload.execution_mode = 'structured';
     delete payload.command;
@@ -897,6 +925,7 @@ function renderExecutions(panel) {
       ? runtime.version + ' @ ' + runtime.hostname + ' (PID ' + runtime.pid + ') ' + runtime.codeHash.slice(0, 12)
       : tr('unavailable'));
     if (runtime) runnerCell.title = 'SHA-256: ' + runtime.codeHash;
+    row.appendChild(runParametersCell(panel, run));
     row.appendChild(runnerCell);
     body.appendChild(row);
   });
@@ -923,6 +952,39 @@ function renderExecutions(panel) {
       }
     });
   }
+}
+
+// Active parameter values of a manual run, with a shortcut to run the task again with them.
+function runParametersCell(panel, run) {
+  var cell = document.createElement('td');
+  var job = crontabs.find(function(item) { return item._id === panel.jobId; });
+  var definitions = job && job.structured_execution ? job.structured_execution.run_parameters : null;
+  var formatted = runParametersClient() && run.runParameters
+    ? runParametersClient().formatValues(definitions, run.runParameters) : '';
+  if (!formatted) {
+    cell.textContent = '—';
+    return cell;
+  }
+  var code = document.createElement('code');
+  code.textContent = formatted;
+  cell.appendChild(code);
+  if (runParametersClient().hasRunParameters(job) && !job.stopped && job.permissions && job.permissions.execute) {
+    var repeat = document.createElement('button');
+    repeat.type = 'button';
+    repeat.className = 'btn btn-sm btn-outline-secondary ms-2';
+    repeat.title = tr('runParametersRepeat');
+    repeat.setAttribute('aria-label', tr('runParametersRepeat'));
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-arrow-repeat';
+    icon.setAttribute('aria-hidden', 'true');
+    repeat.appendChild(icon);
+    repeat.addEventListener('click', function() {
+      getModal('executions-modal').hide();
+      openRunParameters(job, run.runParameters);
+    });
+    cell.appendChild(repeat);
+  }
+  return cell;
 }
 
 function showExecutions(jobId) {

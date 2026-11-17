@@ -16,8 +16,11 @@
 <script src="<%= JSON.parse(routes).root %>js/dataTables.min.js"></script>
 <script src="<%= JSON.parse(routes).root %>js/dataTables.bootstrap5.min.js"></script>
 <script src="<%= JSON.parse(routes).root %>vendor/cronstrue/cronstrue-i18n.min.js"></script>
+<script src="<%= JSON.parse(routes).root %>vendor/run-parameter-rules.js"></script>
+<script src="<%= JSON.parse(routes).root %>js/run-parameters.js"></script>
 <script src="<%= JSON.parse(routes).root %>js/script.js"></script>
 <script id="crontabs-state" type="application/json"><%- crontabs %></script>
+<script id="role-state" type="application/json"><%- JSON.stringify(currentRole || null) %></script>
 <script id="routes-state" type="application/json"><%- routes %></script>
 <script id="env-state" type="application/json"><%- env %></script>
 <script id="i18n-state" type="application/json"><%- messages %></script>

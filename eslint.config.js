@@ -44,6 +44,7 @@ module.exports = [
         config: 'readonly',
         routes: 'writable',
         crontabs: 'writable',
+        CrontabRunParameters: 'readonly',
       },
     },
     rules: {
@@ -66,6 +67,24 @@ module.exports = [
     },
     rules: {
       'no-unused-vars': 'off',
+      'no-var': 'off',
+      'prefer-const': 'off',
+      'strict': 'off',
+    },
+  },
+  {
+    files: ['public/js/run-parameters.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.jquery,
+        bootstrap: 'readonly',
+        module: 'readonly',
+      },
+    },
+    rules: {
       'no-var': 'off',
       'prefer-const': 'off',
       'strict': 'off',

@@ -70,4 +70,4 @@ function validateRoleAssignments(users, roles) {
   }
 }
 
-module.exports = { configuredRoles, requireRole, roleForRequest, validateRoleAssignments, operatorTaskPrivilegesEnabled };
+module.exports = { ROLE_LEVEL, configuredRoles, requireRole, roleForRequest, validateRoleAssignments, operatorTaskPrivilegesEnabled };

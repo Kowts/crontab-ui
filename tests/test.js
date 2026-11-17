@@ -1087,8 +1087,9 @@ describe('Crontab UI', () => {
       context.renderExecutions({ history: runs, consecutiveFailures: 0 });
       const rows = elements['executions-body'].children;
       expect(rows[0].children[5].textContent).toBe('120m 0s');
-      expect(rows[0].children[6].textContent).toContain('0.5.2 @ worker-1 (PID 123)');
-      expect(rows[0].children[6].title).toBe('SHA-256: ' + 'a'.repeat(64));
+      expect(rows[0].children[6].textContent).toBe('—');
+      expect(rows[0].children[7].textContent).toContain('0.5.2 @ worker-1 (PID 123)');
+      expect(rows[0].children[7].title).toBe('SHA-256: ' + 'a'.repeat(64));
       expect(rows[1].children[5].textContent).toBe('unavailable');
       runs[0].runtime.timeoutMs = 0;
       context.renderExecutions({ history: runs, consecutiveFailures: 0 });
@@ -1177,6 +1178,7 @@ describe('Crontab UI', () => {
             { version: '0001_execution_environments' },
             { version: '0002_native_local_target' },
             { version: '0003_sqlite_users' },
+            { version: '0004_execution_run_parameters' },
           ]);
 
         expect(datastore.listExecutionTargets().map((target) => [target.id, target.healthStatus]))
@@ -5458,6 +5460,117 @@ describe('Run parameters on structured tasks', () => {
       structured_execution: validateStructuredTask({ ...definition, run_parameters: runParameters }, 300000),
     };
     expect(scheduledFingerprint(withParameters)).not.toBe(scheduledFingerprint(job));
+  });
+});
+
+describe('Run parameters through the manual run API', () => {
+  const originalUsers = process.env.BASIC_AUTH_USERS_JSON;
+  const originalRoles = process.env.AUTHZ_ROLE_MAP_JSON;
+  const runParameters = [
+    { name: 'date', flag: '--date', type: 'date', label: 'Processing date' },
+    { name: 'delete', flag: '--delete', type: 'flag', label: 'Delete existing records', confirm: true, min_role: 'operator' },
+    { name: 'no_mail', flag: '--no-mail', type: 'flag', label: 'Skip email' },
+  ];
+
+  afterAll(() => {
+    if (originalUsers === undefined) delete process.env.BASIC_AUTH_USERS_JSON;
+    else process.env.BASIC_AUTH_USERS_JSON = originalUsers;
+    if (originalRoles === undefined) delete process.env.AUTHZ_ROLE_MAP_JSON;
+    else process.env.AUTHZ_ROLE_MAP_JSON = originalRoles;
+  });
+
+  async function parameterisedJob(owner) {
+    const created = await request(app).post('/api/execution-environments').send({
+      code: `api-params-${crypto.randomUUID().slice(0, 8)}`, name: 'API parameter runtime', runtime_type: 'python',
+      target_id: 'container-local', executable_path: '/opt/etl/main-env/bin/python',
+    }).expect(201);
+    const structured = validateStructuredTask({
+      environment_id: created.body.id, script_path: '/opt/etl/main.py', arguments: [], timeout_ms: 60000,
+      run_parameters: runParameters,
+    }, 300000);
+    return new Promise((resolve, reject) => crontab.create_new(
+      `api-params-${crypto.randomUUID().slice(0, 8)}`, undefined, '0 2 * * *', false, {}, { owner, createdBy: owner },
+      (error, job) => (error ? reject(error) : resolve(job)), structured,
+    ));
+  }
+
+  it('requires an exact confirmation of the active destructive parameters', async () => {
+    const job = await parameterisedJob('local');
+    const run = (body) => request(app).post('/runjob').send({ _id: job._id, ...body });
+    try {
+      const missing = await run({ parameters: { delete: true } }).expect(409);
+      expect(missing.body).toMatchObject({ code: 'RUN_PARAMETER_CONFIRMATION_REQUIRED', parameters: ['delete'] });
+      await run({ parameters: { no_mail: true }, confirmed: ['delete'] }).expect(409)
+        .expect(({ body }) => expect(body).toMatchObject({ code: 'RUN_PARAMETER_CONFIRMATION_REQUIRED', parameters: [] }));
+      // Confirmed and valid: the request reaches the executor, which refuses the unvalidated environment.
+      await run({ parameters: { date: '2026-11-15', delete: true }, confirmed: ['delete'] }).expect(409)
+        .expect(({ body }) => expect(body.code).toBe('ENVIRONMENT_NOT_VALIDATED'));
+      await run({ parameters: { date: 'tomorrow' } }).expect(422)
+        .expect(({ body }) => expect(body).toMatchObject({ code: 'INVALID_RUN_PARAMETERS', parameter: 'date' }));
+      await run({ parameters: { delete: true }, confirmed: 'delete' }).expect(400);
+      await run({ parameters: {}, confirmed: [42] }).expect(400);
+    } finally {
+      await request(app).post('/remove').send({ _id: job._id }).expect(200);
+    }
+  });
+
+  it('keeps the URL-encoded run request for tasks without parameters', async () => {
+    const job = await new Promise((resolve, reject) => crontab.create_new(
+      'api-params-plain', 'echo plain', '* * * * *', false, {}, {}, (error, created) => (error ? reject(error) : resolve(created)),
+    ));
+    try {
+      await request(app).post('/runjob').send({ _id: job._id, parameters: { date: '2026-11-15' } }).expect(422)
+        .expect(({ body }) => expect(body.code).toBe('RUN_PARAMETERS_NOT_ACCEPTED'));
+      const started = await request(app).post('/runjob').type('form').send({ _id: job._id }).expect(202);
+      for (let attempt = 0; attempt < 100 && crontab.getManualRun(started.body.operationId)?.status === 'running'; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(crontab.getManualRun(started.body.operationId).status).not.toBe('running');
+    } finally {
+      await request(app).post('/remove').send({ _id: job._id }).expect(200);
+    }
+  });
+
+  it('serves the shared rules to the browser and renders the run form and editor', async () => {
+    const script = await request(app).get('/vendor/run-parameter-rules.js').expect(200)
+      .expect('Content-Type', /javascript/);
+    // Objects are built inside the browser context, as the page does, so they share its prototypes.
+    const browser = { window: {}, input: JSON.stringify(runParameters) };
+    vm.runInNewContext(script.text, browser);
+    const tokens = vm.runInNewContext(`(() => {
+      const rules = window.CrontabRunParameterRules;
+      const definitions = rules.validateRunParameterDefinitions(JSON.parse(input));
+      return JSON.stringify(rules.resolveRunParameters(definitions, JSON.parse('{"delete":true}'), []).tokens);
+    })()`, browser);
+    expect(JSON.parse(tokens)).toEqual(['--delete']);
+
+    const page = await request(app).get('/').expect(200);
+    for (const marker of ['vendor/run-parameter-rules.js', 'js/run-parameters.js', 'id="role-state"',
+      'id="run-parameters-modal"', 'id="job-run-parameters"', 'id="job-add-run-parameter"']) {
+      expect(page.text).toContain(marker);
+    }
+    expect(page.text).toMatch(/<script id="role-state" type="application\/json">"admin"<\/script>/);
+    const { dictionaries } = require('../config/i18n');
+    expect(Object.keys(dictionaries.pt).sort()).toEqual(Object.keys(dictionaries.en).sort());
+  });
+
+  it('enforces the minimum role of each active parameter for a signed-in executor', async () => {
+    process.env.BASIC_AUTH_USERS_JSON = JSON.stringify({ runner: 'runner-secret' });
+    process.env.AUTHZ_ROLE_MAP_JSON = JSON.stringify({ runner: 'executor' });
+    const authedApp = createApp();
+    const client = request.agent(authedApp);
+    await client.post('/login').send({ username: 'runner', password: 'runner-secret' }).expect(302);
+    const job = await parameterisedJob('runner');
+    try {
+      const forbidden = await client.post('/runjob').send({ _id: job._id, parameters: { delete: true }, confirmed: ['delete'] }).expect(403);
+      expect(forbidden.body).toMatchObject({ code: 'RUN_PARAMETER_FORBIDDEN', parameter: 'delete' });
+      await client.post('/runjob').send({ _id: job._id, parameters: { date: '2026-11-15', no_mail: true } }).expect(409)
+        .expect(({ body }) => expect(body.code).toBe('ENVIRONMENT_NOT_VALIDATED'));
+      const refusals = crontab.searchAudit({ jobId: job._id, type: 'manual_run', status: 'rejected' }, 10);
+      expect(refusals).toEqual([expect.objectContaining({ actor: 'runner', errorCode: 'RUN_PARAMETER_FORBIDDEN' })]);
+    } finally {
+      await request(app).post('/remove').send({ _id: job._id }).expect(200);
+    }
   });
 });
 

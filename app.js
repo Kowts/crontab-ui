@@ -20,12 +20,7 @@ const packageJson = require('./package.json');
 const { base_url: baseUrl, routes } = require('./routes');
 const setupAuth = require('./middleware/auth');
 const { authenticatedUsers, getAuthProvider } = require('./middleware/auth');
-const {
-  configuredRoles,
-  requireRole,
-  roleForRequest,
-  validateRoleAssignments,
-} = require('./middleware/authorization');
+const { configuredRoles, requireRole, roleForRequest, validateRoleAssignments, ROLE_LEVEL } = require('./middleware/authorization');
 const csrfProtection = require('./middleware/csrf');
 const errorHandler = require('./middleware/error');
 const {
@@ -54,6 +49,10 @@ const {
 } = require('./config/execution-environments');
 
 dayjs.extend(relativeTime);
+
+const runParameterRulesScript = `(function () {\nvar module = { exports: {} };\n${
+  fs.readFileSync(require.resolve('./config/run-parameters'), 'utf8')
+}\nwindow.CrontabRunParameterRules = module.exports;\n})();\n`;
 
 function createApp({ setCrontab = crontab.set_crontab, probeMailProfile = sendTestMessage, readInstalledCrontab = crontab.get_installed_crontab } = {}) {
 const app = express();
@@ -255,6 +254,11 @@ app.use((req, res, next) => {
 // The public root also serves its own css, js, images and fonts subdirectories.
 app.use(baseUrl, express.static(path.join(__dirname, 'public')));
 app.use(`${baseUrl}/vendor/cronstrue`, express.static(path.join(__dirname, 'node_modules', 'cronstrue', 'dist')));
+// The browser uses the same run parameter rules as the server, so the run form previews and
+// validates exactly what the server will compose. The CommonJS module is wrapped once here.
+app.get(`${baseUrl}/vendor/run-parameter-rules.js`, (_req, res) => {
+  res.type('application/javascript').set('Cache-Control', 'no-cache').send(runParameterRulesScript);
+});
 
 // Static assets are cacheable and do not consume the quota reserved for application operations.
 app.use(rateLimit({
@@ -676,15 +680,50 @@ app.post(routes.remove, requireRole('operator'), validateIdParam, requireJobAcce
   });
 });
 
+function runParameterRefusal(message, statusCode, code, details = {}) {
+  return Object.assign(new Error(message), { statusCode, code, ...details });
+}
+
+// Server-side checks for the active run parameters: the minimum role of each one and an explicit
+// confirmation, by name, of exactly the active parameters that require it.
+function authorizeRunParameters(req, confirmed) {
+  return (resolved) => {
+    const role = roleForRequest(req);
+    const forbidden = resolved.active.find((parameter) => !role || ROLE_LEVEL[role] < ROLE_LEVEL[parameter.min_role]);
+    if (forbidden) {
+      throw runParameterRefusal(`Parameter ${forbidden.name} requires the ${forbidden.min_role} role`, 403,
+        'RUN_PARAMETER_FORBIDDEN', { parameter: forbidden.name });
+    }
+    const required = resolved.active.filter((parameter) => parameter.confirm).map((parameter) => parameter.name);
+    const given = new Set(confirmed);
+    const missing = required.filter((name) => !given.has(name));
+    if (missing.length || given.size !== required.length) {
+      throw runParameterRefusal('Confirm the destructive parameters before running the task', 409,
+        'RUN_PARAMETER_CONFIRMATION_REQUIRED', { parameters: required });
+    }
+  };
+}
+
 app.post(routes.run, requireRole('executor'), validateIdParam, requireJobAccess('execute'), auditOperation('request_run_job', (req) => ({ jobId: req.body._id })), (req, res) => {
-  crontab.startManualRun(req.body._id, {
+  const confirmed = req.body.confirmed === undefined ? [] : req.body.confirmed;
+  if (!Array.isArray(confirmed) || confirmed.length > 20
+    || confirmed.some((name) => typeof name !== 'string' || name.length > 32)) {
+    return res.status(400).json({ message: 'Invalid parameter confirmation' });
+  }
+  return crontab.startManualRun(req.body._id, {
     requestId: req.requestId,
     actor: req.auth?.user || (app.locals.authEnabled ? null : 'local'),
     sourceIp: req.ip,
   }, (err, result) => {
-    if (err) return res.status(err.statusCode || 500).json({ message: err.message || 'Job execution failed' });
+    if (err) {
+      const body = { message: err.message || 'Job execution failed' };
+      if (err.code) body.code = err.code;
+      if (err.parameter) body.parameter = err.parameter;
+      if (err.parameters) body.parameters = err.parameters;
+      return res.status(err.statusCode || 500).json(body);
+    }
     return res.status(202).json(result);
-  });
+  }, { parameters: req.body.parameters, authorizeParameters: authorizeRunParameters(req, confirmed) });
 });
 
 app.get(routes.run_status, requireRole('viewer'), (req, res) => {
