@@ -37,7 +37,7 @@ const {
 const { getProfile, listProfileIds, validateAllProfiles, validateProfileId } = require('./config/mail-profiles');
 const { normaliseMailing } = require('./config/alert-policy');
 const { requireBoundedNumber, useCommandTimeoutMs } = require('./config/limits');
-const { validateStructuredTask } = require('./config/structured-tasks');
+const { assertRunParametersSupported, validateStructuredTask } = require('./config/structured-tasks');
 const { probeExecutionEnvironment } = require('./lib/structured-execution');
 const { LocalAgentClient } = require('./lib/agent-client');
 const { hashPassword } = require('./config/passwords');
@@ -608,10 +608,16 @@ app.post(routes.save, requireRole('operator'), requireSaveAccess, auditOperation
     try {
       structuredExecution = validateStructuredTask(req.body.structured_execution, useCommandTimeoutMs());
     } catch (error) {
-      return res.status(error.statusCode || 422).json({ message: error.message });
+      return res.status(error.statusCode || 422).json(structuredErrorBody(error));
     }
-    if (!crontab.getExecutionEnvironment(structuredExecution.environment_id)) {
+    const environment = crontab.getExecutionEnvironment(structuredExecution.environment_id);
+    if (!environment) {
       return res.status(422).json({ message: 'Execution environment does not exist' });
+    }
+    try {
+      assertRunParametersSupported(structuredExecution, environment.targetId);
+    } catch (error) {
+      return res.status(error.statusCode).json(structuredErrorBody(error));
     }
   }
   // The accepted fields, the bounds and the stored shape all come from one place, so a task can
@@ -691,6 +697,13 @@ app.get(routes.run_status, requireRole('viewer'), (req, res) => {
     return res.json(run);
   });
 });
+
+function structuredErrorBody(error) {
+  const body = { message: error.message };
+  if (error.code) body.code = error.code;
+  if (error.parameter) body.parameter = error.parameter;
+  return body;
+}
 
 function executionEnvironmentActor(req) {
   return req.auth?.user || (app.locals.authEnabled ? null : 'local');

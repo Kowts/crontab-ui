@@ -26,7 +26,7 @@ const {
   readUsersFromFile,
   validateUserRecords,
 } = require('./lib/database');
-const { validateStructuredTask } = require('./config/structured-tasks');
+const { assertRunParametersSupported, validateStructuredTask } = require('./config/structured-tasks');
 const { validateEnvironmentPayload: validateExecutionEnvironmentPayload } = require('./config/execution-environments');
 const { persistSchedule } = require('./lib/schedule-store');
 const { createLogThrottle } = require('./lib/log-throttle');
@@ -1114,7 +1114,7 @@ function isPlainObject(value) {
     && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function validateImportedJob(document, { preserveMetadata = false, environmentIds = new Set() } = {}) {
+function validateImportedJob(document, { preserveMetadata = false, environmentIds = new Set(), environmentTargets = new Map() } = {}) {
   if (!isPlainObject(document)) throw new Error('Imported record must be an object');
   for (const key of Object.keys(document)) {
     if (['__proto__', 'constructor', 'prototype'].includes(key)) {
@@ -1148,6 +1148,11 @@ function validateImportedJob(document, { preserveMetadata = false, environmentId
     }
     if (!environmentIds.has(structuredExecution.environment_id)) {
       throw new Error('Imported structured job references an unknown execution environment');
+    }
+    try {
+      assertRunParametersSupported(structuredExecution, environmentTargets.get(structuredExecution.environment_id));
+    } catch (error) {
+      throw new Error(`Imported structured job is invalid: ${error.message}`);
     }
   }
   if (typeof document.schedule !== 'string' || document.schedule.length > 128 || /[\r\n]/.test(document.schedule)) {
@@ -1330,8 +1335,9 @@ exports.normalise_database = (temporaryFile, callback, options = {}) => {
       const sourceUsers = options.preserveUsers ? readUsersFromFile(temporaryFile) : null;
       const userRecords = sourceUsers === null ? null : validateUserRecords(sourceUsers);
       const environmentIds = new Set(catalog.environments.map((environment) => environment.id));
+      const environmentTargets = new Map(catalog.environments.map((environment) => [environment.id, environment.target_id]));
       const jobs = readJobsFromFile(temporaryFile).map((document) => {
-        const job = validateImportedJob(document, { ...options, environmentIds });
+        const job = validateImportedJob(document, { ...options, environmentIds, environmentTargets });
         return options.preserveMetadata ? job : { ...job, _id: crypto.randomUUID() };
       });
       createDatabaseFile(normalisedFile, jobs, catalog, userRecords);

@@ -2672,6 +2672,59 @@ describe('Crontab UI', () => {
       }
     });
 
+    async function writeStructuredCandidate(targetId, runParameters) {
+      const file = path.join(testDbPath, `normalise-run-parameters-${crypto.randomUUID()}.db`);
+      createDatabaseFile(file, []);
+      const datastore = new SqliteDatastore({ filename: file });
+      const environment = datastore.createExecutionEnvironment({
+        id: crypto.randomUUID(), code: `python-${crypto.randomUUID().slice(0, 8)}`, name: 'Python ETL', runtimeType: 'python',
+        targetId, executablePath: '/opt/etl/python', defaultWorkingDirectory: '/opt/etl',
+        description: '', enabled: true, actor: 'admin', now: Date.now(),
+      });
+      const job = {
+        _id: `run-parameters-${crypto.randomUUID().slice(0, 8)}`, name: 'Parameterised import', schedule: '0 2 * * *',
+        execution_mode: 'structured',
+        structured_execution: {
+          environment_id: environment.id, script_path: '/opt/etl/main.py', working_directory: '/opt/etl',
+          arguments: ['--verbose'], timeout_ms: 60000, environment_variables: {}, run_parameters: runParameters,
+        },
+      };
+      await new Promise((resolve, reject) => datastore.insert(job, (error) => error ? reject(error) : resolve()));
+      datastore.close();
+      return file;
+    }
+
+    it('preserves and normalises run parameters of an imported structured task', async () => {
+      const file = await writeStructuredCandidate('container-local', [
+        { name: 'date', flag: '--date', type: 'date', label: 'Processing date' },
+      ]);
+      try {
+        await normalise(file);
+        expect(records(file)[0].structured_execution.run_parameters).toEqual([{
+          name: 'date', flag: '--date', type: 'date', label: 'Processing date', help: null, required: false,
+          confirm: false, min_role: 'executor', style: 'separate', min: null, max: null, default: null,
+        }]);
+      } finally {
+        fs.rmSync(file, { force: true });
+      }
+    });
+
+    it('rejects imported run parameters that are invalid or target the Ubuntu agent', async () => {
+      const invalid = await writeStructuredCandidate('container-local', [
+        { name: 'verbose', flag: '--verbose', type: 'flag', label: 'Verbose' },
+      ]);
+      const agent = await writeStructuredCandidate('ubuntu-local', [
+        { name: 'date', flag: '--date', type: 'date', label: 'Processing date' },
+      ]);
+      try {
+        await expect(normalise(invalid)).rejects.toThrow(/fixed arguments/);
+        await expect(normalise(agent)).rejects.toThrow(/not supported by this execution target/);
+      } finally {
+        fs.rmSync(invalid, { force: true });
+        fs.rmSync(agent, { force: true });
+      }
+    });
+
     it('adds native-local when normalising a catalog from the previous v0.7 schema', async () => {
       const file = path.join(testDbPath, `normalise-pre-native-${crypto.randomUUID()}.db`);
       createDatabaseFile(file, []);
@@ -5201,6 +5254,94 @@ describe('Audit redaction and search', () => {
     const res = await request(app).get('/audit').query({ jobId: marker });
     expect(res.status).toBe(200);
     expect(res.body.records).toEqual([expect.objectContaining({ jobId: marker })]);
+  });
+});
+
+describe('Run parameters on structured tasks', () => {
+  const runParameters = [
+    { name: 'date', flag: '--date', type: 'date', label: 'Processing date' },
+    { name: 'delete', flag: '--delete', type: 'flag', label: 'Delete existing records', confirm: true, min_role: 'operator' },
+  ];
+
+  async function createEnvironment(targetId) {
+    const created = await request(app).post('/api/execution-environments').send({
+      code: `params-${crypto.randomUUID().slice(0, 8)}`, name: 'Parameter test runtime', runtime_type: 'python',
+      target_id: targetId, executable_path: '/opt/etl/main-env/bin/python',
+    }).expect(201);
+    return created.body.id;
+  }
+
+  function taskPayload(environmentId, overrides = {}) {
+    return {
+      _id: '-1', name: `Parameterised ${crypto.randomUUID().slice(0, 8)}`, schedule: '0 2 * * *', logging: false, mailing: {},
+      execution_mode: 'structured',
+      structured_execution: {
+        environment_id: environmentId, script_path: '/opt/etl/main.py', working_directory: '/opt/etl',
+        arguments: ['--verbose'], timeout_ms: 60000, environment_variables: {}, run_parameters: runParameters,
+        ...overrides,
+      },
+    };
+  }
+
+  async function findJob(name) {
+    const jobs = await new Promise((resolve) => crontab.crontabs(resolve));
+    return jobs.find((job) => job.name === name);
+  }
+
+  it('stores normalised run parameters and leaves tasks without parameters in their previous shape', async () => {
+    const environmentId = await createEnvironment('container-local');
+    const withParameters = taskPayload(environmentId);
+    await request(app).post('/save').send(withParameters).expect(200);
+    const stored = await findJob(withParameters.name);
+    expect(stored.structured_execution.run_parameters).toEqual([
+      expect.objectContaining({ name: 'date', style: 'separate', default: null, min_role: 'executor' }),
+      expect.objectContaining({ name: 'delete', confirm: true, min_role: 'operator', default: false }),
+    ]);
+    expect(stored.saved).toBe(false);
+
+    const withoutParameters = taskPayload(environmentId, { run_parameters: [] });
+    await request(app).post('/save').send(withoutParameters).expect(200);
+    const plain = await findJob(withoutParameters.name);
+    expect(plain.structured_execution).not.toHaveProperty('run_parameters');
+
+    await request(app).post('/remove').send({ _id: stored._id }).expect(200);
+    await request(app).post('/remove').send({ _id: plain._id }).expect(200);
+  });
+
+  it('rejects invalid definitions with the offending parameter and refuses the Ubuntu agent target', async () => {
+    const containerId = await createEnvironment('container-local');
+    const collision = await request(app).post('/save')
+      .send(taskPayload(containerId, { arguments: ['--date', '2026-11-15'] })).expect(422);
+    expect(collision.body).toMatchObject({ code: 'INVALID_RUN_PARAMETERS', parameter: 'date' });
+    expect(collision.body.message).toMatch(/fixed arguments/);
+
+    const unsupportedType = await request(app).post('/save').send(taskPayload(containerId, {
+      run_parameters: [{ name: 'secret', flag: '--secret', type: 'password', label: 'Secret' }],
+    })).expect(422);
+    expect(unsupportedType.body).toMatchObject({ code: 'INVALID_RUN_PARAMETERS', parameter: 'secret' });
+
+    const agentId = await createEnvironment('ubuntu-local');
+    const agent = await request(app).post('/save').send(taskPayload(agentId)).expect(422);
+    expect(agent.body).toMatchObject({ code: 'RUN_PARAMETERS_UNSUPPORTED_TARGET' });
+    const agentPlain = taskPayload(agentId, { run_parameters: [] });
+    await request(app).post('/save').send(agentPlain).expect(200);
+    await request(app).post('/remove').send({ _id: (await findJob(agentPlain.name))._id }).expect(200);
+  });
+
+  it('includes run parameters in the native scheduled-dispatch fingerprint', () => {
+    const { scheduledFingerprint } = require('../lib/native-dispatch');
+    const definition = {
+      environment_id: crypto.randomUUID(), script_path: '/opt/etl/main.py', arguments: [], timeout_ms: 1000,
+    };
+    const job = {
+      _id: 'fingerprint-job', schedule: '0 2 * * *', execution_mode: 'structured',
+      structured_execution: validateStructuredTask(definition, 300000),
+    };
+    const withParameters = {
+      ...job,
+      structured_execution: validateStructuredTask({ ...definition, run_parameters: runParameters }, 300000),
+    };
+    expect(scheduledFingerprint(withParameters)).not.toBe(scheduledFingerprint(job));
   });
 });
 

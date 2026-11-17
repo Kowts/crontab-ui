@@ -1,10 +1,23 @@
 'use strict';
 
 const { destinationPath } = require('./execution-environments');
+const { validateRunParameterDefinitions } = require('./run-parameters');
 
 const taskFields = new Set([
-  'environment_id', 'script_path', 'working_directory', 'arguments', 'timeout_ms', 'environment_variables',
+  'environment_id', 'script_path', 'working_directory', 'arguments', 'timeout_ms', 'environment_variables', 'run_parameters',
 ]);
+
+// Tasks whose environment runs through the Ubuntu agent cannot declare run parameters:
+// the agent validates arguments positionally against its own root-managed policy.
+const RUN_PARAMETERS_UNSUPPORTED_TARGETS = new Set(['ubuntu-local']);
+
+function assertRunParametersSupported(definition, targetId) {
+  if (definition?.run_parameters?.length && RUN_PARAMETERS_UNSUPPORTED_TARGETS.has(targetId)) {
+    throw Object.assign(new Error('Run parameters are not supported by this execution target'), {
+      statusCode: 422, code: 'RUN_PARAMETERS_UNSUPPORTED_TARGET',
+    });
+  }
+}
 
 function validateStructuredTask(value, maximumTimeoutMs) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -34,7 +47,8 @@ function validateStructuredTask(value, maximumTimeoutMs) {
     || Object.keys(environmentVariables).length !== 0) {
     throw Object.assign(new Error('Per-task environment variables are not supported'), { statusCode: 422 });
   }
-  return {
+  const runParameters = validateRunParameterDefinitions(value.run_parameters, args);
+  const definition = {
     environment_id: value.environment_id,
     script_path: scriptPath,
     working_directory: workingDirectory,
@@ -42,6 +56,9 @@ function validateStructuredTask(value, maximumTimeoutMs) {
     timeout_ms: timeoutMs,
     environment_variables: {},
   };
+  // Stored only when declared, so tasks without parameters keep their v0.7.0 shape and fingerprint.
+  if (runParameters.length) definition.run_parameters = runParameters;
+  return definition;
 }
 
-module.exports = { validateStructuredTask };
+module.exports = { assertRunParametersSupported, validateStructuredTask };
