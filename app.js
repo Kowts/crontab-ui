@@ -976,6 +976,11 @@ app.get(routes.restore, requireRole('admin'), validateBackupParam, (req, res) =>
       routes: serializeForHtml(routes),
       crontabs: serializeForHtml(docs),
       backups: crontab.get_backup_names(),
+      currentRole: 'admin',
+      authProvider: app.locals.authProvider,
+      currentPage: 'backups',
+      csrfToken: req.csrfToken || '',
+      mailProfileIds: listProfileIds(),
       db: req.dbName,
       messages: serializeForHtml(dictionaries[res.locals.locale]),
     });

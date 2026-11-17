@@ -2704,6 +2704,12 @@ describe('Crontab UI', () => {
       const backup = fs.readdirSync(testDbPath)
         .filter((file) => file.startsWith('backup-')).sort().at(-1);
       expect(backup).toBeTruthy();
+      const preview = await request(app).get(`/restore?db=${encodeURIComponent(backup)}`);
+      expect(preview.status).toBe(200);
+      expect(preview.text).toContain('data-action="restore-backup"');
+      expect(preview.text).toContain(`data-db="${backup}"`);
+      expect(preview.text).toContain('href="/execution-environments"');
+      expect(preview.text).toContain('<option value="operations">operations</option>');
       const restored = await request(app).post(`/restore_backup?db=${encodeURIComponent(backup)}`);
       expect(restored.status).toBe(200);
       const page = await request(app).get('/');
