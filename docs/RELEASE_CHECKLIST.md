@@ -106,6 +106,23 @@ the tagged commit changes.
 - Required before release: an independent Ubuntu VM drill covering the rows above, with environment, image digest, date, operator and outputs recorded.
 - The Windows development session validates JavaScript, API, SQLite, HMAC and policy logic only; it does not prove Linux UDS permissions, C wrapper compilation, systemd delegation or cgroup behaviour.
 
+#### Isolated Native Linux drill reported on 2026-11-16
+
+- Environment: Ubuntu 24.04.4, kernel 6.8.0-136-generic, systemd 255.4, Node 20.20.0, Python 3.12; independent validation service and database, not production.
+- Cleanup fix tested: `2e3c4c24c5f0b65c97daf74ba332658967d77471`. The runtime still reports package version 0.6.3; no v0.7.0 tag or image is approved by these results.
+- Manual and cron-triggered samples passed interpreter, working-directory, UID 994 and delegated execution-cgroup checks. Configured limits: 64 MiB RAM, 25% CPU and 8 PIDs.
+- Timeout, descendant termination, parent-exit cleanup, CPU quota, PID exhaustion, cancellation and graceful service stop passed for both triggers. Measured parent-exit cgroup removal after the fix: 0.947 s manual and 0.944 s scheduled.
+- Memory OOM passed for both triggers only with the validation service's runtime `MemorySwapMax=0`. With swap allowed, the sample survived; RAM limits alone do not prohibit swap. Restoration of the temporary swap setting still needs confirmation.
+- Forced-stop recovery passed: manual operation `a3f5e13d-ee32-4880-871f-5cafd709e73a` became `interrupted` / `service_restart`; scheduled operation `09055b60-62da-45d8-b2ed-4dafabd6b3d9` became `unknown` / `agent_restart`. Recorded task PIDs and cgroups were absent. Resubmitting the scheduled ID retained its state and timestamps without a new cgroup.
+- Limitation: `systemctl kill --kill-whom=all --signal=SIGKILL` returned auxiliary-process `EINVAL` in both forced-stop trials. The journal confirms main-process SIGKILL and recovery evidence above; the command itself did not complete cleanly and the cause remains unresolved.
+- Concurrent submissions and post-completion replay of operation `725acf96-d52f-4e02-86d8-660581668238` returned the same ID/result; execution completed with exit 0 in 20391 ms, and no cgroup reappeared.
+- Fingerprint conflict (409), incorrect HMAC key (401), arbitrary command payload (400), disabled task (409), unpublished task (409) and disabled environment (409) were rejected without creating an operation or execution cgroup.
+- Invalid environment validation status was also rejected with 409 and no operation/cgroup: operation `bf181335-e562-4e42-9b58-9ac4012da823`. Restoration of the original interpreter and successful revalidation must be confirmed before further execution.
+- Disconnect-after-send operation `37d32716-66d8-4205-a307-87b6e772e339` was reconciled by query only, without resubmission or replacement UUID; exit 0 in 20433 ms.
+- Legacy command manual and scheduled executions passed with exit 0, history and expected output; durations 7 ms and 15 ms, effective timeout 30 s. Email was not tested. The operator subsequently confirmed an empty validation crontab.
+- Local checks on the cleanup commit: lint, 382 tests, coverage thresholds, production dependency audit (zero vulnerabilities) and whitespace checks passed. Coverage: 75.64% lines/statements, 73.60% branches and 79.66% functions. An initial run encountered port collisions and a backup timeout; the direct sequential Vitest rerun passed. This does not substitute for CI on the release commit.
+- Still required: production-like sanitised backup/restore and user/recovery contracts, final UID/GID and allowed-root review, remaining deployment/rollback gates above, release metadata and green CI. The optional Ubuntu agent has a separate gate; these Native results do not approve it.
+
 #### Native Linux evidence reported on 2026-11-15
 
 - Operator-reported systemd: 255 (255.4-1ubuntu8.18), unified cgroup v2. Ubuntu release was not provided.
