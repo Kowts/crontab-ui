@@ -26,7 +26,9 @@ See [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for the evidence.
 - Isolated Ubuntu Native manual/scheduled drills and SQLite migration, access,
   recovery and provider rollback were exercised; evidence is in the checklist.
 - The prior validated checkout passed 384 tests and coverage thresholds on Ubuntu.
-  Final release-commit CI is required separately.
+  CI ([run 44000235544](https://github.com/Kowts/crontab-ui/actions/runs/44000235544)) and the
+  Release workflow ([run 44000513586](https://github.com/Kowts/crontab-ui/actions/runs/44000513586))
+  passed for the tagged commit `9170e0c`.
 - Synthetic legacy-data Docker recovery and v0.6.3 rollback passed. This does not
   establish downgrade compatibility for structured tasks or SQLite user data.
 - The forced-stop drill's systemctl command returned an auxiliary-process EINVAL;
