@@ -6,7 +6,7 @@
 **Idioma de implementação e documentação:** português europeu (PT-PT)
 **Base funcional:** Crontab UI v0.7.0 (`9170e0c`)
 **Repositório:** https://github.com/Kowts/crontab-ui
-**Estado:** para revisão e implementação incremental; não implica código já implementado
+**Estado:** implementado no ramo `main` (etapas 1–7); ainda não publicado em release
 
 ---
 
@@ -170,7 +170,7 @@ O pedido URL-encoded sem `parameters` continua aceite para tarefas sem parâmetr
 
 ### 6.3 Histórico
 
-A resposta de `GET /executions` passa a incluir `run_parameters` (objecto ou `null`) para cada execução.
+Cada entrada de `history` em `GET /executions` passa a incluir `runParameters` (objecto com os valores activos, ou `null`), seguindo a convenção camelCase das restantes propriedades da resposta.
 
 ## 7. Segurança e RBAC
 
@@ -212,7 +212,11 @@ Tarefas sem parâmetros mantêm a execução directa.
 - O painel de execuções mostra os parâmetros activos de cada execução manual (ex.: `--date 2026-11-15 --delete`).
 - Acção **Repetir com estes valores**: abre o modal preenchido; os valores são revalidados com a definição actual e os que já não forem válidos são assinalados.
 
-### 8.4 Acessibilidade e i18n
+### 8.4 Regras partilhadas com o browser
+
+O browser usa o mesmo módulo `config/run-parameters.js` que o servidor, servido em `/vendor/run-parameter-rules.js` (embrulhado uma vez no arranque e exposto como `window.CrontabRunParameterRules`). A pré-visualização e os erros junto dos campos são, por isso, os mesmos que o servidor produz. O cliente vive em `public/js/run-parameters.js` (`window.CrontabRunParameters`) e é opcional para `public/js/script.js`. O perfil actual chega ao cliente em `#role-state`, apenas para reflectir o resultado na interface.
+
+### 8.5 Acessibilidade e i18n
 
 Rótulos visíveis, `aria-describedby` para ajuda e erros, foco inicial no primeiro campo, navegação por teclado. Todas as strings novas em `config/i18n.js` (EN e PT). As etiquetas definidas pelo administrador não são traduzidas.
 

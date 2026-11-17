@@ -193,7 +193,9 @@ The host agent is a separate, non-root Ubuntu systemd service. Install it only a
 
 The agent is not part of `/healthz` availability and is not required for legacy tasks. `/diagnostics` reports it as an optional component. If its socket is unavailable, structured host dispatch is recorded as unavailable/unknown and is never rerun automatically. After an agent restart, check the local operation journal and business system before deciding whether an `unknown` task should be manually submitted again.
 
-The agent and structured container executor have not yet passed an Ubuntu operational drill in this development environment. Do not enable them for production until the UDS permissions, HMAC replay protection, wrapper compilation, systemd restart, cgroup limits, descendant cancellation, backup/restore and a non-destructive ETL scenario have all been verified on Linux.
+The agent and structured executor were validated operationally on Linux: UDS permissions, HMAC replay protection, wrapper compilation, systemd restart, cgroup limits, descendant cancellation, backup/restore and a non-destructive ETL scenario. Evidence is in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md#6-drill-records).
+
+Structured tasks can declare manual run parameters (see [EXECUTION_ENVIRONMENTS.md](EXECUTION_ENVIRONMENTS.md#parâmetros-de-execução-manual)). Migration `0004_execution_run_parameters` adds `executions.run_parameters`; it is additive and needs no manual step. Version 0.7.0 rejects tasks that declare run parameters, so before an application rollback to 0.7.0 remove the parameters from those tasks or restore a backup taken before they were added.
 
 ## Scheduling behaviour and examples
 

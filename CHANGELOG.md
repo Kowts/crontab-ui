@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Manual run parameters for structured tasks: the task defines typed parameters (flag, date, list, integer, text with a mandatory format) and **Run** opens a form that previews the argv and sends only values. The server validates the values again, composes them after the fixed arguments without a shell, enforces a minimum role per parameter and an explicit confirmation for destructive options.
+- Execution history and audit events record the effective parameter values (migration `0004_execution_run_parameters`); a past run can be repeated with the same values.
+- `docs/CRONTAB_UI_V0.8.0_RUN_PARAMETERS_SDD.md`: specification of the feature.
+
+### Changed
+
+- `POST /runjob` accepts a JSON body with `parameters` and `confirmed`; URL-encoded requests for tasks without parameters are unchanged.
+- The execution history table has a **Parameters** column.
+
+### Not supported
+
+- Run parameters on scheduled runs, on `command` tasks and on the Ubuntu agent target (`ubuntu-local`).
+
 ## [0.7.0]
 
 ### Release status

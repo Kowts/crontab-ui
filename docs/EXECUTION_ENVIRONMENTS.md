@@ -144,13 +144,33 @@ Instalar a unidade em `/etc/systemd/system/`, executar `systemctl daemon-reload`
 - Cancelamento envia SIGTERM ao grupo e mata o cgroup após o período de graça.
 - A conclusão aguarda a limpeza do cgroup: depois de `cgroup.kill`, espera `populated 0` e repete remoções transitoriamente ocupadas, até 2000 ms. Uma falha de limpeza é registada explicitamente e não é reportada como execução bem-sucedida. A validação real da remoção e do prazo continua obrigatória no Ubuntu.
 
+## Parâmetros de execução manual
+
+Uma tarefa estruturada em `container-local` ou `native-local` pode declarar até 20 parâmetros em `structured_execution.run_parameters`. A definição pertence à tarefa; cada execução manual fornece apenas valores. A especificação completa está em [CRONTAB_UI_V0.8.0_RUN_PARAMETERS_SDD.md](CRONTAB_UI_V0.8.0_RUN_PARAMETERS_SDD.md).
+
+| Tipo | Valor aceite | Argumentos emitidos |
+| --- | --- | --- |
+| `flag` | `true`/`false` | a flag, apenas quando `true` |
+| `date` | data `AAAA-MM-DD` válida, opcionalmente entre `min` e `max` | `--flag valor` ou `--flag=valor` |
+| `select` | um dos valores definidos | idem |
+| `integer` | inteiro entre `min` e `max` | idem |
+| `text` | valor que cumpre o `pattern` obrigatório, até `max_length` | idem |
+
+- O `argv` final é `[script, ...argumentos fixos, ...parâmetros activos pela ordem da definição]`, executado sem shell e sujeito aos limites existentes (100 argumentos, 16000 caracteres).
+- Valores de `select` e `text` não podem começar por `-` nem conter caracteres de controlo. Flags não podem repetir-se nem coincidir com um argumento fixo.
+- `confirm: true` obriga o pedido a confirmar, pelo nome, exactamente os parâmetros activos que o exigem. `min_role` (`executor`, `operator`, `admin`) é verificado no servidor para cada parâmetro activo.
+- Recusas: 422 `INVALID_RUN_PARAMETERS` ou `RUN_PARAMETERS_NOT_ACCEPTED`; 403 `RUN_PARAMETER_FORBIDDEN`; 409 `RUN_PARAMETER_CONFIRMATION_REQUIRED` ou `RUN_PARAMETERS_UNSUPPORTED_TARGET`. Cada recusa fica na auditoria como `manual_run` com `status: rejected`, sem iniciar a execução.
+- Os valores activos ficam em `executions.run_parameters` (migração `0004_execution_run_parameters`) e nos eventos `manual_run`, com `parametersDigest`. Execuções agendadas registam `NULL`.
+- Alterar a definição altera o fingerprint do agendamento nativo e exige nova publicação, como qualquer alteração à tarefa.
+- `ubuntu-local` recusa `run_parameters` ao gravar, importar, restaurar e executar: a política do agente valida argumentos por posição e o schema definido na interface não a pode alargar.
+
 ## Backup, restauro e rollback
 
 Os backups SQLite incluem tarefas, destinos, ambientes e histórico de validação. Importar bases legadas sem catálogo cria apenas os destinos locais predefinidos. Em importação/restore, o destino host volta a `unavailable`; não se confia no último estado online guardado no backup.
 
 O merge de importação preserva ambientes existentes; conflito de código ou revisão/runtime incompatível é rejeitado. O replace substitui tarefas e catálogo na mesma transacção. O estado local do agente e processos em execução não são restaurados por um backup central.
 
-Antes de actualizar, criar e verificar backup. Rollback de imagem só é suportado se o esquema for compatível; caso contrário, parar serviços e restaurar backup/imagem compatíveis. Não assumir que voltar à imagem anterior desfaz uma migração.
+A v0.7.0 não reconhece `run_parameters`: antes de voltar a essa versão, remover os parâmetros das tarefas ou restaurar um backup anterior à sua criação. Antes de actualizar, criar e verificar backup. Rollback de imagem só é suportado se o esquema for compatível; caso contrário, parar serviços e restaurar backup/imagem compatíveis. Não assumir que voltar à imagem anterior desfaz uma migração.
 
 ## Validação operacional
 
