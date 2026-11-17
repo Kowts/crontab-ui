@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { CgroupManager } = require('../lib/agent-cgroups');
+const { CgroupManager, prepareNativeCgroupRoot } = require('../lib/agent-cgroups');
 const { LocalAgentStore } = require('../lib/agent-store');
 const { validateAgentPolicy } = require('../lib/local-agent-policy');
 const { createAgentServer } = require('../agent/server');
@@ -42,8 +42,10 @@ function start() {
   const wrapperPath = process.env.CRONTAB_UI_AGENT_EXEC_WRAPPER || '/usr/local/libexec/crontab-ui-agent-exec';
   const policy = readPolicy(policyFile);
   const secret = configuredSecret();
+  const cgroupRoot = prepareNativeCgroupRoot();
   const store = new LocalAgentStore({ filename: path.join(stateDirectory, 'agent.db') });
   const cgroups = new CgroupManager({
+    root: cgroupRoot,
     memoryMaxBytes: policy.memory_max_bytes,
     cpuQuotaPercent: policy.cpu_quota_percent,
     pidsMax: policy.pids_max,

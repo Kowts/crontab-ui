@@ -124,6 +124,54 @@ describe('Execution environment validation', () => {
   });
 });
 
+describe('Ubuntu agent startup delegation', () => {
+  it('prepares the empty delegated parent before opening state and uses it for execution groups', () => {
+    const calls = [];
+    const stop = new Error('stop before real agent startup');
+    const context = {
+      module: { exports: {} },
+      process: {
+        platform: 'linux', getuid: () => 994,
+        env: { CRONTAB_UI_AGENT_HMAC_SECRET: 'ab'.repeat(32) },
+      },
+      Buffer,
+      require(name) {
+        if (name === 'fs') return {
+          lstatSync: () => ({ isFile: () => true, isSymbolicLink: () => false, uid: 0, mode: 0o640 }),
+          readFileSync: () => '{}',
+        };
+        if (name === 'path') return path;
+        if (name === '../lib/local-agent-policy') return { validateAgentPolicy: () => ({
+          memory_max_bytes: 67108864, cpu_quota_percent: 25, pids_max: 8,
+        }) };
+        if (name === '../lib/agent-store') return {
+          LocalAgentStore: class { constructor() { calls.push('store'); } },
+        };
+        if (name === '../agent/server') return {};
+        if (name === '../lib/agent-cgroups') return {
+          prepareNativeCgroupRoot() {
+            calls.push('delegation');
+            return '/sys/fs/cgroup/system.slice/crontab-ui-agent.service';
+          },
+          CgroupManager: class {
+            constructor(options) {
+              calls.push(options);
+              throw stop;
+            }
+          },
+        };
+        throw new Error(`Unexpected dependency: ${name}`);
+      },
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../bin/crontab-ui-agent.js'), 'utf8'), context);
+    expect(() => context.module.exports.start()).toThrow(stop);
+    expect(calls).toEqual(['delegation', 'store', {
+      root: '/sys/fs/cgroup/system.slice/crontab-ui-agent.service',
+      memoryMaxBytes: 67108864, cpuQuotaPercent: 25, pidsMax: 8,
+    }]);
+  });
+});
+
 describe('Native systemd cgroup delegation', () => {
   let directory;
   let root;

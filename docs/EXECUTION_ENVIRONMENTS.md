@@ -96,6 +96,10 @@ No encerramento normal, o dispatcher cancela os controladores activos e aguarda 
 - tarefas/scripts e runtime legíveis/executáveis pela conta do agente, mas não graváveis por ela;
 - directórios cgroup `cpu`, `memory` e `pids` delegados à unidade systemd.
 
+O agente requer systemd 254 ou superior e `DelegateSubgroup=crontab-ui-supervisor`.
+O processo supervisor ocupa esse subgrupo; o agente activa os controllers no
+cgroup-pai vazio e cria os grupos de execução como irmãos do supervisor.
+
 Não executar o agente como root, não conceder `sudo`, não expor TCP, Docker socket, SSH genérico ou PID namespace do host.
 
 ### Política independente
