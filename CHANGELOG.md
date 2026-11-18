@@ -9,9 +9,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Manual run parameters for structured tasks: the task defines typed parameters (flag, date, list, integer, text with a mandatory format) and **Run** opens a form that previews the argv and sends only values. The server validates the values again, composes them after the fixed arguments without a shell, enforces a minimum role per parameter and an explicit confirmation for destructive options.
+- Manual run parameters for structured tasks: the task defines typed parameters (flag, date, month, list, integer, text with a mandatory format) and **Run** opens a form that previews the argv and sends only values. The server validates the values again, composes them after the fixed arguments without a shell, enforces a minimum role per parameter and an explicit confirmation for destructive options.
 - Execution history and audit events record the effective parameter values (migration `0004_execution_run_parameters`); a past run can be repeated with the same values.
 - `docs/CRONTAB_UI_V0.8.0_RUN_PARAMETERS_SDD.md`: specification of the feature.
+- `month` parameter type for values such as `--date=2025-12` (`YYYY-MM`, optional limits).
+- Date and month fields are typed as ISO text with an input mask and an English calendar, independent of the browser language.
 
 ### Changed
 

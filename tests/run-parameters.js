@@ -202,6 +202,27 @@ describe('Run parameter resolution', () => {
     expect(resolveRunParameters(definitions, { date: '2024-02-29' }).values.date).toBe('2024-02-29');
   });
 
+  it('accepts months as YYYY-MM, with limits and both argument styles', () => {
+    const [month] = validateRunParameterDefinitions([
+      { name: 'period', flag: '--date', type: 'month', label: 'Period', style: 'equals', min: '2025-01', max: '2026-12', default: '2025-12' },
+    ]);
+    expect(month).toMatchObject({ type: 'month', min: '2025-01', max: '2026-12', default: '2025-12', style: 'equals' });
+    expect(validateRunParameterDefinitions([month])).toEqual([month]);
+    expect(resolveRunParameters([month], {}).tokens).toEqual(['--date=2025-12']);
+    expect(resolveRunParameters([month], { period: '2026-01' }).values.period).toBe('2026-01');
+    const [separate] = validateRunParameterDefinitions([{ name: 'period', flag: '--period', type: 'month', label: 'Period' }]);
+    expect(resolveRunParameters([separate], { period: '2025-12' }).tokens).toEqual(['--period', '2025-12']);
+
+    for (const period of ['2025-13', '2025-00', '2025-1', '2025-12-01', '25-12', '-2025-12', 202512]) {
+      rejects(() => resolveRunParameters([separate], { period }), /valid month \(YYYY-MM\)/, 'period');
+    }
+    rejects(() => resolveRunParameters([month], { period: '2024-12' }), /month range/, 'period');
+    rejects(() => resolveRunParameters([month], { period: '2027-01' }), /month range/, 'period');
+    rejects(() => validateRunParameterDefinitions([{ name: 'p', flag: '--p', type: 'month', label: 'P', min: '2025-01-01' }]), /invalid min month/, 'p');
+    rejects(() => validateRunParameterDefinitions([{ name: 'p', flag: '--p', type: 'month', label: 'P', min: '2026-02', max: '2026-01' }]), /min month after its max month/, 'p');
+    rejects(() => validateRunParameterDefinitions([{ name: 'p', flag: '--p', type: 'month', label: 'P', options: [] }]), /unsupported field options/, 'p');
+  });
+
   it('validates integers, selects and text values without allowing argument injection', () => {
     const mixed = validateRunParameterDefinitions([
       { name: 'batch', flag: '--batch', type: 'integer', label: 'Batch', min: -5, max: 500 },

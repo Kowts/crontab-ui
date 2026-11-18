@@ -98,7 +98,7 @@ Exemplo: o processo *Pagamentos Siebel* corre diariamente sem argumentos, mas ac
 | --- | --- |
 | `name` | `^[a-z][a-z0-9_]{0,31}$`, único na tarefa |
 | `flag` | `^--?[A-Za-z0-9][A-Za-z0-9-]{0,62}$`, único; não pode coincidir com um token dos argumentos fixos |
-| `type` | `flag`, `date`, `select`, `integer` ou `text` |
+| `type` | `flag`, `date`, `month`, `select`, `integer` ou `text` |
 | `label` | 1–80 caracteres, sem quebras de linha |
 | `help` | opcional, até 200 caracteres |
 | `required` | booleano; proibido em `flag` |
@@ -115,6 +115,7 @@ Limites: no máximo 20 parâmetros por tarefa; campos desconhecidos são recusad
 | --- | --- | --- | --- |
 | `flag` | — | booleano JSON | `[flag]` se `true`; nada se `false` |
 | `date` | `min`, `max` opcionais (`AAAA-MM-DD`) | data de calendário válida `AAAA-MM-DD` | conforme `style` |
+| `month` | `min`, `max` opcionais (`AAAA-MM`) | mês válido `AAAA-MM` (acrescentado após a implementação inicial) | conforme `style` |
 | `select` | `options`: 1–50 `{ value, label }`, valores únicos | um dos `value` definidos | conforme `style` |
 | `integer` | `min` e `max` obrigatórios | inteiro seguro dentro do intervalo | conforme `style` |
 | `text` | `pattern` obrigatório (âncoras implícitas), `max_length` até 256 | string que cumpre o padrão | conforme `style` |
@@ -198,7 +199,7 @@ No modo **Estruturado**, abaixo de **Argumentos**, uma secção opcional **Parâ
 Quando a tarefa tem parâmetros, **Executar** abre um modal em vez de executar de imediato:
 
 - Cabeçalho com nome da tarefa, runtime e destino.
-- Um controlo por parâmetro: `date` → `<input type="date">`, `flag` → checkbox, `select` → `<select>`, `integer` → `<input type="number">`, `text` → `<input type="text">` com `pattern`.
+- Um controlo por parâmetro: `date`/`month` → campo de texto ISO com máscara e calendário em inglês (o `<input type="date">` nativo mostrava o formato regional do browser), `flag` → checkbox, `select` → `<select>`, `integer` → `<input type="number">`, `text` → `<input type="text">` com `pattern`.
 - Parâmetros acima do perfil do utilizador ficam desactivados, com a indicação do perfil necessário.
 - Pré-visualização do `argv` em tempo real (só informativa; o servidor recompõe).
 - Se houver parâmetros activos com `confirm`, aparece um bloco de aviso com uma checkbox de confirmação por parâmetro; **Executar** fica desactivado até estarem todas marcadas.

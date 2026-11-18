@@ -256,6 +256,48 @@ describe('Run parameters form', () => {
     expect(get('run-param-date').value).toBe('');
   });
 
+  it('takes a month as YYYY-MM from the field or from a calendar of months', () => {
+    const { client, get, parse } = loadClient('executor');
+    const job = parse({
+      _id: 'job-3', name: 'Monthly', structured_execution: {
+        environment_id: 'env-1', script_path: '/opt/etl/main.py', arguments: [],
+        run_parameters: [{ name: 'period', flag: '--date', type: 'month', label: 'Period', style: 'equals', min: '2025-03' }],
+      },
+    });
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    const input = get('run-param-period');
+    expect(input.placeholder).toBe('YYYY-MM');
+    expect(input.maxLength).toBe(7);
+    setValue(input, '2025-1');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(get('run-parameters-submit').disabled).toBe(true);
+    setValue(input, '202512');
+    expect(input.value).toBe('2025-12');
+    expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--date=2025-12']);
+    setValue(input, '202502');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+
+    setValue(input, '2025-12');
+    input.pickerToggle.dispatch('click');
+    const panel = get('run-param-period-calendar');
+    const nodes = () => panel.descendants();
+    const cell = (iso) => nodes().find((node) => node.getAttribute('data-date') === iso);
+    expect(panel.getAttribute('aria-label')).toBe('Choose month');
+    expect(nodes().find((node) => node.className === 'run-date-picker-title').textContent).toBe('2025');
+    expect(nodes().filter((node) => node.getAttribute('data-date')).map((node) => node.textContent))
+      .toEqual(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']);
+    expect(cell('2025-02').disabled).toBe(true);
+    expect(cell('2025-12').getAttribute('aria-pressed')).toBe('true');
+    expect(nodes().some((node) => node.textContent === 'This month')).toBe(true);
+
+    // Arrow down moves three months, into the next year.
+    cell('2025-12').listeners.keydown[0]({ key: 'ArrowDown', preventDefault() {} });
+    expect(nodes().find((node) => node.className === 'run-date-picker-title').textContent).toBe('2026');
+    cell('2026-03').dispatch('click');
+    expect(input.value).toBe('2026-03');
+    expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--date=2026-03']);
+  });
+
   it('opens the calendar on the current month and closes it with Escape', () => {
     const { client, get, job } = loadClient('admin');
     client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
@@ -361,6 +403,22 @@ describe('Run parameters editor', () => {
     expect(get('run-parameter-0-default').value).toBe('2026-06-30');
     expect(client.readEditor()[0]).toEqual({
       name: 'date', flag: '--date', type: 'date', label: 'Date', min: '2026-01-01', max: '2026-12-31', default: '2026-06-30',
+    });
+  });
+
+  it('edits month limits and defaults as YYYY-MM', () => {
+    const { client, get } = loadClient('admin');
+    client.fillEditor([]);
+    get('job-add-run-parameter').dispatch('click');
+    setValue(get('run-parameter-0-flag'), '--date');
+    setValue(get('run-parameter-0-label'), 'Period');
+    setValue(get('run-parameter-0-type'), 'month');
+    expect(get('run-parameter-0-min').placeholder).toBe('YYYY-MM');
+    setValue(get('run-parameter-0-min'), '202501');
+    setValue(get('run-parameter-0-default'), '202512');
+    setValue(get('run-parameter-0-style'), 'equals');
+    expect(client.readEditor()[0]).toEqual({
+      name: 'date', flag: '--date', type: 'month', label: 'Period', style: 'equals', min: '2025-01', default: '2025-12',
     });
   });
 

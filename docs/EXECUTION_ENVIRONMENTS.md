@@ -152,10 +152,12 @@ Uma tarefa estruturada em `container-local` ou `native-local` pode declarar até
 | --- | --- | --- |
 | `flag` | `true`/`false` | a flag, apenas quando `true` |
 | `date` | data `AAAA-MM-DD` válida, opcionalmente entre `min` e `max` | `--flag valor` ou `--flag=valor` |
+| `month` | mês `AAAA-MM` válido (ex.: `2025-12`), opcionalmente entre `min` e `max` no mesmo formato | idem (ex.: `--date=2025-12`) |
 | `select` | um dos valores definidos | idem |
 | `integer` | inteiro entre `min` e `max` | idem |
 | `text` | valor que cumpre o `pattern` obrigatório, até `max_length` | idem |
 
+- Datas e meses escrevem-se em ISO (`AAAA-MM-DD`, `AAAA-MM`), com máscara e um calendário em inglês; o formato não depende do idioma do browser.
 - O `argv` final é `[script, ...argumentos fixos, ...parâmetros activos pela ordem da definição]`, executado sem shell e sujeito aos limites existentes (100 argumentos, 16000 caracteres).
 - Valores de `select` e `text` não podem começar por `-` nem conter caracteres de controlo. Flags não podem repetir-se nem coincidir com um argumento fixo.
 - `confirm: true` obriga o pedido a confirmar, pelo nome, exactamente os parâmetros activos que o exigem. `min_role` (`executor`, `operator`, `admin`) é verificado no servidor para cada parâmetro activo.

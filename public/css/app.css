@@ -218,6 +218,8 @@ div.dt-container div.jobs-search-cell input { display: block; min-width: 0; max-
 .run-date-picker-title { font-weight: 650; }
 .run-date-picker-nav { min-width: 2rem; padding: .1rem .5rem; color: var(--app-ink); font-size: 1.25rem; line-height: 1; text-decoration: none; }
 .run-date-picker-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.run-date-picker-months { grid-template-columns: repeat(3, 1fr); gap: .35rem; }
+.run-date-picker-months .run-date-picker-day { padding: .55rem 0; }
 .run-date-picker-weekday { padding: .2rem 0; color: var(--app-muted); font-size: .75rem; font-weight: 600; }
 .run-date-picker-day { padding: .35rem 0; border: 0; border-radius: 6px; background: transparent; color: var(--app-ink); font-size: .875rem; font-variant-numeric: tabular-nums; }
 .run-date-picker-day:hover:not(:disabled) { background: var(--app-canvas); }

@@ -278,7 +278,7 @@ O agente e o executor structured foram validados operacionalmente numa VM Ubuntu
 
 Uma tarefa estruturada pode declarar **parâmetros de execução**: os valores que um operador preenche ao executar a tarefa manualmente. O administrador define cada parâmetro no editor da tarefa (argumento, etiqueta, tipo, valor por omissão, se é obrigatório, se exige confirmação e o perfil mínimo). Quando a tarefa tem parâmetros, **Executar** abre um formulário, mostra a pré-visualização da lista de argumentos resultante e envia apenas valores; o servidor volta a validá-los e acrescenta-os depois dos argumentos fixos, sem shell.
 
-- Tipos de campo: caixa de selecção (flag), data, lista de opções, número inteiro e texto com formato obrigatório. Os valores de texto e de opções não podem começar por `-`, pelo que um valor nunca se transforma noutra flag.
+- Tipos de campo: caixa de selecção (flag), data (`AAAA-MM-DD`), mês (`AAAA-MM`), lista de opções, número inteiro e texto com formato obrigatório. Os valores de texto e de opções não podem começar por `-`, pelo que um valor nunca se transforma noutra flag.
 - As execuções agendadas usam apenas os argumentos fixos. «Obrigatório» aplica-se só à execução manual.
 - Os parâmetros marcados como destrutivos exigem confirmação explícita, verificada pelo servidor. Um parâmetro pode exigir o perfil `operator` ou `admin`.
 - Os valores efectivos ficam no histórico de execuções e na auditoria, e uma execução anterior pode ser repetida com os mesmos valores. Não usar parâmetros para segredos.

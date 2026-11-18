@@ -3,7 +3,7 @@
  * so the preview shows exactly what the server composes. The server always validates again. */
 (function(root) {
   var ROLE_LEVEL = { viewer: 0, executor: 1, operator: 2, admin: 3 };
-  var TYPES = ['flag', 'date', 'select', 'integer', 'text'];
+  var TYPES = ['flag', 'date', 'month', 'select', 'integer', 'text'];
   var ROLES = ['executor', 'operator', 'admin'];
   var context = { tr: function(key) { return key; }, role: null };
   var editorState = [];
@@ -107,7 +107,7 @@
       }
       if (state.required) definition.required = true;
       if (state.style === 'equals') definition.style = 'equals';
-      if (state.type === 'date') {
+      if (isCalendarType(state.type)) {
         if (state.min) definition.min = state.min;
         if (state.max) definition.max = state.max;
       } else if (state.type === 'integer') {
@@ -191,41 +191,52 @@
     return input;
   }
 
-  // Dates are typed as ISO YYYY-MM-DD, the exact value the script receives. The native date
-  // control is avoided because it shows the browser's regional format (e.g. dd/mm/yyyy).
-  function maskIsoDate(value) {
-    var digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+  // Dates and months are typed as ISO text (YYYY-MM-DD, YYYY-MM), the exact value the script
+  // receives. The native date control is avoided because it shows the browser's regional format.
+  var CALENDAR_FORMATS = {
+    date: { placeholder: 'YYYY-MM-DD', length: 10 },
+    month: { placeholder: 'YYYY-MM', length: 7 },
+  };
+
+  function isCalendarType(type) {
+    return Object.prototype.hasOwnProperty.call(CALENDAR_FORMATS, type);
+  }
+
+  function maskIso(value, mode) {
+    var digits = String(value || '').replace(/\D/g, '').slice(0, mode === 'month' ? 6 : 8);
     if (digits.length > 6) return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6);
     if (digits.length > 4) return digits.slice(0, 4) + '-' + digits.slice(4);
     return digits;
   }
 
-  // Configures a text input for ISO dates. Must run before other input listeners are added,
-  // so they read the masked value.
-  function isoDateInput(input) {
+  // Configures a text input for an ISO date or month. Must run before other input listeners are
+  // added, so they read the masked value.
+  function isoCalendarInput(input, mode) {
+    var format = CALENDAR_FORMATS[mode];
     input.type = 'text';
-    input.placeholder = 'YYYY-MM-DD';
-    input.maxLength = 10;
+    input.placeholder = format.placeholder;
+    input.maxLength = format.length;
     input.inputMode = 'numeric';
     input.autocomplete = 'off';
     input.classList.add('font-monospace');
     input.addEventListener('input', function() {
-      var masked = maskIsoDate(input.value);
+      var masked = maskIso(input.value, mode);
       if (masked !== input.value) input.value = masked;
     });
     return input;
   }
 
-  function dateInput(state, key) {
-    var input = isoDateInput(el('input', 'form-control'));
+  function calendarInput(state, key, mode) {
+    var input = isoCalendarInput(el('input', 'form-control'), mode);
     input.value = state[key] === undefined || state[key] === null ? '' : String(state[key]);
     input.addEventListener('input', function() { state[key] = input.value; });
-    return withDatePicker(input, {});
+    return withDatePicker(input, {}, mode);
   }
 
   /* ---------------- Date picker ----------------
    * Always in English, independent of the browser language (the native calendar follows the
-   * browser locale). It only fills the ISO text field; validation stays with the shared rules. */
+   * browser locale). It only fills the ISO text field; validation stays with the shared rules.
+   * Mode "date" shows the days of a month; mode "month" shows the months of a year. */
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   var WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
@@ -236,25 +247,31 @@
   }
 
   function isoFromParts(year, month, day) {
-    return year + '-' + pad(month + 1) + '-' + pad(day);
+    return year + '-' + pad(month + 1) + (day === undefined ? '' : '-' + pad(day));
   }
 
-  function parseIso(value) {
-    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  // Parses a value of the picker's mode into a UTC date (first day for months), or null.
+  function parseValue(mode, value) {
+    var match = mode === 'month' ? /^(\d{4})-(\d{2})$/.exec(value || '') : /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
     if (!match) return null;
-    var date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+    var date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, mode === 'month' ? 1 : Number(match[3])));
     return date.getUTCMonth() === Number(match[2]) - 1 ? date : null;
   }
 
-  function addDaysIso(iso, days) {
-    var date = parseIso(iso);
-    date.setUTCDate(date.getUTCDate() + days);
-    return isoFromParts(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  function formatValue(mode, date) {
+    return isoFromParts(date.getUTCFullYear(), date.getUTCMonth(), mode === 'month' ? undefined : date.getUTCDate());
   }
 
-  function todayIso() {
+  function stepValue(mode, value, steps) {
+    var date = parseValue(mode, value);
+    if (mode === 'month') date.setUTCMonth(date.getUTCMonth() + steps);
+    else date.setUTCDate(date.getUTCDate() + steps);
+    return formatValue(mode, date);
+  }
+
+  function currentValue(mode) {
     var now = new Date();
-    return isoFromParts(now.getFullYear(), now.getMonth(), now.getDate());
+    return isoFromParts(now.getFullYear(), now.getMonth(), mode === 'month' ? undefined : now.getDate());
   }
 
   function outOfRange(picker, iso) {
@@ -292,78 +309,96 @@
 
   function moveFocus(picker, iso) {
     picker.focusIso = iso;
-    var date = parseIso(iso);
+    var date = parseValue(picker.mode, iso);
     picker.year = date.getUTCFullYear();
     picker.month = date.getUTCMonth();
     renderDatePicker(picker);
     if (picker.buttons[iso]) picker.buttons[iso].focus();
   }
 
-  function onDayKey(picker, iso, event) {
-    var steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+  function onCellKey(picker, iso, event) {
+    var row = picker.mode === 'month' ? 3 : 7;
+    var steps = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -row, ArrowDown: row };
     if (Object.prototype.hasOwnProperty.call(steps, event.key)) {
       event.preventDefault();
-      moveFocus(picker, addDaysIso(iso, steps[event.key]));
+      moveFocus(picker, stepValue(picker.mode, iso, steps[event.key]));
     }
   }
 
-  function changeMonth(picker, delta) {
-    var month = picker.month + delta;
-    picker.year += Math.floor(month / 12);
-    picker.month = ((month % 12) + 12) % 12;
+  // Moves the view by one page: a month in date mode, a year in month mode.
+  function changePage(picker, delta) {
+    if (picker.mode === 'month') {
+      picker.year += delta;
+    } else {
+      var month = picker.month + delta;
+      picker.year += Math.floor(month / 12);
+      picker.month = ((month % 12) + 12) % 12;
+    }
     renderDatePicker(picker);
   }
 
+  function pickerCell(picker, iso, text, label, focusable) {
+    var button = pickerButton('run-date-picker-day', text, label, function() { selectDate(picker, iso); });
+    button.setAttribute('data-date', iso);
+    button.disabled = outOfRange(picker, iso);
+    button.setAttribute('aria-pressed', iso === picker.input.value ? 'true' : 'false');
+    if (iso === currentValue(picker.mode)) button.setAttribute('aria-current', 'date');
+    button.tabIndex = focusable ? 0 : -1;
+    button.addEventListener('keydown', function(event) { onCellKey(picker, iso, event); });
+    picker.buttons[iso] = button;
+    return button;
+  }
+
   function renderDatePicker(picker) {
-    var title = el('span', 'run-date-picker-title', MONTHS[picker.month] + ' ' + picker.year);
+    var monthMode = picker.mode === 'month';
+    var title = el('span', 'run-date-picker-title', monthMode ? String(picker.year) : MONTHS[picker.month] + ' ' + picker.year);
     title.setAttribute('aria-live', 'polite');
     var header = el('div', 'run-date-picker-header');
     header.append(
-      pickerButton('btn btn-sm btn-link run-date-picker-nav', '‹', 'Previous month', function() { changeMonth(picker, -1); }),
+      pickerButton('btn btn-sm btn-link run-date-picker-nav', '\u2039', monthMode ? 'Previous year' : 'Previous month', function() { changePage(picker, -1); }),
       title,
-      pickerButton('btn btn-sm btn-link run-date-picker-nav', '›', 'Next month', function() { changeMonth(picker, 1); })
+      pickerButton('btn btn-sm btn-link run-date-picker-nav', '\u203a', monthMode ? 'Next year' : 'Next month', function() { changePage(picker, 1); })
     );
 
-    var grid = el('div', 'run-date-picker-grid');
-    WEEKDAYS.forEach(function(day) { grid.appendChild(el('span', 'run-date-picker-weekday', day)); });
-    var offset = (new Date(Date.UTC(picker.year, picker.month, 1)).getUTCDay() + 6) % 7;
-    for (var blank = 0; blank < offset; blank += 1) grid.appendChild(el('span', ''));
-    var days = new Date(Date.UTC(picker.year, picker.month + 1, 0)).getUTCDate();
-    var today = todayIso();
-    var focusInMonth = picker.focusIso && picker.focusIso.slice(0, 7) === isoFromParts(picker.year, picker.month, 1).slice(0, 7);
+    var grid = el('div', 'run-date-picker-grid' + (monthMode ? ' run-date-picker-months' : ''));
     picker.buttons = {};
-    for (var day = 1; day <= days; day += 1) {
-      (function(iso, number) {
-        var button = pickerButton('run-date-picker-day', String(number), number + ' ' + MONTHS[picker.month] + ' ' + picker.year, function() {
-          selectDate(picker, iso);
-        });
-        button.setAttribute('data-date', iso);
-        button.disabled = outOfRange(picker, iso);
-        button.setAttribute('aria-pressed', iso === picker.input.value ? 'true' : 'false');
-        if (iso === today) button.setAttribute('aria-current', 'date');
-        button.tabIndex = (focusInMonth ? iso === picker.focusIso : number === 1) ? 0 : -1;
-        button.addEventListener('keydown', function(event) { onDayKey(picker, iso, event); });
-        picker.buttons[iso] = button;
-        grid.appendChild(button);
-      })(isoFromParts(picker.year, picker.month, day), day);
+    var pagePrefix = monthMode ? String(picker.year) : isoFromParts(picker.year, picker.month);
+    var focusOnPage = Boolean(picker.focusIso) && picker.focusIso.slice(0, pagePrefix.length) === pagePrefix;
+    if (monthMode) {
+      MONTHS.forEach(function(name, month) {
+        var iso = isoFromParts(picker.year, month);
+        grid.appendChild(pickerCell(picker, iso, name.slice(0, 3), name + ' ' + picker.year,
+          focusOnPage ? iso === picker.focusIso : month === 0));
+      });
+    } else {
+      WEEKDAYS.forEach(function(day) { grid.appendChild(el('span', 'run-date-picker-weekday', day)); });
+      var offset = (new Date(Date.UTC(picker.year, picker.month, 1)).getUTCDay() + 6) % 7;
+      for (var blank = 0; blank < offset; blank += 1) grid.appendChild(el('span', ''));
+      var days = new Date(Date.UTC(picker.year, picker.month + 1, 0)).getUTCDate();
+      for (var day = 1; day <= days; day += 1) {
+        var iso = isoFromParts(picker.year, picker.month, day);
+        grid.appendChild(pickerCell(picker, iso, String(day), day + ' ' + MONTHS[picker.month] + ' ' + picker.year,
+          focusOnPage ? iso === picker.focusIso : day === 1));
+      }
     }
 
     var footer = el('div', 'run-date-picker-footer');
-    var todayButton = pickerButton('btn btn-sm btn-outline-secondary', 'Today', null, function() { selectDate(picker, today); });
-    todayButton.disabled = outOfRange(picker, today);
-    footer.append(todayButton, pickerButton('btn btn-sm btn-link', 'Clear', null, function() { selectDate(picker, ''); }));
+    var current = currentValue(picker.mode);
+    var currentButton = pickerButton('btn btn-sm btn-outline-secondary', monthMode ? 'This month' : 'Today', null, function() { selectDate(picker, current); });
+    currentButton.disabled = outOfRange(picker, current);
+    footer.append(currentButton, pickerButton('btn btn-sm btn-link', 'Clear', null, function() { selectDate(picker, ''); }));
     picker.panel.replaceChildren(header, grid, footer);
   }
 
   function openDatePicker(picker) {
     closeDatePicker(false);
-    var start = parseIso(picker.input.value) ? picker.input.value : todayIso();
+    var start = parseValue(picker.mode, picker.input.value) ? picker.input.value : currentValue(picker.mode);
     if (picker.limits.min && start < picker.limits.min) start = picker.limits.min;
     if (picker.limits.max && start > picker.limits.max) start = picker.limits.max;
     picker.panel = el('div', 'run-date-picker shadow');
     picker.panel.id = picker.input.id + '-calendar';
     picker.panel.setAttribute('role', 'dialog');
-    picker.panel.setAttribute('aria-label', 'Choose date');
+    picker.panel.setAttribute('aria-label', picker.mode === 'month' ? 'Choose month' : 'Choose date');
     picker.panel.addEventListener('keydown', function(event) {
       if (event.key !== 'Escape') return;
       // Close only the calendar, not the surrounding modal.
@@ -378,8 +413,9 @@
     moveFocus(picker, start);
   }
 
-  // Wraps a date input in an input group with a calendar button. limits: { min, max } in ISO.
-  function withDatePicker(input, limits) {
+  // Wraps a date or month input in an input group with a calendar button.
+  // limits: { min, max } in the ISO format of the mode ("date" or "month").
+  function withDatePicker(input, limits, mode) {
     var wrapper = el('div', 'run-date-field');
     var group = el('div', 'input-group');
     var toggle = el('button', 'btn btn-outline-secondary run-date-toggle');
@@ -393,7 +429,7 @@
     toggle.appendChild(icon);
     group.append(input, toggle);
     wrapper.appendChild(group);
-    var picker = { input: input, toggle: toggle, wrapper: wrapper, group: group, limits: limits || {}, buttons: {} };
+    var picker = { input: input, toggle: toggle, wrapper: wrapper, group: group, limits: limits || {}, mode: mode || 'date', buttons: {} };
     picker.outside = function(event) {
       if (!wrapper.contains(event.target)) closeDatePicker(false);
     };
@@ -492,10 +528,11 @@
     grid.appendChild(editorField(prefix + '-label', tr('runParameterLabel'), textInput(state, 'label', { maxLength: 80 }), 'col-md-6'));
     grid.appendChild(editorField(prefix + '-help', tr('runParameterHelpText'), textInput(state, 'help', { maxLength: 200 }), 'col-md-6'));
 
-    if (state.type === 'date') {
-      grid.appendChild(editorField(prefix + '-min', tr('runParameterMinDate'), dateInput(state, 'min'), 'col-md-4'));
-      grid.appendChild(editorField(prefix + '-max', tr('runParameterMaxDate'), dateInput(state, 'max'), 'col-md-4'));
-      grid.appendChild(editorField(prefix + '-default', tr('runParameterDefault'), dateInput(state, 'default'), 'col-md-4'));
+    if (isCalendarType(state.type)) {
+      var monthType = state.type === 'month';
+      grid.appendChild(editorField(prefix + '-min', tr(monthType ? 'runParameterMinMonth' : 'runParameterMinDate'), calendarInput(state, 'min', state.type), 'col-md-4'));
+      grid.appendChild(editorField(prefix + '-max', tr(monthType ? 'runParameterMaxMonth' : 'runParameterMaxDate'), calendarInput(state, 'max', state.type), 'col-md-4'));
+      grid.appendChild(editorField(prefix + '-default', tr('runParameterDefault'), calendarInput(state, 'default', state.type), 'col-md-4'));
     } else if (state.type === 'integer') {
       grid.appendChild(editorField(prefix + '-min', tr('runParameterMin'), textInput(state, 'min', { type: 'number' }), 'col-md-4'));
       grid.appendChild(editorField(prefix + '-max', tr('runParameterMax'), textInput(state, 'max', { type: 'number' }), 'col-md-4'));
@@ -630,7 +667,8 @@
   function incompleteDate(name) {
     var definition = runState.definitions.find(function(item) { return item.name === name; });
     var input = document.getElementById(fieldId(name));
-    return Boolean(definition && definition.type === 'date' && input && input.value.length > 0 && input.value.length < 10);
+    return Boolean(definition && isCalendarType(definition.type) && input && input.value.length > 0
+      && input.value.length < CALENDAR_FORMATS[definition.type].length);
   }
 
   function updateRunForm() {
@@ -701,8 +739,8 @@
         });
       } else {
         input = el('input', 'form-control');
-        if (definition.type === 'date') {
-          isoDateInput(input);
+        if (isCalendarType(definition.type)) {
+          isoCalendarInput(input, definition.type);
         } else if (definition.type === 'integer') {
           input.type = 'number';
           input.step = '1';
@@ -717,7 +755,8 @@
       }
       input.value = value === null || value === undefined ? '' : String(value);
       if (definition.required) input.required = true;
-      group.appendChild(definition.type === 'date' ? withDatePicker(input, { min: definition.min, max: definition.max }) : input);
+      group.appendChild(isCalendarType(definition.type)
+        ? withDatePicker(input, { min: definition.min, max: definition.max }, definition.type) : input);
       var flagHint = el('div', 'form-text', tr('runParameterArgument', { flag: definition.flag }));
       flagHint.id = id + '-flag';
       described.push(flagHint.id);
