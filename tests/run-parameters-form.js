@@ -198,6 +198,8 @@ describe('Run parameters form', () => {
   it('masks dates as ISO YYYY-MM-DD and waits for a complete date before showing an error', () => {
     const { client, get, job } = loadClient('admin');
     client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    expect(get('run-param-date-flag').textContent).toBe('runParameterArgument {"flag":"--date"} \u00b7 YYYY-MM-DD');
+    get('run-param-date').focus();
     setValue(get('run-param-date'), '202611');
     expect(get('run-param-date').value).toBe('2026-11');
     expect(get('run-param-date').getAttribute('aria-invalid')).toBeNull();
@@ -268,6 +270,7 @@ describe('Run parameters form', () => {
     const input = get('run-param-period');
     expect(input.placeholder).toBe('YYYY-MM');
     expect(input.maxLength).toBe(7);
+    input.focus();
     setValue(input, '2025-1');
     expect(input.getAttribute('aria-invalid')).toBeNull();
     expect(get('run-parameters-submit').disabled).toBe(true);
@@ -296,6 +299,22 @@ describe('Run parameters form', () => {
     cell('2026-03').dispatch('click');
     expect(input.value).toBe('2026-03');
     expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--date=2026-03']);
+  });
+
+  it('explains an incomplete date once the field loses focus instead of only disabling Run', () => {
+    const { client, get, job, dom } = loadClient('admin');
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    const input = get('run-param-date');
+    input.focus();
+    // A month typed into a full-date parameter, as in the reported case.
+    setValue(input, '2026-12');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(get('run-parameters-submit').disabled).toBe(true);
+    dom.activeElement = null;
+    input.dispatch('blur');
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(get('run-param-date-error').textContent).toBe('Parameter date must be a valid date (YYYY-MM-DD)');
+    expect(get('run-parameters-submit').disabled).toBe(true);
   });
 
   it('opens the calendar on the current month and closes it with Escape', () => {

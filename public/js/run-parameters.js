@@ -664,11 +664,13 @@
     ).map(function(input) { return input.dataset.parameter; });
   }
 
+  // A date or month still being typed: shorter than its format and the field still has focus.
+  // Once the field loses focus, the error is shown, otherwise Run stays disabled with no reason.
   function incompleteDate(name) {
     var definition = runState.definitions.find(function(item) { return item.name === name; });
     var input = document.getElementById(fieldId(name));
     return Boolean(definition && isCalendarType(definition.type) && input && input.value.length > 0
-      && input.value.length < CALENDAR_FORMATS[definition.type].length);
+      && input.value.length < CALENDAR_FORMATS[definition.type].length && document.activeElement === input);
   }
 
   function updateRunForm() {
@@ -757,7 +759,8 @@
       if (definition.required) input.required = true;
       group.appendChild(isCalendarType(definition.type)
         ? withDatePicker(input, { min: definition.min, max: definition.max }, definition.type) : input);
-      var flagHint = el('div', 'form-text', tr('runParameterArgument', { flag: definition.flag }));
+      var flagHint = el('div', 'form-text', tr('runParameterArgument', { flag: definition.flag })
+        + (isCalendarType(definition.type) ? ' · ' + CALENDAR_FORMATS[definition.type].placeholder : ''));
       flagHint.id = id + '-flag';
       described.push(flagHint.id);
       group.appendChild(flagHint);
@@ -785,6 +788,7 @@
     group.appendChild(error);
     input.setAttribute('aria-describedby', described.join(' '));
     input.addEventListener(definition.type === 'flag' || definition.type === 'select' ? 'change' : 'input', updateRunForm);
+    if (isCalendarType(definition.type)) input.addEventListener('blur', updateRunForm);
     return group;
   }
 
