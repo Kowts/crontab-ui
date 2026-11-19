@@ -279,7 +279,7 @@ The agent and structured executor were validated operationally on an Ubuntu VM. 
 
 A structured task can declare **run parameters**: the values an operator fills in when running the task manually. The administrator defines each parameter in the task editor (argument, label, type, default value, whether it is required, whether it needs confirmation and the minimum role). When the task has parameters, **Run** opens a form, previews the resulting argument list, and sends only values; the server validates them again and appends them after the fixed arguments, without a shell.
 
-- Field types: checkbox (flag), date (`YYYY-MM-DD`), month (`YYYY-MM`), list of options, integer and text with a mandatory format. Text and option values cannot start with `-`, so a value can never become another flag.
+- Field types: checkbox (flag), date (`YYYY-MM-DD`, optionally also accepting `YYYY-MM`), month (`YYYY-MM`), list of options, integer and text with a mandatory format. Text and option values cannot start with `-`, so a value can never become another flag.
 - Scheduled runs use only the fixed arguments. "Required" applies to manual runs only.
 - Parameters marked as destructive require an explicit confirmation, checked by the server. A parameter can require the `operator` or `admin` role.
 - The effective values are stored in the execution history and the audit log, and a past run can be repeated with the same values. Do not use parameters for secrets.

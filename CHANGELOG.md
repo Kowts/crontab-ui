@@ -13,6 +13,7 @@ All notable changes to this project are documented here. The format follows
 - Execution history and audit events record the effective parameter values (migration `0004_execution_run_parameters`); a past run can be repeated with the same values.
 - `docs/CRONTAB_UI_V0.8.0_RUN_PARAMETERS_SDD.md`: specification of the feature.
 - `month` parameter type for values such as `--date=2025-12` (`YYYY-MM`, optional limits).
+- `allow_month` option on date parameters, so one flag accepts both `2026-11` and `2026-11-15`.
 - Date and month fields are typed as ISO text with an input mask and an English calendar, independent of the browser language.
 
 ### Changed

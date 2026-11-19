@@ -110,6 +110,7 @@
       if (isCalendarType(state.type)) {
         if (state.min) definition.min = state.min;
         if (state.max) definition.max = state.max;
+        if (state.type === 'date' && state.allow_month) definition.allow_month = true;
       } else if (state.type === 'integer') {
         definition.min = integerOrUndefined(state.min);
         definition.max = integerOrUndefined(state.max);
@@ -386,13 +387,28 @@
     var current = currentValue(picker.mode);
     var currentButton = pickerButton('btn btn-sm btn-outline-secondary', monthMode ? 'This month' : 'Today', null, function() { selectDate(picker, current); });
     currentButton.disabled = outOfRange(picker, current);
-    footer.append(currentButton, pickerButton('btn btn-sm btn-link', 'Clear', null, function() { selectDate(picker, ''); }));
+    footer.append(currentButton);
+    if (!monthMode && picker.limits.allowMonth) {
+      // Date parameters that also accept a month: select the displayed month itself.
+      var shown = isoFromParts(picker.year, picker.month);
+      var wholeMonth = pickerButton('btn btn-sm btn-outline-secondary', 'Whole month', 'Whole month: ' + MONTHS[picker.month] + ' ' + picker.year,
+        function() { selectDate(picker, shown); });
+      wholeMonth.setAttribute('data-month', shown);
+      wholeMonth.setAttribute('aria-pressed', picker.input.value === shown ? 'true' : 'false');
+      wholeMonth.disabled = Boolean((picker.limits.min && shown < picker.limits.min.slice(0, 7))
+        || (picker.limits.max && shown > picker.limits.max.slice(0, 7)));
+      footer.append(wholeMonth);
+    }
+    footer.append(pickerButton('btn btn-sm btn-link', 'Clear', null, function() { selectDate(picker, ''); }));
     picker.panel.replaceChildren(header, grid, footer);
   }
 
   function openDatePicker(picker) {
     closeDatePicker(false);
-    var start = parseValue(picker.mode, picker.input.value) ? picker.input.value : currentValue(picker.mode);
+    var value = picker.input.value;
+    // A month in a date field opens on the first day of that month.
+    if (picker.mode === 'date' && picker.limits.allowMonth && parseValue('month', value)) value += '-01';
+    var start = parseValue(picker.mode, value) ? value : currentValue(picker.mode);
     if (picker.limits.min && start < picker.limits.min) start = picker.limits.min;
     if (picker.limits.max && start > picker.limits.max) start = picker.limits.max;
     picker.panel = el('div', 'run-date-picker shadow');
@@ -568,6 +584,7 @@
     if (state.type === 'flag') checks.appendChild(checkInput(state, 'default', prefix + '-default', tr('runParameterDefaultOn')));
     else checks.appendChild(checkInput(state, 'required', prefix + '-required', tr('runParameterRequired')));
     checks.appendChild(checkInput(state, 'confirm', prefix + '-confirm', tr('runParameterConfirm')));
+    if (state.type === 'date') checks.appendChild(checkInput(state, 'allow_month', prefix + '-allow-month', tr('runParameterAllowMonth')));
     grid.appendChild(checks);
 
     card.appendChild(grid);
@@ -758,9 +775,10 @@
       input.value = value === null || value === undefined ? '' : String(value);
       if (definition.required) input.required = true;
       group.appendChild(isCalendarType(definition.type)
-        ? withDatePicker(input, { min: definition.min, max: definition.max }, definition.type) : input);
+        ? withDatePicker(input, { min: definition.min, max: definition.max, allowMonth: Boolean(definition.allow_month) }, definition.type) : input);
       var flagHint = el('div', 'form-text', tr('runParameterArgument', { flag: definition.flag })
-        + (isCalendarType(definition.type) ? ' · ' + CALENDAR_FORMATS[definition.type].placeholder : ''));
+        + (isCalendarType(definition.type) ? ' · ' + CALENDAR_FORMATS[definition.type].placeholder
+          + (definition.allow_month ? ' | YYYY-MM' : '') : ''));
       flagHint.id = id + '-flag';
       described.push(flagHint.id);
       group.appendChild(flagHint);

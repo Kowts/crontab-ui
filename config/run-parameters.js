@@ -26,7 +26,7 @@ const CONTROL = /[\u0000-\u001f\u007f]/;
 const COMMON_FIELDS = ['name', 'flag', 'type', 'label', 'help', 'required', 'default', 'style', 'confirm', 'min_role'];
 const TYPE_FIELDS = {
   flag: [],
-  date: ['min', 'max'],
+  date: ['min', 'max', 'allow_month'],
   month: ['min', 'max'],
   select: ['options'],
   integer: ['min', 'max'],
@@ -61,11 +61,11 @@ function isCalendarMonth(value) {
   return typeof value === 'string' && MONTH.test(value);
 }
 
-// Date-like types: the validator and the format named in error messages. ISO values compare
-// correctly as strings, so the range checks are plain comparisons.
+// Date-like types: the validator of their min/max limits and the noun used in error messages.
+// ISO values compare correctly as strings, so the range checks are plain comparisons.
 const CALENDAR_TYPES = {
-  date: { valid: isCalendarDate, format: 'YYYY-MM-DD', noun: 'date' },
-  month: { valid: isCalendarMonth, format: 'YYYY-MM', noun: 'month' },
+  date: { valid: isCalendarDate, noun: 'date' },
+  month: { valid: isCalendarMonth, noun: 'month' },
 };
 
 function compileTextPattern(pattern, name) {
@@ -91,11 +91,24 @@ function checkValue(definition, value) {
       if (typeof value !== 'boolean') throw parameterError(`Parameter ${name} must be true or false`, name);
       return value;
     case 'date':
-    case 'month': {
-      const calendar = CALENDAR_TYPES[type];
-      if (!calendar.valid(value)) throw parameterError(`Parameter ${name} must be a valid ${calendar.noun} (${calendar.format})`, name);
+      if (definition.allow_month && isCalendarMonth(value)) {
+        // A month is accepted when at least one of its days is within the date limits.
+        if ((definition.min && value < definition.min.slice(0, 7)) || (definition.max && value > definition.max.slice(0, 7))) {
+          throw parameterError(`Parameter ${name} is outside the allowed date range`, name);
+        }
+        return value;
+      }
+      if (!isCalendarDate(value)) {
+        throw parameterError(`Parameter ${name} must be a valid date (${definition.allow_month ? 'YYYY-MM-DD or YYYY-MM' : 'YYYY-MM-DD'})`, name);
+      }
       if ((definition.min && value < definition.min) || (definition.max && value > definition.max)) {
-        throw parameterError(`Parameter ${name} is outside the allowed ${calendar.noun} range`, name);
+        throw parameterError(`Parameter ${name} is outside the allowed date range`, name);
+      }
+      return value;
+    case 'month': {
+      if (!isCalendarMonth(value)) throw parameterError(`Parameter ${name} must be a valid month (YYYY-MM)`, name);
+      if ((definition.min && value < definition.min) || (definition.max && value > definition.max)) {
+        throw parameterError(`Parameter ${name} is outside the allowed month range`, name);
       }
       return value;
     }
@@ -137,6 +150,11 @@ function normalizeTypeFields(raw, normalized) {
     }
     if (normalized.min && normalized.max && normalized.min > normalized.max) {
       throw parameterError(`Parameter ${name} has a min ${calendar.noun} after its max ${calendar.noun}`, name);
+    }
+    if (type === 'date' && raw.allow_month !== undefined) {
+      if (typeof raw.allow_month !== 'boolean') throw parameterError(`Parameter ${name} allow_month must be a boolean`, name);
+      // Stored only when enabled, so existing date definitions keep their normalised shape.
+      if (raw.allow_month) normalized.allow_month = true;
     }
   } else if (type === 'integer') {
     if (!Number.isSafeInteger(raw.min) || !Number.isSafeInteger(raw.max) || raw.min > raw.max) {

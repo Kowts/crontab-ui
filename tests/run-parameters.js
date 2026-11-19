@@ -223,6 +223,32 @@ describe('Run parameter resolution', () => {
     rejects(() => validateRunParameterDefinitions([{ name: 'p', flag: '--p', type: 'month', label: 'P', options: [] }]), /unsupported field options/, 'p');
   });
 
+  it('lets a date parameter also accept a month when allow_month is set', () => {
+    const [plain] = validateRunParameterDefinitions([{ name: 'date', flag: '--date', type: 'date', label: 'D' }]);
+    expect(plain).not.toHaveProperty('allow_month');
+    rejects(() => resolveRunParameters([plain], { date: '2026-11' }), /valid date \(YYYY-MM-DD\)$/, 'date');
+
+    const [either] = validateRunParameterDefinitions([
+      { name: 'date', flag: '--date', type: 'date', label: 'D', style: 'equals', allow_month: true, min: '2026-01-15', max: '2026-11-10', default: '2026-03' },
+    ]);
+    expect(either).toMatchObject({ allow_month: true, default: '2026-03' });
+    expect(validateRunParameterDefinitions([either])).toEqual([either]);
+    expect(resolveRunParameters([either], { date: '2026-11' }).tokens).toEqual(['--date=2026-11']);
+    expect(resolveRunParameters([either], { date: '2026-11-10' }).tokens).toEqual(['--date=2026-11-10']);
+    // A month counts as within the limits when any of its days is.
+    expect(resolveRunParameters([either], { date: '2026-01' }).values.date).toBe('2026-01');
+    rejects(() => resolveRunParameters([either], { date: '2025-12' }), /date range/, 'date');
+    rejects(() => resolveRunParameters([either], { date: '2026-12' }), /date range/, 'date');
+    rejects(() => resolveRunParameters([either], { date: '2026-11-11' }), /date range/, 'date');
+    for (const date of ['2026-13', '2026-1', '2026-11-31', '2026']) {
+      rejects(() => resolveRunParameters([either], { date }), /valid date \(YYYY-MM-DD or YYYY-MM\)/, 'date');
+    }
+    rejects(() => validateRunParameterDefinitions([{ name: 'd', flag: '--d', type: 'date', label: 'D', allow_month: 'yes' }]), /allow_month must be a boolean/, 'd');
+    rejects(() => validateRunParameterDefinitions([{ name: 'd', flag: '--d', type: 'date', label: 'D', min: '2026-01' }]), /invalid min date/, 'd');
+    rejects(() => validateRunParameterDefinitions([{ name: 'm', flag: '--m', type: 'month', label: 'M', allow_month: true }]), /unsupported field allow_month/, 'm');
+    expect(validateRunParameterDefinitions([{ name: 'd', flag: '--d', type: 'date', label: 'D', allow_month: false }])[0]).not.toHaveProperty('allow_month');
+  });
+
   it('validates integers, selects and text values without allowing argument injection', () => {
     const mixed = validateRunParameterDefinitions([
       { name: 'batch', flag: '--batch', type: 'integer', label: 'Batch', min: -5, max: 500 },

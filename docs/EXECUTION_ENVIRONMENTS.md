@@ -151,7 +151,7 @@ Uma tarefa estruturada em `container-local` ou `native-local` pode declarar até
 | Tipo | Valor aceite | Argumentos emitidos |
 | --- | --- | --- |
 | `flag` | `true`/`false` | a flag, apenas quando `true` |
-| `date` | data `AAAA-MM-DD` válida, opcionalmente entre `min` e `max` | `--flag valor` ou `--flag=valor` |
+| `date` | data `AAAA-MM-DD` válida, opcionalmente entre `min` e `max`; com `allow_month: true` aceita também um mês `AAAA-MM`, válido se algum dos seus dias estiver dentro dos limites | `--flag valor` ou `--flag=valor` |
 | `month` | mês `AAAA-MM` válido (ex.: `2025-12`), opcionalmente entre `min` e `max` no mesmo formato | idem (ex.: `--date=2025-12`) |
 | `select` | um dos valores definidos | idem |
 | `integer` | inteiro entre `min` e `max` | idem |

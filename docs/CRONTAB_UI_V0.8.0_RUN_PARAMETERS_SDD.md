@@ -114,7 +114,7 @@ Limites: no máximo 20 parâmetros por tarefa; campos desconhecidos são recusad
 | Tipo | Campos próprios | Valor aceite | Tokens emitidos |
 | --- | --- | --- | --- |
 | `flag` | — | booleano JSON | `[flag]` se `true`; nada se `false` |
-| `date` | `min`, `max` opcionais (`AAAA-MM-DD`) | data de calendário válida `AAAA-MM-DD` | conforme `style` |
+| `date` | `min`, `max` opcionais (`AAAA-MM-DD`); `allow_month` opcional | data de calendário válida `AAAA-MM-DD`; com `allow_month`, também mês `AAAA-MM` com algum dia dentro dos limites | conforme `style` |
 | `month` | `min`, `max` opcionais (`AAAA-MM`) | mês válido `AAAA-MM` (acrescentado após a implementação inicial) | conforme `style` |
 | `select` | `options`: 1–50 `{ value, label }`, valores únicos | um dos `value` definidos | conforme `style` |
 | `integer` | `min` e `max` obrigatórios | inteiro seguro dentro do intervalo | conforme `style` |

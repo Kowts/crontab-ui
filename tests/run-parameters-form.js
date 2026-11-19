@@ -317,6 +317,41 @@ describe('Run parameters form', () => {
     expect(get('run-parameters-submit').disabled).toBe(true);
   });
 
+  it('accepts a whole month in a date parameter with allow_month', () => {
+    const { client, get, parse } = loadClient('admin');
+    const job = parse({
+      _id: 'job-4', name: 'Either', structured_execution: {
+        environment_id: 'env-1', script_path: '/opt/etl/main.py', arguments: [],
+        run_parameters: [{ name: 'date', flag: '--date', type: 'date', label: 'Date', style: 'equals', allow_month: true, min: '2026-11-10' }],
+      },
+    });
+    client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
+    const input = get('run-param-date');
+    expect(get('run-param-date-flag').textContent).toBe('runParameterArgument {"flag":"--date"} \u00b7 YYYY-MM-DD | YYYY-MM');
+    setValue(input, '202611');
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+    expect(get('run-parameters-submit').disabled).toBe(false);
+    expect(JSON.parse(get('run-parameters-preview').textContent)).toEqual(['/opt/etl/main.py', '--date=2026-11']);
+
+    // The calendar opens on the month of a month value and can select the whole month.
+    input.pickerToggle.dispatch('click');
+    const nodes = () => get('run-param-date-calendar').descendants();
+    expect(nodes().find((node) => node.className === 'run-date-picker-title').textContent).toBe('November 2026');
+    const whole = () => nodes().find((node) => node.getAttribute('data-month'));
+    expect(whole().getAttribute('data-month')).toBe('2026-11');
+    expect(whole().getAttribute('aria-pressed')).toBe('true');
+    nodes().find((node) => node.getAttribute('data-date') === '2026-11-20').dispatch('click');
+    expect(input.value).toBe('2026-11-20');
+
+    input.pickerToggle.dispatch('click');
+    nodes().find((node) => node.getAttribute('aria-label') === 'Previous month').dispatch('click');
+    expect(whole().getAttribute('data-month')).toBe('2026-10');
+    expect(whole().disabled).toBe(true);
+    nodes().find((node) => node.getAttribute('aria-label') === 'Next month').dispatch('click');
+    whole().dispatch('click');
+    expect(input.value).toBe('2026-11');
+  });
+
   it('opens the calendar on the current month and closes it with Escape', () => {
     const { client, get, job } = loadClient('admin');
     client.openRunForm(job, { environment: null, runUrl: '/runjob', onStarted() {} });
@@ -439,6 +474,17 @@ describe('Run parameters editor', () => {
     expect(client.readEditor()[0]).toEqual({
       name: 'date', flag: '--date', type: 'month', label: 'Period', style: 'equals', min: '2025-01', default: '2025-12',
     });
+  });
+
+  it('offers allow_month only on date parameters and saves it when checked', () => {
+    const { client, get } = loadClient('admin');
+    client.fillEditor([{ name: 'date', flag: '--date', type: 'date', label: 'Date' }]);
+    setValue(get('run-parameter-0-allow-month'), true);
+    expect(client.readEditor()[0]).toEqual({ name: 'date', flag: '--date', type: 'date', label: 'Date', allow_month: true });
+    setValue(get('run-parameter-0-type'), 'month');
+    expect(client.readEditor()[0]).not.toHaveProperty('allow_month');
+    client.fillEditor([{ name: 'date', flag: '--date', type: 'date', label: 'Date', allow_month: true }]);
+    expect(get('run-parameter-0-allow-month').checked).toBe(true);
   });
 
   it('disables adding parameters for the Ubuntu agent target', () => {
